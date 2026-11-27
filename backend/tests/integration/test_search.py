@@ -24,11 +24,14 @@ from earthx.catalog.registry import (
 )
 from earthx.catalog.search import (
     AREA_FIRST_MAX,
+    COUNT_UP_TO,
+    DEPTH,
     MAX_QUERY_CHARS,
     MIN_SHARE,
     TEXT_FIRST_MAX,
     TIME_FILTER,
     Joining,
+    Kept,
     QueryTooLong,
     Start,
     _filter_params,
@@ -523,7 +526,14 @@ async def _plan(aconn, statement, params) -> str:
 def _full_text_statement(start: Start, area: dict | None = None, text: str = "Neophyten"):
     units = parse_query(text, GLOSSARY)
     terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
-    params = {**_filter_params(area, None), **terms, "share": MIN_SHARE, "named_numbers": []}
+    params = {
+        **_filter_params(area, None),
+        **terms,
+        "share": MIN_SHARE,
+        "named_numbers": [],
+        "depth": DEPTH,
+        "count_up_to": COUNT_UP_TO,
+    }
     return _full_text_sql(units, Joining.KNOWN, start=start, named_numbers=False), params
 
 
@@ -535,8 +545,12 @@ async def test_the_statement_has_a_condition_on_the_area_only_where_there_is_one
 
 async def test_the_ranks_of_the_units_of_a_hit_are_summed_in_the_order_of_the_units(listed, aconn):
     # Without it the sum of `real` values, and with it which hits tie, would depend on the plan.
+    # M5-66: with more than one unit the ranks are summed when the rows the joining keeps are read again; with one
+    # there is nothing to sum.
+    statement, _ = _full_text_statement(Start.NO_AREA, text="Neophyten Kanton")
+    assert "sum(ts_rank_cd(s.document, u.query) ORDER BY u.ord)" in statement.as_string(aconn)
     statement, _ = _full_text_statement(Start.NO_AREA)
-    assert "sum(ts_rank_cd(f.document, u.query) ORDER BY u.ord)" in statement.as_string(aconn)
+    assert "sum(" not in statement.as_string(aconn)
 
 
 #: 60 × 60 listed entries, each half a degree wide on a grid of whole degrees, all with "Alpha" in the title.
@@ -659,3 +673,134 @@ async def test_no_start_lets_an_entry_with_a_hidden_link_through(listed, aconn):
     for limits in (FROM_THE_AREA, FROM_THE_TEXT):
         assert await _ids(aconn, "Neophyten", area=over_it, **limits) == ()
         assert "main-entry" not in await _ids(aconn, "Neophyten Götterbaum Schweiz", area=over_it, **limits)
+
+
+# --- M5-66: filters of the Data catalogue in the statements, depth per arm, number of hits -----------------------------
+
+#: Two regions of invented codes, so that no outline of `regions.json` a load wrote is touched: one over the box of the
+#: static rasters, one over Kenya.
+_REGIONS = {"ZZ": (5.0, 45.0, 11.0, 48.5), "ZY": (35.0, -2.0, 38.0, 1.0)}
+
+
+@pytest.fixture
+def kept(listed: None) -> Iterator[None]:
+    """:func:`listed` with categories and regions of the listed rows, and the two regions of :data:`_REGIONS`."""
+    with psycopg.connect(autocommit=True) as conn:
+        for code, box in _REGIONS.items():
+            conn.execute(
+                "INSERT INTO public.earthx_region (code, level, name, outline) VALUES"
+                " (%s, 'state', %s, ST_Multi(ST_MakeEnvelope(%s, %s, %s, %s, 4326)))",
+                (code, code, *box),
+            )
+            conn.execute(
+                "INSERT INTO public.earthx_region_part (code, part) SELECT code, outline FROM"
+                " public.earthx_region WHERE code = %s",
+                (code,),
+            )
+        conn.execute(
+            "UPDATE public.earthx_listed_entry SET category = 'population', regions = '{ZZ}'"
+            " WHERE dataset_id = 'only-regions'"
+        )
+        conn.execute("UPDATE public.earthx_listed_entry SET regions = '{ZY}' WHERE dataset_id = 'no-extent'")
+        yield
+        conn.execute("DELETE FROM public.earthx_region WHERE code = ANY(%s)", (list(_REGIONS),))
+
+
+async def test_the_filters_of_the_catalogue_keep_the_listed_hits_in_the_statements(kept, aconn):
+    both = {"only-regions", "no-extent"}
+    assert set(await _ids(aconn, "Bevölkerung")) == both
+    assert await _ids(aconn, "Bevölkerung", kept=Kept(category="population")) == ("only-regions",)
+    assert await _ids(aconn, "Bevölkerung", kept=Kept(category="water")) == ()
+    assert await _ids(aconn, "Bevölkerung", kept=Kept(regions=("ZY",))) == ("no-extent",)
+    assert set(await _ids(aconn, "Bevölkerung", kept=Kept(regions=("ZY", "ZZ")))) == both
+    assert await _ids(aconn, "Bevölkerung", kept=Kept(regions=("XX",))) == ()
+    assert await _ids(aconn, "Bevölkerung", kept=Kept(entry="full")) == ()
+    assert set(await _ids(aconn, "Bevölkerung", kept=Kept(entry="listed"))) == both
+
+
+async def test_a_full_entry_is_kept_by_the_ids_of_its_category_and_by_the_regions_its_box_overlaps(kept, aconn):
+    alpine = {"test-terrain", "test-surface", "test-series", "test-footprints"}
+    assert set(await _ids(aconn, "alpine")) == alpine
+    assert await _ids(aconn, "alpine", kept=Kept(full_ids=["test-terrain", "test-kenya"])) == ("test-terrain",)
+    assert await _ids(aconn, "alpine", kept=Kept(full_ids=[])) == ()
+    # The time series has the box of Sentinel-2, the whole earth: it overlaps Kenya too.
+    assert await _ids(aconn, "alpine", kept=Kept(regions=("ZY",))) == ("test-series",)
+    assert set(await _ids(aconn, "alpine", kept=Kept(regions=("ZZ",)))) == alpine
+    assert await _ids(aconn, "savanna", kept=Kept(regions=("ZY",))) == ("test-kenya",)
+    assert await _ids(aconn, "savanna", kept=Kept(regions=("ZZ",))) == ()
+    assert await _ids(aconn, "savanna", kept=Kept(entry="listed")) == ()
+    # A listed category keeps no full entry out on its own: the caller names the full ids of the category.
+    assert await _ids(aconn, "savanna", kept=Kept(category="population")) == ("test-kenya",)
+
+
+async def test_the_filters_keep_the_same_hits_in_the_same_order_from_either_start(kept, aconn):
+    area = box_area(6.0, 45.0, 11.0, 49.0)
+    for text in ("Bevölkerung", "Neophyten Schweiz", "alpine"):
+        for filters in (Kept(regions=("ZZ",)), Kept(category="other", full_ids=["test-terrain"]), Kept(entry="listed")):
+            by_area = await search_datasets(aconn, text, area=area, glossary=GLOSSARY, kept=filters, **FROM_THE_AREA)
+            by_text = await search_datasets(aconn, text, area=area, glossary=GLOSSARY, kept=filters, **FROM_THE_TEXT)
+            assert by_area == by_text, (text, filters)
+
+
+#: Listed entries whose titles hold "Kappa" one to five times: five distinct ranks in the full text, one similarity.
+_KAPPA = {f"kappa-{n}": " ".join(["Kappa"] * n) + " Liste" for n in range(1, 6)}
+
+
+@pytest.fixture
+def kappa(catalogue: None) -> Iterator[None]:
+    with psycopg.connect() as conn:
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        for dataset_id, title in _KAPPA.items():
+            insert_row(conn, dataset_id, title=title)
+        write_listed_search_index(conn, [config.dataset_id for config in CATALOGUE])
+        conn.commit()
+        yield
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        conn.commit()
+
+
+async def test_only_the_places_up_to_the_depth_of_an_arm_go_into_the_fusion(kappa, aconn):
+    full_text_only = {"threshold": 1.1}
+    everything = await search_datasets(aconn, "Kappa", glossary=GLOSSARY, **full_text_only)
+    assert everything.ids == tuple(f"kappa-{n}" for n in range(5, 0, -1))
+    cut = await search_datasets(aconn, "Kappa", glossary=GLOSSARY, depth=2, **full_text_only)
+    assert cut.ids == ("kappa-5", "kappa-4")
+    # Every hit still counts.
+    assert (everything.matched, cut.matched) == (5, 5)
+
+
+async def test_a_tie_at_the_depth_is_never_cut(kappa, aconn):
+    # The trigram arm gives each "Kappa" title the same similarity: one tie, taken whole at depth 1, so that the fusion
+    # is the one without a depth.
+    assert await _ids(aconn, "Kappa", depth=1) == await _ids(aconn, "Kappa")
+    trigrams_only = await search_datasets(aconn, "Kappa", glossary=GLOSSARY, depth=1, joining=Joining.ALL)
+    assert set(trigrams_only.ids) == set(_KAPPA)
+
+
+async def test_the_grid_ranks_alike_at_any_depth(grid, aconn):
+    assert await _grid_ids(aconn, depth=1) == await _grid_ids(aconn)
+
+
+async def test_the_number_of_hits_is_exact_up_to_the_limit_and_none_above(kappa, aconn):
+    assert (await search_datasets(aconn, "Kappa", glossary=GLOSSARY, count_up_to=5)).matched == 5
+    assert (await search_datasets(aconn, "Kappa", glossary=GLOSSARY, count_up_to=4)).matched is None
+    # Above the limit it stays None also where the depth cuts the arms down below it.
+    assert (await search_datasets(aconn, "Kappa", glossary=GLOSSARY, count_up_to=4, depth=1)).matched is None
+    assert (await search_datasets(aconn, "Kappa", glossary=GLOSSARY, kept=Kept(entry="full"))).matched == 0
+    assert (await search_datasets(aconn, "nothing like it", glossary=GLOSSARY)).matched == 0
+
+
+async def test_a_hit_of_both_arms_counts_once(listed, aconn):
+    # "Neophyten" is in the title (full text) and in the trigram text of the one entry.
+    assert (await search_datasets(aconn, "Neophyten", glossary=GLOSSARY)).matched == 1
+
+
+async def test_without_text_the_number_is_that_of_the_list(listed, aconn):
+    result = await search_datasets(aconn, None, glossary=GLOSSARY)
+    assert result.matched == len(result.ids) == len(CATALOGUE)
+
+
+async def test_several_units_rank_as_the_sum_of_their_ranks_in_the_order_of_the_units(kappa, aconn):
+    # "Kappa Liste": every title has both words; the order is that of "Kappa" alone, the ranks of "Liste" being equal.
+    assert await _ids(aconn, "Kappa Liste", threshold=1.1) == await _ids(aconn, "Kappa", threshold=1.1)
+    assert await _ids(aconn, "Kappa Liste", threshold=1.1, depth=1) == ("kappa-5",)
