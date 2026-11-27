@@ -1,0 +1,108 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: opendata-swiss
+source_key: d8295cde-396a-4670-8710-6080a6ef7024
+listed_id: opendata-swiss.d8295cde-396a-4670-8710-6080a6ef7024
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: pollution-de-l-air-immissions-no2-2020
+takeover:
+  via: also_listed_as
+  key: also:opendata-swiss:SPAIR_IMMISSIONS_NO2_2020@canton-geneve
+  also_listed_as:
+  - opendata-swiss:SPAIR_IMMISSIONS_NO2_2020@canton-geneve
+harvested:
+  title: Pollution De L'Air - Immissions No2 2020
+  description: Elle est réalisée par modélisation au moyen d'une combinaison du modèle
+    CHIMERE (basé sur les données provenant du cadastre des émissions romand) calé
+    sur les mesures du ROPAG en interpolant par krigeage à l'échelle régionale, ainsi
+    que du modèle SIRANE pour la dispersion des polluants à l'échelle des rues (au
+    moyen des données du trafic routier et aérien). Ce travail a été réalisé en partenariat
+    avec Atmo Auvergne-Rhône-Alpes. La valeur limite d'immission annuelle fixée par
+    l'OPair est de 30 ug/m3. La mesure en continu de la qualité de l'air a commencé
+    en 1973. Les immissions de NO2 sont évaluées depuis 2002 au moyen du réseau de
+    capteurs passifs.
+  publisher: Kanton Genf
+  keywords:
+  - population
+  - society
+  doi: null
+  licence_statements:
+  - https://opendata.swiss/terms-of-use#terms_open
+  bbox:
+  - 5.9548
+  - 46.1305
+  - 6.2812
+  - 46.3318
+  extent_basis: place
+  temporal:
+  - null
+  - null
+  source_url: https://opendata.swiss/de/dataset/pollution-de-lair-immissions-no2-2020
+  landing_url: https://opendata.swiss/de/dataset/pollution-de-lair-immissions-no2-2020
+  distributions:
+  - href: https://raster.sitg.ge.ch/arcgis/rest/services
+    format: API
+    media_type: null
+    title: '0'
+  - href: https://ge.ch/sitg/geodata/SITG/COG-DATA/SPAIR_IMMISSIONS_NO2_2020.tif
+    format: TIFF
+    media_type: image/tiff
+    title: TIFF_COG
+licence:
+  license_ref:
+  - opendata-swiss-open
+  license_rule: opendata-swiss/Kanton Genf/opendata-swiss-open
+  license:
+    spdx_id: null
+    name: 'opendata.swiss: Freie Nutzung'
+    url: https://opendata.swiss/en/terms-of-use#terms_open
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: false
+    tier: processing
+    attribution_modified: null
+    attribution_unmodified: null
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://ge.ch/sitg/geodata/SITG/COG-DATA/SPAIR_IMMISSIONS_NO2_2020.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff
+    length: 12339913
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: ge.ch
+    format:
+      format: cog
+      tiff:
+        width: 2767
+        height: 2605
+        bands: 1
+        data_type: float32
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 3
+        epsg: 2056
+        nodata: '3.3999999521443642e+38'
+      big_tiff: true
+  items: 0
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

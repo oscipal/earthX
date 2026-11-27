@@ -1,0 +1,359 @@
+{
+ "collection": {
+  "description": "Die Daten umfassen die im deutschen Hoheitsgebiet und der ausschließlichen Wirtschaftszone (AWZ) errechneten Erträge von Windparks und die dafür relevanten Windbedingungen unter der Annahme eines Ausbaus der Offshore Windenergie in kontinuierlichen Ausbaujahren. Die Berechnungen wurden mit dem numerischen Wettermodell WRF unter Nutzung einer Parametrisierung von Windparks nach Fitch durchgeführt. Die Daten liegen in 10-minütlicher zeitlicher und 2 km x 2 km räumlicher Auflösung für die Nordsee für das meteorologische Jahr 2006 vor. Die Jahreszahlen der Dateien beziehen sich auf das jeweilige Ausbaujahr. Die Variablen des Datensatzes sind Windgeschwindigkeit (WS) und Windrichtung (WD) auf 9 Höhenleveln zwischen 50 m und 350 m, die Leistung (POWER) der Windturbinen aus jeder Gitterzelle und die Luftdichte. Eine genauere Beschreibung der Variablen findet sich in den Dateien.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "infrastructure",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "XML",
+    "href": "https://gdi.bsh.de/de/feed/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08.xml",
+    "media_type": "application/xml",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-01.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-02.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-03.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-04.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-05.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-06.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-07.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-08.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-09.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-10.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-11.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-12.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-13.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-14.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-15.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-16.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-17.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-18.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-19.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-20.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-21.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-22.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-23.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-24.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-25.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-26.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-27.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-28.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-29.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-30.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-31.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung – Version 2.0 (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung – Version 2.0",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "Datenlizenz Deutschland – Namensnennung – Version 2.0",
+   "share_alike": false,
+   "spdx_id": "DL-DE-BY-2.0",
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://www.govdata.de/dl-de/by-2-0"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "govdata/Fraunhofer IWES/dl-de-by-2.0",
+   "publisher": "Fraunhofer IWES",
+   "source_id": "govdata",
+   "source_key": "e7a63ab8-2e9e-46c9-9021-871fa10f8b66",
+   "source_rank": 3,
+   "source_url": "https://www.govdata.de/suche/daten/modelldaten-ertragspotenzial-in-verschiedenen-ausbaujahren-offshore-windenergie-nordsee-2006-08b1a1b"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      3.0039,
+      52.8775,
+      9.3092,
+      56.4108
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "2006-01-01T00:00:00Z",
+      "2006-12-31T23:59:59Z"
+     ]
+    ]
+   }
+  },
+  "id": "govdata.e7a63ab8-2e9e-46c9-9021-871fa10f8b66",
+  "keywords": [
+   "deutsche-awz",
+   "deutsche-nordsee",
+   "ertrag",
+   "full-load-hours",
+   "german-eez",
+   "german-north-sea",
+   "modellierung",
+   "modelling",
+   "national",
+   "offhore-windenergie",
+   "offshore",
+   "offshore-wind-energy",
+   "offshore-wind-farm",
+   "offshore-windpark",
+   "open-data",
+   "volllaststunden",
+   "wind-energy-at-sea",
+   "wind-power",
+   "windenergie-auf-see",
+   "windkraft",
+   "yield"
+  ],
+  "license": "DL-DE-BY-2.0",
+  "links": [
+   {
+    "href": "https://www.govdata.de/suche/daten/modelldaten-ertragspotenzial-in-verschiedenen-ausbaujahren-offshore-windenergie-nordsee-2006-08b1a1b",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://www.govdata.de/dl-de/by-2-0",
+    "rel": "license",
+    "title": "Datenlizenz Deutschland – Namensnennung – Version 2.0"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Fraunhofer IWES",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie Nordsee -2036-2006-08",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-27",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "gdi.bsh.de",
+    "format": {
+     "format": "hdf5"
+    },
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-01.nc",
+    "length": 300743954,
+    "media_type": "application/x-netcdf",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "gdi.bsh.de",
+    "format": {
+     "format": "hdf5"
+    },
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-02.nc",
+    "length": 310427366,
+    "media_type": "application/x-netcdf",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "gdi.bsh.de",
+    "format": {
+     "format": "hdf5"
+    },
+    "href": "https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2036-2006-08-03.nc",
+    "length": 309053730,
+    "media_type": "application/x-netcdf",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

@@ -1,0 +1,184 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: govdata
+source_key: 877d50eb-40b5-47ba-8a10-64f857f309d6
+listed_id: govdata.877d50eb-40b5-47ba-8a10-64f857f309d6
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: govdata-modelldaten-mehrjaehriges-ertragspotenzial-offshore-59
+takeover:
+  via: also_listed_as
+  key: also:govdata:332b0e1d-c1ef-40ac-b1f0-97e2ce718f80
+  also_listed_as:
+  - govdata:332b0e1d-c1ef-40ac-b1f0-97e2ce718f80
+harvested:
+  title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2020-04
+  description: Die Daten umfassen die im deutschen Hoheitsgebiet und der ausschließlichen
+    Wirtschaftszone (AWZ) errechneten Erträge von Windparks und die dafür relevanten
+    Windbedingungen unter der Annahme eines Ausbausszenarios (S16) der Offshore Windenergie
+    für 10 aufeinanderfolgende meteorologische Jahre. Die Berechnungen wurden mit
+    dem numerischen Wettermodell WRF unter Nutzung einer Parametrisierung von Windparks
+    nach Fitch durchgeführt. Die Daten liegen in 10-minütlicher zeitlicher und 2 km
+    x 2 km räumlicher Auflösung für die Nordsee für die meteorologischen Jahre 2013-2022
+    vor. Die Variablen des Datensatzes sind Windgeschwindigkeit (WS) und Windrichtung
+    (WD) auf 9 Höhenleveln zwischen 50 m und 350 m, die Leistung (POWER) der Windturbinen
+    aus jeder Gitterzelle und die Luftdichte. Eine genauere Beschreibung der Variablen
+    findet sich in den Dateien.
+  publisher: Fraunhofer IWES
+  keywords:
+  - deutsche-awz
+  - deutsche-nordsee
+  - ertrag
+  - full-load-hours
+  - german-eez
+  - german-north-sea
+  - modellierung
+  - modelling
+  - national
+  - offhore-windenergie
+  - offshore
+  - offshore-wind-energy
+  - offshore-wind-farm
+  - offshore-windpark
+  - open-data
+  - volllaststunden
+  - wind-energy-at-sea
+  - wind-power
+  - windenergie-auf-see
+  - windkraft
+  - yield
+  doi: null
+  licence_statements:
+  - http://dcat-ap.de/def/licenses/dl-by-de/2.0
+  bbox:
+  - 3.0039
+  - 52.8775
+  - 9.3092
+  - 56.4108
+  extent_basis: source
+  temporal:
+  - '2013-01-01T00:00:00Z'
+  - '2022-12-31T23:59:59Z'
+  source_url: https://www.govdata.de/suche/daten/modelldaten-mehrjahriges-ertragspotenzial-offshore-windenergie-nordsee-2020-0488346
+  landing_url: https://www.govdata.de/suche/daten/modelldaten-mehrjahriges-ertragspotenzial-offshore-windenergie-nordsee-2020-0488346
+  distributions:
+  - href: https://gdi.bsh.de/de/feed/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04.xml
+    format: XML
+    media_type: application/xml
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-01.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-02.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-03.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-04.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-05.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-06.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-07.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-08.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-09.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee
+      -2020-04
+licence:
+  license_ref:
+  - dl-de-by-2.0
+  license_rule: govdata/Fraunhofer IWES/dl-de-by-2.0
+  license:
+    spdx_id: DL-DE-BY-2.0
+    name: Datenlizenz Deutschland – Namensnennung – Version 2.0
+    url: https://www.govdata.de/dl-de/by-2-0
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung
+      – Version 2.0 (modified)
+    attribution_unmodified: Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung
+      – Version 2.0
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-01.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 284391096
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-02.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 272767781
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  - href: https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2020-04-03.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 285640590
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  items: 0
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

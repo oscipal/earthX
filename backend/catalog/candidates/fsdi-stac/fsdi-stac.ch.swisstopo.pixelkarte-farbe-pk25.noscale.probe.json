@@ -1,0 +1,486 @@
+{
+ "collection": {
+  "description": "The National Map 1:25,000 is a topographic map of Switzerland representing the areas of traffic and settlements, the topography and the vegetation in great detail. The map perimeter is divided into 247 individual sheets. The map content is updated in a regular six-year cycle according to a revision plan dividing Switzerland in six sectors. The National Map 1:25,000 is published in analogue format as a printed map and in digital format as the Swiss Map Raster.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "other",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "© swisstopo (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "© swisstopo",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "swisstopo: Nutzungsbedingungen für kostenlose Geodaten und Geodienste (OGD)",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://www.swisstopo.admin.ch/ogd-conditions"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-21",
+   "license_rule": "fsdi-stac/Federal Office of Topography - swisstopo/swisstopo-ogd",
+   "publisher": "Federal Office of Topography - swisstopo",
+   "source_id": "fsdi-stac",
+   "source_key": "ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+   "source_rank": 1,
+   "source_url": "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.8735276,
+      45.8026814,
+      10.6912279,
+      47.8644568
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "1984-01-01T00:00:00Z",
+      "2024-01-01T00:00:00Z"
+     ]
+    ]
+   }
+  },
+  "id": "fsdi-stac.ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+  "keywords": [
+   "other"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://www.swisstopo.admin.ch/ogd-conditions",
+    "rel": "license",
+    "title": "swisstopo: Nutzungsbedingungen für kostenlose Geodaten und Geodienste (OGD)"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Federal Office of Topography - swisstopo",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "National Map 1:25'000",
+  "type": "Collection"
+ },
+ "items": [
+  {
+   "assets": {
+    "swiss-map-raster25_1984_1056_kgrs_1.25_2056.tif": {
+     "created": "2021-02-17T14:42:01.151379Z",
+     "file:checksum": "12207CA6B03372C1CBFE019B66A7787E86B8448068B9B7366F0EC993F46B5F87AED0",
+     "geoadmin:variant": "kgrs",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1984_1056/swiss-map-raster25_1984_1056_kgrs_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:47:19.712034Z"
+    },
+    "swiss-map-raster25_1984_1056_komb_1.25_2056.tif": {
+     "created": "2021-02-17T15:50:24.305840Z",
+     "file:checksum": "12202B58AB295ADE9F95BA8FCECDC686F08D0A210E7816114C5BD15DAD79FC7E1DA4",
+     "geoadmin:variant": "komb",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1984_1056/swiss-map-raster25_1984_1056_komb_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:50:07.251398Z"
+    },
+    "swiss-map-raster25_1984_1056_krel_1.25_2056.tif": {
+     "created": "2021-02-17T14:28:57.190802Z",
+     "file:checksum": "1220C4006F7E9F4F66171040003DBFA7749A40DB8F9513C08384EC42BFDCC002CCEC",
+     "geoadmin:variant": "krel",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1984_1056/swiss-map-raster25_1984_1056_krel_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:45:11.650416Z"
+    }
+   },
+   "bbox": [
+    9.5633811,
+    47.5207448,
+    9.8004396,
+    47.6331241
+   ],
+   "collection": "ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       9.5677054,
+       47.6331241
+      ],
+      [
+       9.5633811,
+       47.5252404
+      ],
+      [
+       9.7956431,
+       47.5207448
+      ],
+      [
+       9.8004396,
+       47.6286194
+      ],
+      [
+       9.5677054,
+       47.6331241
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "swiss-map-raster25_1984_1056",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale/items/swiss-map-raster25_1984_1056",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale/items/swiss-map-raster25_1984_1056",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2021-02-17T14:28:56.056646Z",
+    "datetime": "1984-01-01T00:00:00Z",
+    "updated": "2025-01-16T17:50:07.251398Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "swiss-map-raster25_1988_1035_kgrs_1.25_2056.tif": {
+     "created": "2021-02-17T14:41:37.303464Z",
+     "file:checksum": "12203FF4B2FE61264F00DE0EB7BA5722EE67136AC17EA20D0BEA1D38C66F80016861",
+     "geoadmin:variant": "kgrs",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1988_1035/swiss-map-raster25_1988_1035_kgrs_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:47:07.342188Z"
+    },
+    "swiss-map-raster25_1988_1035_komb_1.25_2056.tif": {
+     "created": "2021-02-17T15:49:45.283041Z",
+     "file:checksum": "1220D4EC3C36CBB115DB37AA1393AD9A6B83AC3732247631FD8DBAA200B70006C02B",
+     "geoadmin:variant": "komb",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1988_1035/swiss-map-raster25_1988_1035_komb_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:48:18.316820Z"
+    },
+    "swiss-map-raster25_1988_1035_krel_1.25_2056.tif": {
+     "created": "2021-02-17T14:29:03.894362Z",
+     "file:checksum": "1220038D5ABAC9AF54820C2CBAB7EC5E2F3083D93E3AC51EC21A7804478EA44C3F5E",
+     "geoadmin:variant": "krel",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1988_1035/swiss-map-raster25_1988_1035_krel_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:45:15.214220Z"
+    }
+   },
+   "bbox": [
+    9.3349334,
+    47.6331241,
+    9.5720473,
+    47.745049
+   ],
+   "collection": "ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       9.3388009,
+       47.745049
+      ],
+      [
+       9.3349334,
+       47.6371619
+      ],
+      [
+       9.5677054,
+       47.6331241
+      ],
+      [
+       9.5720473,
+       47.7410031
+      ],
+      [
+       9.3388009,
+       47.745049
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "swiss-map-raster25_1988_1035",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale/items/swiss-map-raster25_1988_1035",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale/items/swiss-map-raster25_1988_1035",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2021-02-17T14:29:03.246664Z",
+    "datetime": "1988-01-01T00:00:00Z",
+    "updated": "2025-01-16T17:48:18.316820Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "swiss-map-raster25_1992_1282_kgrs_1.25_2056.tif": {
+     "created": "2021-02-17T14:41:08.928308Z",
+     "file:checksum": "12204A7CDA873A689F569B970C46FF83019CC7B4DB258BC8730E03F2ED52EE7DCF67",
+     "geoadmin:variant": "kgrs",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1992_1282/swiss-map-raster25_1992_1282_kgrs_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:46:08.715115Z"
+    },
+    "swiss-map-raster25_1992_1282_komb_1.25_2056.tif": {
+     "created": "2021-02-17T15:49:56.447658Z",
+     "file:checksum": "12204F96541129230531D6C04E12E91732C96A841F74E5A43826B58EECB07C1A5EEB",
+     "geoadmin:variant": "komb",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1992_1282/swiss-map-raster25_1992_1282_komb_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:49:08.687004Z"
+    },
+    "swiss-map-raster25_1992_1282_krel_1.25_2056.tif": {
+     "created": "2021-02-17T14:28:48.127468Z",
+     "file:checksum": "12200CDF03D97F97128044C458468FC39AE63569D2BD7137AF973734F10AFDD9AA39",
+     "geoadmin:variant": "krel",
+     "gsd": 1.25,
+     "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1992_1282/swiss-map-raster25_1992_1282_krel_1.25_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-16T17:45:07.300718Z"
+    }
+   },
+   "bbox": [
+    6.3343578,
+    46.2440502,
+    6.5634314,
+    46.3539779
+   ],
+   "collection": "ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       6.3343578,
+       46.351987
+      ],
+      [
+       6.336551,
+       46.2440502
+      ],
+      [
+       6.5634314,
+       46.2460372
+      ],
+      [
+       6.5616892,
+       46.3539779
+      ],
+      [
+       6.3343578,
+       46.351987
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "swiss-map-raster25_1992_1282",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale/items/swiss-map-raster25_1992_1282",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale/items/swiss-map-raster25_1992_1282",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2021-02-17T14:28:47.026087Z",
+    "datetime": "1992-01-01T00:00:00Z",
+    "updated": "2025-01-16T17:49:08.687004Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  }
+ ],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-27",
+  "data_region": null,
+  "files": [
+   {
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": 2056,
+      "height": 9600,
+      "nodata": null,
+      "overviews": 5,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 14000
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1984_1056/swiss-map-raster25_1984_1056_kgrs_1.25_2056.tif",
+    "length": 10272994,
+    "media_type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": 2056,
+      "height": 9600,
+      "nodata": null,
+      "overviews": 5,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 14000
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1988_1035/swiss-map-raster25_1988_1035_kgrs_1.25_2056.tif",
+    "length": 12853028,
+    "media_type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": 2056,
+      "height": 9600,
+      "nodata": null,
+      "overviews": 5,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 14000
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1992_1282/swiss-map-raster25_1992_1282_kgrs_1.25_2056.tif",
+    "length": 909332,
+    "media_type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 3
+ }
+}

@@ -1,0 +1,161 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: fsdi-stac
+source_key: ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
+listed_id: fsdi-stac.ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
+takeover:
+  via: coll
+  key: coll:data.geo.admin.ch/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
+harvested:
+  title: Exceedance of critical loads for nitrogen
+  description: 'Excessive deposition of reactive nitrogen compounds (NO₂, NO₃⁻, HNO₃,
+    NH₃, NH₄⁺) causes eutrophication (over-fertilisation) of sensitive ecosystems,
+    contributes to soil acidification and can lead to elevated nitrate leaching with
+    associated leaching of nutrients in the soil. In addition, it also leads to increased
+    production of nitrous oxide. Methods for establishing critical loads for nitrogen
+    are developed and applied in the framework of the UNECE convention on long-range
+    transboundary air pollution. The time series shows the exceedances of the critical
+    loads for nitrogen for sensitive ecosystems for the years 1990, 2000, 2005, 2010,
+    2015 and 2020 in a resolution of 1 square kilometre. Critical loads only apply
+    for areas containing sensitive ecosystems. The inventories of the following sensitive
+    ecosystems were used for the map: i) Raised bogs and fens from the Federal Inventories
+    of Raised and Transitional Bogs and Fenlands; ii) Dry grasslands from the National
+    Inventory of Dry Grasslands; iii) Various types of vegetation declared worthy
+    of protection, from the vegetation atlas by Hegg et al. (1993); iv) Sites containing
+    mountain hay meadows that are part of the Swiss Biodiversity Monitoring (122 sites);
+    v) Oligotrophic alpine lakes in southern Switzerland (100 lakes); vi) National
+    Forest Inventory sites (10331 sites) and 301 additional sites used for dynamic
+    modelling. Sensitive ecosystems that are not included in these datasets are not
+    considered. Detailed information about the model can be found in the report Critical
+    Loads of Nitrogen and their Exceedances. Actual critical load exceedances can
+    deviate from the modelled grid data. Single pixels must not be used for assessing
+    critical load exceedances at single sites.'
+  publisher: Federal Office for the Environment FOEN
+  keywords:
+  - other
+  doi: null
+  licence_statements:
+  - https://opendata.swiss/en/terms-of-use/#terms_by
+  bbox:
+  - 5.96
+  - 45.82
+  - 10.49
+  - 47.81
+  extent_basis: source
+  temporal:
+  - '1990-12-31T00:00:00Z'
+  - '2020-12-31T00:00:00Z'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
+  landing_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
+  distributions:
+  - href: https://data.geo.admin.ch/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag/luftreinhaltung-stickstoff_kritischer_eintrag.zip
+    format: null
+    media_type: application/zip
+    title: Additional files
+licence:
+  license_ref:
+  - opendata-swiss-by
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  license:
+    spdx_id: null
+    name: 'opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht'
+    url: https://opendata.swiss/en/terms-of-use#terms_by
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © Federal Office for the Environment FOEN (modified)
+    attribution_unmodified: © Federal Office for the Environment FOEN
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://data.geo.admin.ch/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag/luftreinhaltung-stickstoff_kritischer_eintrag_1990/luftreinhaltung-stickstoff_kritischer_eintrag_1990_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    length: 128936
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 380
+        height: 250
+        bands: 1
+        data_type: float32
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 0
+        epsg: null
+        nodata: '-3.40282306073709653e+38'
+  - href: https://data.geo.admin.ch/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag/luftreinhaltung-stickstoff_kritischer_eintrag_2000/luftreinhaltung-stickstoff_kritischer_eintrag_2000_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    length: 129401
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 380
+        height: 250
+        bands: 1
+        data_type: float32
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 0
+        epsg: null
+        nodata: '-3.40282306073709653e+38'
+  - href: https://data.geo.admin.ch/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag/luftreinhaltung-stickstoff_kritischer_eintrag_2005/luftreinhaltung-stickstoff_kritischer_eintrag_2005_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    length: 129946
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 380
+        height: 250
+        bands: 1
+        data_type: float32
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 0
+        epsg: null
+        nodata: '-3.40282306073709653e+38'
+  items: 3
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null
