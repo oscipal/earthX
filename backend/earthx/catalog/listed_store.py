@@ -172,6 +172,17 @@ _COVERAGE = """
 """
 
 
+#: The stored row of a hand entry, where the upsert would not write it: the negation of its ``WHERE``.
+_UNCHANGED = """
+    SELECT 1 FROM public.earthx_listed_entry stored
+    WHERE stored.dataset_id = %(id)s AND stored.state = 'published'
+      AND (stored.content_sha256, stored.approval_sha256, stored.sort_title)
+          IS NOT DISTINCT FROM (%(content_sha256)s, %(approval_sha256)s, %(sort_title)s)
+      AND ST_AsBinary(stored.footprint) IS NOT DISTINCT FROM ST_AsBinary(
+          COALESCE(ST_GeomFromEWKB(%(footprint)s), ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326)))
+"""
+
+
 def _coverage_footprint(cur: psycopg.Cursor, entry: ListedEntry) -> bytes | None:
     """The footprint from ``coverage_states``, or None for an entry without them (its box is the footprint)."""
     states = entry.coverage_states
@@ -200,16 +211,15 @@ def write_hand_entries(
     blocklist: Sequence[BlockRule],
     *,
     full_ids: Collection[str],
-    outlines_changed: bool = True,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Write the hand entries, each with the SHA-256 of its file; returns the ids written and the ids left out as blocked.
 
     An id that is a full entry or a retired one (``full_ids``), or that a harvested row already holds, is an error: two
     files in Git cannot both own it, and a hand entry never takes a harvested row over.
 
-    A published row with the same document, file and key in the order is left as it is without a statement, unless
-    ``outlines_changed`` (the region outlines changed in this run): its footprint and regions come from its file and
-    those outlines only. Deriving them anew cost 1.3 s per run for an entry over the states of Europe (M5-66).
+    A row the upsert would leave as it is (published, same document, file, key in the order and footprint) is asked
+    for by :data:`_UNCHANGED` first and not written: the upsert derives the regions of the footprint before it compares,
+    1.3 s per run for an entry over the states of Europe (M5-66).
     """
     ids = [entry.dataset_id for entry, _ in entries]
     if clash := sorted(set(ids) & set(full_ids)):
@@ -224,14 +234,6 @@ def write_hand_entries(
         )
         if taken := [row[0] for row in cur.fetchall()]:
             raise ConfigError(f"listed/: a harvested entry holds the same id: {', '.join(taken)}")
-        unchanged: dict[str, tuple[str, str, str]] = {}
-        if not outlines_changed:
-            cur.execute(
-                "SELECT dataset_id, content_sha256, approval_sha256, sort_title FROM public.earthx_listed_entry"
-                " WHERE source_id = %s AND state = 'published'",
-                (HAND_SOURCE,),
-            )
-            unchanged = {row[0]: tuple(row[1:]) for row in cur.fetchall()}
         for entry, file_hash in entries:
             host = link_host(entry.source_url)
             values = {"source_id": HAND_SOURCE, "source_key": entry.dataset_id, "publisher": entry.publisher}
@@ -239,37 +241,36 @@ def write_hand_entries(
                 blocked.append(entry.dataset_id)
                 continue
             collection = to_listed_collection(entry)
-            if unchanged.get(entry.dataset_id) == (content_sha256(collection), file_hash, sort_title(entry.title)):
-                continue
             west, south, east, north = entry.spatial_extent.bbox
             footprint = _coverage_footprint(cur, entry)
-            cur.execute(
-                _UPSERT,
-                {
-                    "id": entry.dataset_id,
-                    "source": HAND_SOURCE,
-                    "content": json.dumps(collection),
-                    "content_sha256": content_sha256(collection),
-                    "sort_title": sort_title(entry.title),
-                    "west": west,
-                    "south": south,
-                    "east": east,
-                    "north": north,
-                    "footprint": footprint,
-                    "states": None if entry.coverage_states is None else list(entry.coverage_states),
-                    "time_span": _time_span(entry),
-                    "data_kind": entry.data_kind.value,
-                    "category": entry.category,
-                    "keywords": list(listed_keywords(entry.keywords, entry.category)),
-                    "account": entry.access.account.value,
-                    "delivery": entry.access.delivery.value,
-                    "publisher": entry.publisher,
-                    "host": host,
-                    "approval_file": f"listed/{entry.dataset_id}.yaml",
-                    "approval_sha256": file_hash,
-                    "approved_on": entry.approved_on,
-                },
-            )
+            values = {
+                "id": entry.dataset_id,
+                "source": HAND_SOURCE,
+                "content": json.dumps(collection),
+                "content_sha256": content_sha256(collection),
+                "sort_title": sort_title(entry.title),
+                "west": west,
+                "south": south,
+                "east": east,
+                "north": north,
+                "footprint": footprint,
+                "states": None if entry.coverage_states is None else list(entry.coverage_states),
+                "time_span": _time_span(entry),
+                "data_kind": entry.data_kind.value,
+                "category": entry.category,
+                "keywords": list(listed_keywords(entry.keywords, entry.category)),
+                "account": entry.access.account.value,
+                "delivery": entry.access.delivery.value,
+                "publisher": entry.publisher,
+                "host": host,
+                "approval_file": f"listed/{entry.dataset_id}.yaml",
+                "approval_sha256": file_hash,
+                "approved_on": entry.approved_on,
+            }
+            cur.execute(_UNCHANGED, values)
+            if cur.fetchone() is not None:
+                continue
+            cur.execute(_UPSERT, values)
             if cur.fetchone() is not None:
                 written.append(entry.dataset_id)
         # A hand entry whose file is gone: a tombstone, so a link to it ends in 410 (plan A5). A superseded row stays.

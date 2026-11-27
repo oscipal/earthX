@@ -932,45 +932,60 @@ def test_the_box_stays_the_footprint_without_named_states(conn: psycopg.Connecti
 # --- a run without changes (M5-66) -----------------------------------------------------------------------------------
 
 
-def _no_footprint_measured(*_: object) -> None:
-    raise AssertionError("the footprint of an unchanged hand entry was measured again")
+def _no_upsert(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*_: object) -> None:
+        raise AssertionError("an unchanged hand entry went through the upsert")
+
+    monkeypatch.setattr("earthx.catalog.listed_store._UPSERT", refuse)
 
 
-def test_an_unchanged_hand_entry_is_left_alone_while_the_outlines_stay(
+def test_an_unchanged_hand_entry_is_left_alone_without_the_upsert(
     conn: psycopg.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_regions(conn, load_regions())
     pair = with_hash(_covering(("AT", "CH", "DE", "LI")), tmp_path)
-    write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=False)
+    write_hand_entries(conn, [pair], [], full_ids=[])
     before = _row(conn, "example-dach")
-    monkeypatch.setattr("earthx.catalog.listed_store._coverage_footprint", _no_footprint_measured)
-    assert write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=False) == ((), ())
+    with monkeypatch.context() as patch:
+        _no_upsert(patch)
+        assert write_hand_entries(conn, [pair], [], full_ids=[]) == ((), ())
     assert _row(conn, "example-dach") == before
 
 
-def test_a_hand_entry_is_derived_anew_where_the_outlines_changed_or_its_row_differs(
+def test_a_hand_entry_goes_through_the_upsert_where_its_row_differs_in_anything_it_compares(
     conn: psycopg.Connection, tmp_path: Path
 ) -> None:
     regions = load_regions()
     write_regions(conn, regions)
     pair = with_hash(_covering(("AT", "CH", "DE", "LI")), tmp_path)
     write_hand_entries(conn, [pair], [], full_ids=[])
-    # New outlines: the footprint of the named states is measured again and differs.
-    assert write_regions(conn, [region for region in regions if region.code != "LI"]) > 0
-    with pytest.raises(ConfigError, match="earthx_region lacks"):
-        write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=True)
+    # A footprint other than the one the file and the outlines give, with everything else equal (as after a change of
+    # PostGIS or of how the footprint is measured): written again, as before M5-66.
+    conn.execute(
+        "UPDATE public.earthx_listed_entry SET footprint = ST_MakeEnvelope(0, 0, 1, 1, 4326)"
+        " WHERE dataset_id = 'example-dach'"
+    )
+    assert write_hand_entries(conn, [pair], [], full_ids=[]) == (("example-dach",), ())
+    # Changed outlines change the footprint of the named states.
+    write_regions(
+        conn, [r if r.code != "LI" else replace(r, outline=_box_outline(9.4, 47.0, 9.7, 47.3)) for r in regions]
+    )
+    assert write_hand_entries(conn, [pair], [], full_ids=[]) == (("example-dach",), ())
     write_regions(conn, regions)
-    # A row that is not published as the file says is written again, outlines or not.
+    write_hand_entries(conn, [pair], [], full_ids=[])
+    # A row that is not published as the file says.
     conn.execute(
         "UPDATE public.earthx_listed_entry SET state = 'in_review', verdict = 'ok' WHERE dataset_id = 'example-dach'"
     )
-    assert write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=False) == (("example-dach",), ())
+    assert write_hand_entries(conn, [pair], [], full_ids=[]) == (("example-dach",), ())
     assert _state(conn, "example-dach") == "published"
-    # So is one whose file changed.
-    assert write_hand_entries(conn, [(pair[0], "c" * 64)], [], full_ids=[], outlines_changed=False) == (
-        ("example-dach",),
-        (),
-    )
+    # A file with another hash.
+    assert write_hand_entries(conn, [(pair[0], "c" * 64)], [], full_ids=[]) == (("example-dach",), ())
+
+
+def _box_outline(west: float, south: float, east: float, north: float) -> dict:
+    ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
+    return {"type": "MultiPolygon", "coordinates": [[ring]]}
 
 
 def test_regions_and_municipalities_are_written_in_one_statement_each_with_the_same_counts(

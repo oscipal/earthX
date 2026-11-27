@@ -104,9 +104,7 @@ def main() -> int:
                 # First the rows a full entry took over: a hand entry that went full leaves listed/ in the same
                 # commit, and its row is then superseded, not a tombstone (adr/0033 §11).
                 superseded = supersede(conn, full_ids)
-                listed, blocked_hand = write_hand_entries(
-                    conn, hand_entries, blocklist, full_ids=full_ids, outlines_changed=regions_changed > 0
-                )
+                listed, blocked_hand = write_hand_entries(conn, hand_entries, blocklist, full_ids=full_ids)
                 tombstones = apply_blocklist(conn, blocklist)
             with step("listings of full entries"):
                 # The listings a full entry names (also_listed_as) are its duplicates, whatever the last report knew
