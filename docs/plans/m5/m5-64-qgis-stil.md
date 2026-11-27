@@ -1,6 +1,6 @@
 # M5-64 — QGIS-Stil bei jedem Export
 
-**Stand:** 27.11.2026, Plan mit Fragen an Otto (§8). Umsetzung nach den Empfehlungen in zwei Draft-PRs (§9); wo eine Antwort anders ausfällt, ändert dieselbe Session nach.
+**Stand:** 27.11.2026, Plan mit Fragen an Otto (§8), **umgesetzt nach den Empfehlungen** in zwei Draft-PRs (§9, §11); wo eine Antwort anders ausfällt, ändert dieselbe Session nach.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Grundlagen:** `docs/adr/0028-band-export-formen.md` §6, `docs/plans/m5/m5-60-darstellung-je-band.md` §3.2, §11, §13–§15, `docs/plans/m5/m5-62-klassenlegende.md` §5, `docs/adr/0035-darstellung-am-operator.md`, Entscheidungslog bis 27.11.2026 (Vorgabe Otto 20.11.2026, M5-68 F11–F14 vom 27.11.2026).
 
@@ -163,7 +163,7 @@ Form des Looks (ein JSON-Objekt; im Rezept nie, in keiner URL außer als Darstel
 2. Der Look beim Start des Jobs (müsste am Job gespeichert werden, Migration).
 
 **F4 – Ganze Szene „per band“, ZIP im Browser aus den Originaldateien**
-1. Auch dort eine `.qml` je Datei. Der Browser holt sie vom Server (neuer Endpunkt `POST /collections/{dataset}/styles`, Stile aus derselben Funktion); gemessen wird dort nicht, ein Look `measured` ohne Zahlen nimmt den Bereich der Ansicht oder sonst die Messung der ersten Szene (Statistik des Tilers, gecacht). **Empfehlung.**
+1. Auch dort eine `.qml` je Datei. Der Browser holt sie vom Server (neuer Endpunkt `POST /collections/{dataset}/styles`, Stile aus derselben Funktion wie beim Zuschnitt). Ein Look `measured` ohne Zahlen nimmt den Bereich der Ansicht, sonst misst der Server die Datei der ersten Szene einmal, wie der Zuschnitt seine Datei misst (aus der Übersicht, höchstens 1024 px). **Empfehlung, umgesetzt.**
 2. Dort keine `.qml` (es sind unveränderte Originale).
 
 **F5 – Look `measured`/`percentiles` ohne Zahlen im Auftrag** (z. B. „Download crop“ aus der Auswahl ohne offene Ansicht)
@@ -194,3 +194,11 @@ Form des Looks (ein JSON-Objekt; im Rezept nie, in keiner URL außer als Darstel
 
 - PR 1: `pytest` der geänderten Module (`tests/earthx/access`, `tests/earthx/api`, `tests/earthx/processing`), der QGIS-Test lokal mit QGIS 3.34, `ruff check backend`, `lint-imports`.
 - PR 2: Vitest der geänderten Module, `npx tsc -b`, `npm run lint`, Browser-Check `frontend/e2e/m5-64-qgis-style.cjs` (der Auftrag trägt den Look, das ZIP enthält die `.qml`) bei 1280×800 und 360×740, dazu `band-download.cjs` und `view-index.cjs`.
+
+## 11. Stand der Umsetzung (27.11.2026)
+
+- **PR 1** ([#428](https://github.com/oscipal/earthX/pull/428)): Plan, Backend, Referenzdateien von QGIS 3.34, `adr/0028` §6, Entscheidungslog.
+- **PR 2** (auf PR 1 gestapelt): Frontend; der Look geht mit „Download crop“, dem Export-Angebot, den ganzen Szenen (Job und ZIP im Browser), dem Index-Download und dem Download einer Ergebnis-Ebene mit.
+- Ein Ergebnis einer Ebene mit einem Band kennt im Browser oft den Namen seines Bands nicht. Der Server gibt dann den einen Look dem einen Band (`result_styles.py`).
+- Gemessen [M]: QGIS rechnet einen Bereich beim Laden nicht nach, auch wenn `minMaxOrigin` „Cumulative cut“ sagt; es behält die Zahlen der Datei. Deshalb schreibt jeder Stil Zahlen (F5 Option 2 wäre wirkungslos).
+- Ohne Look und ohne Ansicht („Download crop“ aus der Auswahl) gilt der Look der Collection. Bündel aus „Download all“ nehmen die Looks der Ergebnisse ohne Hand; einen Look je Job nimmt der Server an (`looks`), die Oberfläche schickt ihn nur beim Index-Download mehrerer Gruppen.
