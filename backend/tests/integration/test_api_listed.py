@@ -767,6 +767,58 @@ async def test_number_matched_is_there_for_a_small_catalogue_and_counts_what_the
     assert kenya["numberMatched"] == len(GLOBAL_FULL) + len(LISTED_IDS_IN_KENYA) and kenya["numberReturned"] == 2
 
 
+async def test_with_text_number_matched_counts_the_hits_of_the_filters_and_is_left_out_above_the_cap(
+    client, monkeypatch
+):
+    body = {"q": "Shared title"}
+    assert (await client.post("/stac/collections", json=body)).json()["numberMatched"] == 2
+    assert (await client.post("/stac/collections", json={**body, "region": ["CH"]})).json()["numberMatched"] == 0
+    assert (await client.post("/stac/collections", json={**body, "entry": "full"})).json()["numberMatched"] == 0
+    # M5-66: the filters stand in the search, so the number is that of the filtered hits, not of all.
+    monkeypatch.setattr("earthx.api.collection_search.MAX_COUNTED", 1)
+    above = (await client.post("/stac/collections", json=body)).json()
+    assert "numberMatched" not in above and above["numberReturned"] == 2
+    assert (await client.post("/stac/collections", json={**body, "entry": "full"})).json()["numberMatched"] == 0
+
+
+async def test_with_text_a_page_after_the_last_hit_is_empty_and_has_no_next(client):
+    response = await client.post("/stac/collections", json={"q": "Shared title", "offset": 2})
+    assert (_ids(response), response.json()["numberMatched"], _next(response)) == ([], 2, None)
+    first = await client.post("/stac/collections", json={"q": "Shared title", "limit": 1})
+    assert len(_ids(first)) == 1 and _next(first)["body"]["offset"] == 1
+
+
+
+async def test_with_text_the_pages_go_on_to_the_last_hit_whatever_the_depth(client, monkeypatch):
+    # M5-66 F2 = 2: the depth of each arm grows with the page, so a depth of 1 still reaches every hit, one per page.
+    monkeypatch.setattr("earthx.api.collection_search.DEPTH", 1)
+    seen, body = [], {"q": "Shared title", "limit": 1}
+    while True:
+        response = await client.post("/stac/collections", json=body)
+        seen += _ids(response)
+        following = _next(response)
+        if following is None:
+            break
+        body = following["body"]
+    assert sorted(seen) == ["shared-title-a", "shared-title-b"]
+    assert response.json()["numberMatched"] == len(seen)
+
+
+async def test_with_text_each_arm_ranks_one_beyond_the_page(client, monkeypatch):
+    from earthx.api import collection_search
+
+    depths = []
+    search = collection_search.search_datasets
+
+    async def spy(*args, **kwargs):
+        depths.append(kwargs["depth"])
+        return await search(*args, **kwargs)
+
+    monkeypatch.setattr(collection_search, "search_datasets", spy)
+    for offset in (0, 980, 5_000):
+        await client.post("/stac/collections", json={"q": "Shared title", "offset": offset})
+    assert depths == [collection_search.DEPTH, 1_001, 5_021]
+
 # --- items ------------------------------------------------------------------------------------------------------------
 
 

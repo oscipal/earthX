@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from earthx.catalog import entry_files
 from earthx.catalog import registry as registry_module
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, dump_yaml, load_entry, load_retired, read_yaml, to_plain
@@ -347,3 +348,66 @@ def test_no_file_of_the_platform_is_written_with_a_dumper_of_its_own() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         assert "yaml.dump(" not in text and "yaml.safe_dump(" not in text and "SafeDumper" not in text, path.name
+
+
+# --- the parser of libyaml (M5-66) -------------------------------------------------------------------------------------
+
+_CATALOG = Path(__file__).resolve().parents[2] / "catalog"
+_TEXTS = [
+    "title: a\ntitle: b\n",
+    "a: &x 1\nb: *x\n",
+    "a: [1\n",
+    "a: *nowhere\n",
+    "1: a\n",
+    "? [a]\n: 1\n",
+    "a: !!python/object:os.system x\n",
+    "a: !!timestamp 2026-11-27\n",
+    "d: 2026-11-27\nn: 0o17\nh: 0x1f\nb: yes\nt: true\nf: 1_000\ns: 1:20\ne:\n",
+    "\x07a: 1\n",
+    "a:\tb\n  c: 1\n",
+    "a:\t1\n",
+    'x: "a"\t\n',
+    "- a\t\n",
+    "a: [1,\t2]\n",
+    "a: 1 \t# c\n",
+    "a: x\n  \tb\n",
+    "- a\n- [b, {c: d}]\n",
+    "",
+]
+
+
+def _strict_in_python(text: str) -> object:
+    return yaml.load(text, Loader=entry_files._StrictLoader)
+
+
+def _outcome(load, text: str) -> object:
+    try:
+        return ("data", repr(load(text)))
+    except yaml.YAMLError as error:
+        return ("error", str(error))
+
+
+def test_libyaml_is_there_and_reads_the_files_of_the_platform() -> None:
+    assert entry_files._FastStrictLoader is not None
+    files = sorted(_CATALOG.rglob("*.yaml"))
+    assert len(files) > 20
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        assert _outcome(entry_files._load, text) == _outcome(_strict_in_python, text), path.name
+
+
+@pytest.mark.parametrize("text", _TEXTS)
+def test_libyaml_and_the_loader_in_python_give_the_same_data_and_the_same_errors(text: str) -> None:
+    assert _outcome(entry_files._load, text) == _outcome(_strict_in_python, text)
+
+
+@pytest.mark.parametrize("text", _TEXTS)
+def test_without_libyaml_the_loader_in_python_reads_alone(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    expected = _outcome(_strict_in_python, text)
+    monkeypatch.setattr(entry_files, "_FastStrictLoader", None)
+    assert _outcome(entry_files._load, text) == expected
+
+
+def test_a_file_without_anchors_is_read_by_libyaml(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(entry_files._StrictLoader, "compose_node", None)
+    assert entry_files._load("a: [1, 2]\nb: {c: d}\n") == {"a": [1, 2], "b": {"c": "d"}}
