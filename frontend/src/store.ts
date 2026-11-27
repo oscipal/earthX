@@ -60,7 +60,7 @@ import { footprintsKeyOf, indexKeyOf, mosaicKeyOf, MAX_FOOTPRINT_ITEMS, MAX_MOSA
 import type { Mosaics, SceneEntry } from './mosaic';
 import { ensureFootprints, ensureSelection, withSelection } from './mosaicSelection';
 import { isComposite, lookOfPreset, type PresetParam, type PresetParams, type QuickPreset } from './quickPresets';
-import { knownLookOf, lookOfStepPreset, statsOfTiler } from './presetLooks';
+import { keepStepUnit, knownLookOf, lookOfStepPreset, statsOfTiler } from './presetLooks';
 import { lookRange, percentOfLook, type DisplayLook } from './displayLook';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
@@ -819,7 +819,9 @@ async function fillStepRange(set: SetState, get: GetState): Promise<boolean> {
     let stats = null;
     if (measure) {
       try {
-        stats = statsOfTiler((await measureView(measure)).statistics);
+        const { statistics } = await measureView(measure);
+        keepStepUnit(shown.datasetId, preset, statistics);
+        stats = statsOfTiler(statistics);
       } catch (e) {
         set({ notice: `Could not measure ${preset.label}: ${(e as Error).message}` });
       }
@@ -3545,6 +3547,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // on its fixed range); the colormap in the fields stays.
       const { info } = firstSceneOfView(s);
       const preset = info ? viewIndexOf(pendingPresetLook(s), s.datasets.find((d) => d.id === info.datasetId)?.collection) : null;
+      if (info && preset) keepStepUnit(info.datasetId, preset, stats);
       const look = info && preset ? await lookOfStepPreset(info.datasetId, preset) : (band?.look ?? null);
       const drawn = look ? lookRange(look, statsOfTiler(stats)) : null;
       const range: [number, number] | null = drawn ? [Number(drawn.vmin), Number(drawn.vmax)] : autoRescale(stats);
