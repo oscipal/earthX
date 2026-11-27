@@ -30,12 +30,13 @@ import pytest
 import yaml
 
 from earthx.catalog import licences as licences_module
-from earthx.catalog.approvals import load_approvals
+from earthx.catalog.approvals import file_stem, load_approvals
 from earthx.catalog.licences import load_licences
 from earthx.catalog.sources import SourceConfig
 from earthx.discovery import cycle, grants, harvest, linkcheck, propose, report, spellings
 from earthx.discovery.harvest import EXIT_PAUSED, run_harvest
 from earthx.gateway import Gateway, Policy
+from tests.approval_checks import assert_approvals_are_consistent
 from tests.integration.test_harvest_ckan import Catalogue, _gateway, _package
 from tests.integration.test_report import World, _ckan, _regions, world  # noqa: F401  (fixtures)
 
@@ -325,6 +326,47 @@ def test_a_second_run_on_the_same_day_takes_the_files_of_the_first_and_changes_n
     # Nothing a run writes may be refused by the loaders of the next one.
     load_approvals(cycle_world.approvals)
     load_licences(cycle_world.world.sources, cycle_world.licences)
+
+
+def _late_package(number: int) -> dict[str, Any]:
+    """A package that the source changed after the first run of the day, in the spelling the catalogue knows."""
+    key = f"late{number}"
+    return _package(
+        key,
+        title=f"Bodenkarte {key}",
+        license_id="CC BY 4.0",
+        spatial="Kanton Bern",
+        organization={"title": "Kanton Zug"},
+        extras=[],
+        metadata_modified="2026-11-27T00:00:00",
+        resources=[{"url": f"https://amt.example.org/daten/{key}.tif", "format": "GeoTIFF"}],
+    )
+
+
+def test_several_runs_on_one_day_with_a_stack_of_the_same_source_each_write_files_that_ci_accepts(
+    cycle_world: Cycle,
+) -> None:
+    """Otto's run of 25.11. (fix 4): the second run of a day wrote ``<day>-<source>-2.yaml`` and the check of CI on the
+    shipped files wanted ``<day>-<source>.yaml``. A second and a third run on one day are the normal case: each forms a
+    new stack of the source (a changed find; the paused source reads on), so each writes a file of its own. What each
+    run leaves in the directory is held against the checks of CI, the one function of ``test_approvals``."""
+    a, b = cycle_world.a.source_id, cycle_world.b.source_id
+    for number, trial in ((1, True), (2, False), (3, False)):
+        if number > 1:
+            cycle_world.catalogues[a].changed = [_late_package(number)]
+        run = cycle_world.run(trial=trial)
+        names = assert_approvals_are_consistent(cycle_world.approvals, cycle_world.world.sources)
+        assert f"{file_stem(TODAY, a, number)}.yaml" in run.approvals
+        assert all(f"approvals/{name}" in names for name in run.approvals)
+    # In the order they were written, each later file of a source holds a newer stack. The trial run decided nothing,
+    # so the first file stays pending; the runs after it decided by the rules.
+    found: dict[str, list[tuple[int, str, str | None]]] = {a: [], b: []}
+    for approval, _, _ in load_approvals(cycle_world.approvals):
+        found[approval.source_id].append((approval.batch_id, approval.decision, approval.decided_by))
+    for source_id, stacks in found.items():
+        assert stacks == sorted(stacks) and len({batch for batch, _, _ in stacks}) == len(stacks) >= 2, source_id
+        assert stacks[0][1:] == ("pending", None) and all(s[1:] == ("approved", "rules") for s in stacks[1:]), source_id
+    assert len(found[a]) == 3
 
 
 def test_the_files_of_the_run_say_that_a_pause_is_a_note_and_not_an_error(cycle_world: Cycle) -> None:

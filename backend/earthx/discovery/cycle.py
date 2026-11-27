@@ -31,7 +31,7 @@ from typing import Any
 import psycopg
 import yaml
 
-from earthx.catalog.approvals import APPROVALS_DIR, load_approvals
+from earthx.catalog.approvals import APPROVALS_DIR, is_file_name, load_approvals
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.registry import ConfigError
@@ -682,9 +682,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-_FILE_NAME = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z][a-z0-9-]{1,62}(?:-\d+)?\.yaml")
-
-
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     configure_logging()
@@ -695,7 +692,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         with psycopg.connect(autocommit=True) as conn:
             if args.command == "decide":
-                if not all(_FILE_NAME.fullmatch(name) for name in args.files):
+                if not all(is_file_name(name) for name in args.files):
                     print("cycle failed: decide takes names of approval files", file=sys.stderr)
                     return 1
                 reports = {p.stem.removeprefix("report-"): _load(p) for p in sorted(args.run.glob("report-*.json"))}
