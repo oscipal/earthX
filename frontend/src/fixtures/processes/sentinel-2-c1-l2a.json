@@ -30,6 +30,15 @@
       },
       "title": "Origin of the area of interest"
     },
+    "exportStyle": {
+      "description": "For an export only: how the layer is drawn, in physical values, for the QGIS style (.qml) beside each file: {\"band\", \"colormap\", \"range\"} (colormap null: grey) or {\"rgb\", \"ranges\"}. Left out, each file is drawn with the look of the collection. Not part of the recipe, its hash or the cache.",
+      "maxOccurs": 1,
+      "minOccurs": 0,
+      "schema": {
+        "type": "object"
+      },
+      "title": "Look of the layer"
+    },
     "recipe": {
       "description": "The order itself, inline. It carries no address: the platform resolves items and assets. An input given by reference is refused.",
       "maxOccurs": 1,

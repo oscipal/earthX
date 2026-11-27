@@ -26,6 +26,7 @@ __all__ = [
     "AOI_PROVENANCE",
     "AOI_PROVENANCE_FIELDS",
     "AOI_PROVENANCE_MAX_CHARS",
+    "EXPORT_STYLE",
     "EXPORT_OUTPUTS",
     "FORM_NOTE",
     "INLINE_ONLY",
@@ -99,6 +100,8 @@ EXPORT_OUTPUTS = ("export", "recipe", "methods")
 AOI_PROVENANCE = "aoiProvenance"
 AOI_PROVENANCE_FIELDS = ("attribution", "license", "source")
 AOI_PROVENANCE_MAX_CHARS = 200
+#: The input beside the order of an export: how the layer is drawn, for the QGIS style of each file (M5-64).
+EXPORT_STYLE = "exportStyle"
 
 
 def _link(root: str, path: str, rel: str, type_: str | None = _JSON, title: str | None = None) -> dict[str, str]:
@@ -184,6 +187,17 @@ def process_description(root: str, operators: OperatorRegistry, config: DatasetC
                     "additionalProperties": False,
                     "minProperties": 1,
                 },
+            },
+            EXPORT_STYLE: {
+                "title": "Look of the layer",
+                "description": (
+                    "For an export only: how the layer is drawn, in physical values, for the QGIS style (.qml) beside "
+                    'each file: {"band", "colormap", "range"} (colormap null: grey) or {"rgb", "ranges"}. Left out, '
+                    "each file is drawn with the look of the collection. Not part of the recipe, its hash or the cache."
+                ),
+                "minOccurs": 0,
+                "maxOccurs": 1,
+                "schema": {"type": "object"},
             },
         },
         "outputs": {

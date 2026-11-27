@@ -32,7 +32,7 @@ import math
 import time
 import zipfile
 import zlib
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -87,6 +87,7 @@ from earthx.access.crop_rules import (
     rasterize_aoi,
     source_crop_grid,
 )
+from earthx.access.qgis_style import ExportStyle, file_qml, qml_name
 from earthx.access.radar import (
     JoinedPass,
     RadarGrid,
@@ -178,7 +179,9 @@ def attachment_limits(scenes: int) -> dict[str, int]:
 
 
 _ATTRIBUTION_ENTRIES = 8
-_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices", "scenes"})
+_ATTACHMENT_KEYS = frozenset(
+    {"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices", "scenes", "style", "true_color"}
+)
 
 _ATTRIBUTION_CHARS = 1024
 
@@ -216,6 +219,10 @@ class Attachments:
     #: The scenes the notice names, counted by `api` from the order; the limit of ``NOTICE.txt`` grows with it
     #: (:func:`attachment_limits`), up to :data:`MAX_ATTACHMENT_SCENES`. 0 for attachments written before F4 = 2.
     scenes: int = 0
+    #: How the layer of the export is drawn (M5-64), for the QGIS style of each file; ``None`` where the order said nothing.
+    style: ExportStyle | None = None
+    #: The bands of the dataset's true-colour picture, drawn as one where a file holds all three (M5-64 plan §4).
+    true_color: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
@@ -249,6 +256,10 @@ class Attachments:
             data["notices"] = [notice.model_dump(mode="json") for notice in self.notices]
         if self.scenes:
             data["scenes"] = self.scenes
+        if self.style is not None:
+            data["style"] = self.style.to_json()
+        if self.true_color:
+            data["true_color"] = list(self.true_color)
         return data
 
     @classmethod
@@ -264,11 +275,18 @@ class Attachments:
             bands = tuple(BandMeta.from_json(band) for band in data.get("bands", ()))
             notes = tuple(data.get("notes", ()))
             notices = tuple(RecipeNotice.model_validate(notice) for notice in data.get("notices", ()))
+            style = ExportStyle.from_json(data["style"]) if "style" in data else None
+            true_color = tuple(data.get("true_color", ()))
         except (ValueError, TypeError, KeyError):
             raise AttachmentsInvalid("the attachments hold files and attribution") from None
         if not all(isinstance(note, str) and len(note) <= _ATTRIBUTION_CHARS for note in notes):
             raise AttachmentsInvalid("the notes are short texts")
-        return cls(dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices, data.get("scenes", 0))
+        if true_color and (len(true_color) != 3 or not all(isinstance(band, str) for band in true_color)):
+            raise AttachmentsInvalid("the true-colour picture is three band names")
+        return cls(
+            dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices, data.get("scenes", 0),
+            style, true_color,
+        )  # fmt: skip
 
 
 @dataclass(frozen=True, slots=True)
@@ -689,6 +707,14 @@ class _Export:
             dtype = written.dtypes[0]
         return data_name, mask_name, dtype
 
+    def style(self, data_name: str, members: Sequence[BandMeta], attachments: Attachments) -> bytes:
+        """The QGIS style of a written data file (M5-64): the look the order carries, else that of the collection."""
+        try:
+            with open_workfile(self.workdir, data_name) as dataset:
+                return file_qml(dataset, members, attachments.style, attachments.true_color).encode("utf-8")
+        except RasterioError as error:
+            raise OutputUnreadable(f"a file of the export does not read back: {type(error).__name__}") from None
+
     def pack(self, files: list[tuple[str, str]], texts: list[tuple[str, bytes]]) -> Path:
         """``export.zip``: the rasters stored as they are, the texts deflated; each file goes once it is in."""
         path = self.new_file(EXPORT_NAME)
@@ -754,6 +780,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
             group_count = len(entry.groups)
             files: list[tuple[str, str]] = []
             listed: list[BandsFile] = []
+            styles: list[tuple[str, bytes]] = []
             layout = recipe.output.layout  # type: ignore[union-attr]  # `check_export`: a crop
             notice = attachments.files[NOTICE_FILENAME]
             if is_radar(recipe):
@@ -773,6 +800,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     folder = EXPORTS_DIR + group_dirname(output.group, group_count)
                     files.append((folder + output.plan.name, data_name))
                     files.append((folder + output.plan.mask_name, mask_name))
+                    styles.append((folder + qml_name(output.plan.name), state.style(data_name, output.members, attachments)))
                     listed.append(
                         BandsFile(
                             folder + output.plan.name,
@@ -798,6 +826,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     folder = EXPORTS_DIR + group_dirname(output.group, group_count)
                     files.append((folder + output.plan.name, data_name))
                     files.append((folder + output.plan.mask_name, mask_name))
+                    styles.append((folder + qml_name(output.plan.name), state.style(data_name, output.members, attachments)))
                     target = output.plan.resolution_m if layout.form == "multi_band" else None
                     listed.append(
                         BandsFile(
@@ -831,6 +860,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 (NOTICE_FILENAME, notice.encode("utf-8")),
             ]
             if layout is not None:
+                texts += styles
                 texts += [(member, text.encode("utf-8")) for member, text in class_files(listed)]
                 texts.append(
                     (
