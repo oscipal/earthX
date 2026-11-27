@@ -141,7 +141,7 @@ Bester Wert je Modell, bei dem Filter- und Negativfragen bestehen; die Schwelle 
 - Fixture `backend/tests/fixtures/search/embeddings.json`: Modell, Revision, Dimension, die Vektoren aller Fragen, der Hintergrundtexte und der eingebetteten Texte des Katalogs, je mit SHA-256 des Textes. Die CI rechnet nichts mit dem Modell.
 - Der Test schreibt die Vektoren aus der Fixture in die Spalte und stellt jede Frage über `search_datasets` mit Vektorarm. Weicht ein Text vom Prüfwert ab, scheitert er mit dem Hinweis auf das Skript zum Neurechnen.
 - Grenze ab M5-23: F5 bindet (Recall@5 ≥ 0,9 und MRR@10 ≥ 0,8 je Sprache, alle Filterfragen, höchstens eine Negativfrage mit Treffer); die Ratsche der lexikalischen Arme bleibt für den Test ohne Vektorarm.
-- Skript zum Neurechnen: `scripts/m5-23-embeddings.py`, läuft im Image `search` (Befehl in §8).
+- Skript zum Neurechnen: `scripts/m5-23-embeddings.py`, läuft im Image `search` gegen eine Datenbank nach `catalog-load` (Befehl im Kopf des Skripts). Die Fixture hat 106 Vektoren (110 mit PR 2), 225 KB.
 
 ## 5. Breite Wörter und Glossar im Volltext (PR 2)
 
@@ -309,7 +309,8 @@ Zurückschicken: `vorher-suche.csv`, `nachher-suche.csv`, `*-laden.txt`, `*-spei
 - Gleichzeitigkeit: beide Verbindungen werden genutzt; Ergebnis gleich wie nacheinander.
 - `api`: Startprüfung ohne Embeddings der vollen Einträge; Route mit und ohne Modell.
 - Image: Stufen, Runner ohne Modell, Prüfsummen gesetzt; kein `from_pretrained`, kein `huggingface_hub`.
-- Bewertungs-Set mit Vektorarm besteht F5; Prüfwerte der Fixture.
+- Bewertungs-Set mit Vektorarm besteht F5; Prüfwerte der Fixture; gleichzeitig und nacheinander gleiche Antworten.
+- PR 2: gleiche Ränge mit den Einzelwörtern einer Einheit; eine Glossargruppe ohne Glied im Index ist unbekannt; Klassennamen im Suchtext; Zählung und Ratsche des Sets mit Q53–Q56.
 
 ## 13. Quellen
 
