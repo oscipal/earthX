@@ -3,6 +3,7 @@
 // "Download crop" of a layer that shows an index (NM4-14b, Otto 1.11.2026): the result a Processing job would give, with no
 // Processing panel and no job in the list of jobs. `fetch` answers the process description and the job API.
 
+import { styleQuery } from './exportStyle';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from './datasets';
@@ -121,6 +122,8 @@ const run = (layer = layerOf(), list = datasets()) => {
   return { done, saved, text, controller };
 };
 
+const INDEX_STYLE = styleQuery({ band: 'band', colormap: 'rdylgn', range: [-1, 1] });
+
 describe('which layers are downloaded as an index', () => {
   it('are those whose look names an index the dataset offers', () => {
     expect(presetOfLayer(layerOf(), datasets())?.name).toBe('NDVI');
@@ -217,7 +220,8 @@ describe('the download', () => {
     expect(placed).toHaveLength(1);
     expect(JSON.stringify(placed[0].body)).toContain('"band_math"');
     expect(JSON.stringify(placed[0].body)).toContain('(nir - red) / (nir + red)');
-    expect(saved).toEqual([`/processing/jobs/${JOB_A}/results/result.zip`]);
+    // The ZIP draws the index in QGIS as the layer draws it (M5-64).
+    expect(saved).toEqual([`/processing/jobs/${JOB_A}/results/result.zip${INDEX_STYLE}`]);
     expect(text[0]).toBe('Computing NDVI…');
     expect(text.some((t) => t.includes('40%'))).toBe(true);
     // No Processing panel, no job in its list, nothing kept in the browser.
@@ -234,7 +238,7 @@ describe('the download', () => {
     expect(await done).toBeNull();
     expect(calls.filter((c) => c.url.endsWith('/execution'))).toHaveLength(2);
     expect(calls.find((c) => c.url === '/processing/bundles')?.body).toEqual({ jobs: [JOB_A, JOB_B] });
-    expect(saved).toEqual(['/processing/bundles/ZZZZZZZZZZZZZZZZZZZZZZ']);
+    expect(saved).toEqual([`/processing/bundles/ZZZZZZZZZZZZZZZZZZZZZZ${INDEX_STYLE}`]);
   });
 
   it('says what the job said where it fails, and downloads nothing', async () => {

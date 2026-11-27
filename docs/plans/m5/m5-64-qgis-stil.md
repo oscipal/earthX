@@ -224,3 +224,15 @@ Je Fall: Export starten, ZIP entpacken, die `.tif` in QGIS per Ziehen öffnen (d
 **Gemessen [M]:** QGIS 3.34.4 liest jede erzeugte `.qml` und schreibt dieselben Elemente, Attribute und Zahlen zurück (Referenzdateien `backend/tests/fixtures/qgis/`, Skript `make_reference.py`). Die Farben, die QGIS mit einer erzeugten Farbskala zeichnet (`viridis`, `terrain`, `rdbu_r`, `magma`, je 97 Werte von 10 % unter Min bis 10 % über Max), weichen höchstens 4/255 je Kanal von denen des Tilers ab (`terrain` 4, sonst 2); außerhalb des Bereichs die Endfarben wie beim Tiler.
 
 **Tests:** `tests/earthx/access/test_qgis_style.py` (neu: Referenzdateien, Farbtabelle des Tilers, `_r`, Maskierung der Namen, Regel §4 Zeile für Zeile, Stil und Fehlerfälle, Messung mit Skalierung, ohne Werte, konstant, verkleinertes Lesen, Ergebnis mit und ohne Stil, Look im JSON); erweitert: `test_download_forms.py`, `test_download.py`, `test_download_route.py` (Stil, 422), `test_export_layouts.py` (Job schreibt dieselben `.qml` wie der Zuschnitt, mit und ohne Stil, keine für Masken), `test_export_layout_intake.py`, `test_processing_route.py` (`exportStyle`, 400), `test_result_zip_route.py` (`result.qml`, Stil, ETag, Range, 400), `test_processing_docs.py`; Prozess-Fixtures neu geschrieben.
+
+## 11. Umsetzung PR 2: Frontend (27.11.2026)
+
+| Teil | Stelle |
+|---|---|
+| Stil aus dem angewandten Look (§3): Band, Standardbild aus einem Band, Komposit aus unveränderten Bändern als Farbbild; nichts für Index, Hilfsbild-Echtfarbe, Klassen, `stored` oder unfertige Bereiche. Ergebnis-Ebene: aus der Kachel-URL (`bidx`, `rescale`, `colormap_name`) und den Bandnamen | `frontend/src/exportStyle.ts` (neu) |
+| Zuschnitt: `style` im Body; zu großer Zuschnitt als Export-Job und ganze Szene als Job: `exportStyle` im Auftrag (nur bei Exporten) | `store.ts::confirmDownload`, `startWholeScenes`, `api.ts`, `processing.ts`, `components/ExportJobOffer.tsx`, `processingStore.ts::placeOrder`, `downloadJob.ts` |
+| Index-Download: `?style=` an `result.zip` bzw. das Bündel; Ergebnis-Ebene: an „Download (ZIP)“ der Zeile. Der Processing-Manager kennt keine Ebene und schickt keinen Stil (F6) | `indexDownload.ts`, `components/LayerDownload.tsx` |
+
+**Befund:** Komposit-Vorgaben rechnen ihre Kanäle als eigene Bänder (`false_colour_ir_r` …); ein Farbbild in der `.qml` gibt es deshalb nur, wenn jeder Kanal ein Band der Daten unverändert ist (bei den heutigen Vorgaben `false_colour_ir` und `swir` der Fall).
+
+**Tests:** `exportStyle.test.ts` (neu), erweitert `api.test.ts`, `processing.test.ts`, `store.confirmDownload.test.ts`, `indexDownload.test.ts`, `IndexLayer.test.tsx`, `ResultControls.test.tsx`; Browser-Check `e2e/band-download.cjs` (Body des Zuschnitts trägt `style`, der Auftrag der ganzen Szene `exportStyle`; hell, dunkel, breit, schmal: alle grün).

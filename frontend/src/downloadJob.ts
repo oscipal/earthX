@@ -2,6 +2,7 @@
 // the export order of the platform with a `layout` (no AOI for whole scenes, so the server takes the union of the footprints). Like the
 // download of an index (`indexDownload.ts`) it is placed, waited for and downloaded here and never enters the list of jobs.
 
+import type { ExportStyle } from './exportStyle';
 import type { ExportLayout } from './processing';
 import { dismissJob, estimateOrder, type Order } from './processing';
 import type { DownloadPass } from './download';
@@ -62,8 +63,9 @@ export async function downloadSceneJob(args: {
   onStatus?: (text: string) => void;
   save?: (url: string) => void;
   pollMs?: number;
+  style?: ExportStyle | null;
 }): Promise<{ text: string; tip: string } | null> {
-  const { order, signal, onStatus = () => undefined, save = saveFrom, pollMs = POLL_MS } = args;
+  const { order, signal, onStatus = () => undefined, save = saveFrom, pollMs = POLL_MS, style = null } = args;
   const running = new Set<string>();
   try {
     onStatus('Preparing…');
@@ -77,6 +79,7 @@ export async function downloadSceneJob(args: {
       onStatus,
       save,
       pollMs,
+      style,
     });
   } catch (error) {
     if (signal.aborted) return { text: 'Cancelled.', tip: 'Cancelled.' };

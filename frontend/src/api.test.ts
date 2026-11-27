@@ -412,6 +412,12 @@ describe('downloadCrop', () => {
     expect(body).not.toHaveProperty('common_resolution');
   });
 
+  it('sends the style of the layer for the QGIS style of each file (M5-64), and none where there is none', async () => {
+    const style = { band: 'red', colormap: 'viridis', range: [0.02, 0.24] as [number, number] };
+    expect((await bodyOf({ style })).style).toEqual(style);
+    expect(await bodyOf({})).not.toHaveProperty('style');
+  });
+
   it('one multi-band file sends the common resolution in metres', async () => {
     const body = await bodyOf({ form: 'multi_band', commonResolution: 20 });
     expect(body).toMatchObject({ form: 'multi_band', common_resolution: 20 });

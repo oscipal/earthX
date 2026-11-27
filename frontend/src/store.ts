@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { exportStyleOf } from './exportStyle';
 import * as api from './api';
 import type { CoverageResponse, DownloadForm, PagesSoFar } from './api';
 import { chosenBands, commonResolutionOf, defaultBandKeys, DEFAULT_FORM, effectiveForm, layoutBlock, layoutOf, withBandChoice, type DownloadBand } from './bandChoice';
@@ -3038,7 +3039,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: mixed });
       return;
     }
-    const req = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
+    const chosen = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
+    // How the layer (or the view) is drawn, for the QGIS style beside each file (M5-64).
+    const style = exportStyleOf(layer && !s.downloadSelection ? layer.restore.appliedRender : s.appliedRender, dataset?.collection);
+    const req = style ? { ...chosen, style } : chosen;
     const send = async () => {
       set({ downloading: true, error: null, downloadExportOffer: null });
       try {
@@ -3048,6 +3052,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           assets: req.assets,
           aoi: req.aoi,
           ...(req.layout ? { form: req.layout.form, commonResolution: req.layout.resolution_m } : {}),
+          ...(req.style ? { style: req.style } : {}),
         });
         const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
@@ -4071,7 +4076,14 @@ async function startWholeScenes(s: AppState): Promise<void> {
     const controller = new AbortController();
     downloadJobAbort = controller;
     useAppStore.setState({ downloading: true, error: null, downloadStatus: 'Preparing…' });
-    const problem = await downloadSceneJob({ order, signal: controller.signal, onStatus: (text) => useAppStore.setState({ downloadStatus: text }) });
+    const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
+    const style = exportStyleOf(layer && !s.downloadSelection ? layer.restore.appliedRender : s.appliedRender, dataset?.collection);
+    const problem = await downloadSceneJob({
+      order,
+      signal: controller.signal,
+      onStatus: (text) => useAppStore.setState({ downloadStatus: text }),
+      style,
+    });
     if (downloadJobAbort === controller) downloadJobAbort = null;
     if (controller.signal.aborted) {
       useAppStore.setState({ downloading: false, downloadStatus: null });

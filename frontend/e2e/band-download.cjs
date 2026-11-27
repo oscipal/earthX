@@ -1,9 +1,11 @@
 // Browser check of the choice of bands and files in the download dialog (NM4-75): the real dialog of the real app, with made-up
 // scenes and made-up answers of the platform. Checked in the light and the dark theme, at a wide and a narrow window:
 //   crop       the list of bands from the scene, "None" locks "Download", the form, the common resolution with its (i), no row of
-//              resolution factors in any form, the request that "Download" sends (form, assets, common_resolution), Esc closes nothing
+//              resolution factors in any form, the request that "Download" sends (form, assets, common_resolution, and the applied
+//              look of the view as `style` for the QGIS style of each file, M5-64), Esc closes nothing
 //   whole      "Download full scene" waits for "Download"; one file per resolution shows the estimate and places a job with the
-//              layout and without an AOI; the resampling warning comes first where the platform resamples
+//              layout and without an AOI, with the look of the view as `exportStyle`; the resampling warning comes first where the
+//              platform resamples
 //   layout     nothing overlaps or leaves the dialog, the list scrolls inside it, controls are as high as the others (28 px, 44 px
 //              on the narrow window); a screenshot per case
 //
@@ -135,6 +137,10 @@ const openDialog = async (page, kind) => {
   await page.waitForSelector('.dialog-panel');
   await page.waitForSelector('.dialog-bands');
 };
+// The look applied in the view, as if a band had been chosen and drawn (M5-64): the export carries it.
+const LOOK = { band: 'a_red', colormapName: 'magma', rescale: '0.02,0.24' };
+const STYLE = { band: 'a_red', colormap: 'magma', range: [0.02, 0.24] };
+const applyLook = (page) => page.evaluate((look) => import('/src/store.ts').then(({ useAppStore }) => useAppStore.setState({ appliedRender: look })), LOOK);
 const shot = (page, name, selector = '.dialog-download') => page.locator(selector).screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}.png`) });
 
 async function caseCrop(browser, { theme, viewport }) {
@@ -174,6 +180,7 @@ async function caseCrop(browser, { theme, viewport }) {
   await page.keyboard.press('Escape');
   if (!(await page.locator('.dialog-panel').count())) problems.push(`${label}: Escape closed the dialog`);
   await page.selectOption('.dialog-common select', '20');
+  await applyLook(page);
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('.dialog-panel'), null, { timeout: 5000 }).catch(() => problems.push(`${label}: the dialog stays after the download`));
   expectEq(problems, `${label}: requests`, seen.download.length, 1);
@@ -181,6 +188,7 @@ async function caseCrop(browser, { theme, viewport }) {
   expectEq(problems, `${label}: form`, [body.form, body.common_resolution, 'resolution' in body], ['multi_band', 20, false]);
   // "All" was pressed above: every band of the scene.
   expectEq(problems, `${label}: assets`, body.assets, SPECS.map(([key]) => key));
+  expectEq(problems, `${label}: style`, body.style, STYLE);
   await context.close();
   return { label, problems };
 }
@@ -196,6 +204,7 @@ async function caseWhole(browser, { theme, viewport, resampling }) {
   await page.waitForFunction(() => /About 3\.4 MB/.test(document.querySelector('.dialog-body')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => problems.push(`${label}: no estimate in the dialog`));
   await layout(page, `${label} job`, problems, viewport === 'narrow');
   await shot(page, `${label}-job`);
+  await applyLook(page);
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   if (resampling) {
     await page.waitForSelector('[role="alertdialog"]');
@@ -209,6 +218,7 @@ async function caseWhole(browser, { theme, viewport, resampling }) {
   if (recipe && 'aoi' in recipe) problems.push(`${label}: the order carries an AOI`);
   expectEq(problems, `${label}: layout`, recipe?.output?.layout, { form: 'per_resolution' });
   expectEq(problems, `${label}: groups`, recipe?.inputs?.[0]?.groups, [['S_A', 'S_B']]);
+  expectEq(problems, `${label}: style`, seen.execution[0]?.inputs?.exportStyle, STYLE);
   await context.close();
   return { label, problems };
 }

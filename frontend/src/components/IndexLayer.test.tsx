@@ -400,7 +400,9 @@ describe('the dialog of the download', () => {
     const urls = fetchMock.mock.calls.map(([u, i]) => `${(i as RequestInit | undefined)?.method ?? 'GET'} ${u}`);
     expect(urls.some((u) => u.startsWith('POST /collections/') && u.endsWith('/download'))).toBe(false);
     expect(urls).toContain('POST /processing/processes/recipe/execution');
-    expect(clicked).toEqual([`/processing/jobs/${JOB}/results/result.zip`]);
+    // With the look of the layer for the QGIS style of the result (M5-64).
+    expect(clicked.map((url) => url.split('?')[0])).toEqual([`/processing/jobs/${JOB}/results/result.zip`]);
+    expect(clicked[0]).toContain('?style=');
     expect(useProcessingStore.getState().jobs).toEqual([]);
     expect(useProcessingStore.getState().open).toBe(false);
     expect(useAppStore.getState()).toMatchObject({ downloading: false, downloadDialogLayerId: null, error: null, notice: 'Downloaded "Sentinel-2 L2A · day".' });
@@ -418,7 +420,9 @@ describe('the dialog of the download', () => {
     expect(primary().disabled).toBe(false);
     refused = false;
     await press();
-    expect(clicked).toEqual([`/processing/jobs/${JOB}/results/result.zip`]);
+    // With the look of the layer for the QGIS style of the result (M5-64).
+    expect(clicked.map((url) => url.split('?')[0])).toEqual([`/processing/jobs/${JOB}/results/result.zip`]);
+    expect(clicked[0]).toContain('?style=');
   });
 
   it('says why the job failed, in the dialog', async () => {

@@ -150,6 +150,17 @@ describe('the job API client', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({ inputs: { recipe: ORDER } });
   });
 
+  it('sends exportStyle with an export only (M5-64): a result takes its style at the download', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(status({ status: 'accepted' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const exportStyle = { band: 'red', colormap: null, range: [0, 0.3] as [number, number] };
+    const crop = { ...ORDER, steps: [], output: { kind: 'crop' } } as unknown as typeof ORDER;
+    await placeJob(crop, { exportStyle });
+    await placeJob(ORDER, { exportStyle });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toEqual({ inputs: { recipe: crop, exportStyle } });
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({ inputs: { recipe: ORDER } });
+  });
+
   it('turns a problem document into an HttpError with title, detail and Retry-After', async () => {
     vi.stubGlobal(
       'fetch',

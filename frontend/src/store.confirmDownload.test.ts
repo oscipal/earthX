@@ -148,6 +148,22 @@ describe('confirmDownload — the skipped-groups notice (review finding on M3-17
     expect(s.notice).toMatch(/^Downloaded /);
   });
 
+  it('sends the applied look of the view for the QGIS style of each file (M5-64), and none without one', async () => {
+    vi.mocked(fetch).mockResolvedValue(zipResponse({ 'X-Total-Groups': '2', 'X-Skipped-Groups': '0' }));
+    useAppStore.setState({ appliedRender: { band: 'red', colormapName: 'viridis', rescale: '0.02,0.24' } });
+    await useAppStore.getState().confirmDownload();
+    const sent = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/download'));
+    expect(JSON.parse(String(sent?.[1]?.body)).style).toEqual({ band: 'red', colormap: 'viridis', range: [0.02, 0.24] });
+
+    vi.mocked(fetch).mockClear();
+    useAppStore.getState().openDownloadForSelection('crop');
+    await vi.waitFor(() => expect(useAppStore.getState().downloadBandsLoading).toBe(false));
+    useAppStore.setState({ appliedRender: {} });
+    await useAppStore.getState().confirmDownload();
+    const plain = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/download'));
+    expect(JSON.parse(String(plain?.[1]?.body))).not.toHaveProperty('style');
+  });
+
   it('one group dropped: the dialog stays open with an English hint, singular wording', async () => {
     vi.mocked(fetch).mockResolvedValue(zipResponse({ 'X-Total-Groups': '3', 'X-Skipped-Groups': '1' }));
 

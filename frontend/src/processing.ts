@@ -5,6 +5,7 @@
 //
 // Nothing here logs or stores an order: it carries the AOI (Q8).
 
+import type { ExportStyle } from './exportStyle';
 import { jsonOrThrow, type DownloadForm } from './api';
 import type { Bbox } from './types';
 
@@ -186,8 +187,9 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function orderBody(order: Order, aoiProvenance?: AoiProvenance): string {
-  return JSON.stringify({ inputs: aoiProvenance ? { recipe: order, aoiProvenance } : { recipe: order } });
+// The envelope of an order: the order, where its area came from, and for an export how its layer is drawn (M5-64).
+function orderBody(order: Order, aoiProvenance?: AoiProvenance, exportStyle?: ExportStyle): string {
+  return JSON.stringify({ inputs: { recipe: order, ...(aoiProvenance ? { aoiProvenance } : {}), ...(exportStyle ? { exportStyle } : {}) } });
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -296,13 +298,16 @@ export async function estimateOrder(order: Order, signal?: AbortSignal): Promise
   return doc;
 }
 
-export async function placeJob(order: Order, options: { aoiProvenance?: AoiProvenance } = {}): Promise<StatusInfo> {
+export async function placeJob(
+  order: Order,
+  options: { aoiProvenance?: AoiProvenance; exportStyle?: ExportStyle } = {},
+): Promise<StatusInfo> {
   const status = parseStatusInfo(
     await jsonOrThrow<unknown>(
       await fetch(`${PREFIX}/processes/recipe/execution`, {
         method: 'POST',
         headers: { ...JSON_HEADERS, Prefer: 'respond-async' },
-        body: orderBody(order, options.aoiProvenance),
+        body: orderBody(order, options.aoiProvenance, order.output.kind === 'crop' ? options.exportStyle : undefined),
       }),
     ),
   );
