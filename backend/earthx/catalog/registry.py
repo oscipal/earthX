@@ -376,6 +376,9 @@ class Capabilities:
     quad_pol: bool
     #: The terrain operator (slope, aspect, hillshade, M5-10): only a model of heights sets it (adr/0023 F5).
     terrain: bool
+    #: Radar backscatter in whole numbers, amplitude or intensity (adr/0030 F2, §8): unlocks ``sar_db``. Set only by an entry
+    #: that says the quantity of each of its radar bands in ``DatasetConfig.sar_quantity``.
+    sar_backscatter: bool
     single_coverage_product: bool
 
 
@@ -1362,6 +1365,11 @@ class Look:
         return {"colormap": self.colormap, "scale": self.scale, **({} if self.low is None else {"low": self.low, "high": self.high})}
 
 
+#: What a radar band measures (adr/0030 §8): ``sar_db`` takes 20·log10 of an amplitude and 10·log10 of an intensity.
+SarQuantity = Literal["amplitude", "intensity"]
+SAR_QUANTITIES: tuple[str, ...] = ("amplitude", "intensity")
+
+
 class LookOrigin(Enum):
     """Where the look of a band comes from (M5-60 plan §4), the first that knows one: colours are never kept by hand per
     dataset and band (Otto, 20.11.2026), so only the first two are written in an entry."""
@@ -1967,6 +1975,10 @@ class DatasetConfig:
     # The scale and offset of a band whose source stores it scaled (M5-60 F8), as the onboarding read them from
     # `raster:bands`; a band not named here is stored in its unit (1, 0). Empty by default like ``band_classes``.
     band_scaling: Mapping[str, BandScaling] = field(default_factory=dict)
+    # What each radar band measures (adr/0030 §8): the amplitude or the intensity of the backscatter, which decides the
+    # factor 20 or 10 of ``sar_db``. Empty by default like ``band_classes``; an entry with ``sar_backscatter`` names every
+    # radar band here (DS-05a A3).
+    sar_quantity: Mapping[str, SarQuantity] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -1974,6 +1986,7 @@ class DatasetConfig:
         object.__setattr__(self, "band_classes", MappingProxyType(dict(self.band_classes)))
         object.__setattr__(self, "band_looks", MappingProxyType(dict(self.band_looks)))
         object.__setattr__(self, "band_scaling", MappingProxyType(dict(self.band_scaling)))
+        object.__setattr__(self, "sar_quantity", MappingProxyType(dict(self.sar_quantity)))
         self._check_keywords()
         self._check_catalogue_fields()
         self._check_doi()
@@ -1997,6 +2010,7 @@ class DatasetConfig:
         self._check_band_classes()
         self._check_also_listed_as()
         self._check_band_scaling()
+        self._check_sar_quantity()
         self._check_band_looks()
         self._check_standard_look()
         self._check_asset_keys()
@@ -2303,6 +2317,20 @@ class DatasetConfig:
                 raise ConfigError(f"{self.dataset_id}: band_scaling names {key!r}, which is no band of band_units with values to scale")
             if not (_is_finite_number(scaling.scale) and _is_finite_number(scaling.offset)) or not scaling.scale > 0:
                 raise ConfigError(f"{self.dataset_id}: the scaling of {key!r} has a finite scale above 0 and a finite offset")
+
+    def _check_sar_quantity(self) -> None:
+        """Radar bands say what they measure exactly where ``sar_db`` may read them (adr/0030 §8, DS-05a A3)."""
+        if self.capabilities.sar_backscatter != bool(self.sar_quantity):
+            raise ConfigError(f"{self.dataset_id}: sar_backscatter and a non-empty sar_quantity go together")
+        for key, quantity in self.sar_quantity.items():
+            if key not in self.band_units or "*" in key or key in self.auxiliary_assets or key in self.band_classes:
+                raise ConfigError(f"{self.dataset_id}: sar_quantity names {key!r}, which is no band of band_units with values")
+            if quantity not in SAR_QUANTITIES:
+                raise ConfigError(f"{self.dataset_id}: the quantity of {key!r} is one of {', '.join(SAR_QUANTITIES)}")
+        if self.capabilities.sar_backscatter:
+            missing = sorted(key for key, unit in self.band_units.items() if unit == "DN" and key not in self.sar_quantity)
+            if missing:
+                raise ConfigError(f"{self.dataset_id}: sar_quantity has no quantity for {', '.join(missing)}")
 
     def _check_band_looks(self) -> None:
         """Each written look names a band that takes one, says where it came from and is a complete look (M5-60)."""

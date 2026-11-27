@@ -228,8 +228,8 @@ def test_to_plain_writes_enums_dates_and_sets_as_plain_values() -> None:
     assert plain["license"]["tier"] == LicenseTier.PROCESSING.value
     assert plain["temporal_extent"]["start"] == COP_DEM_GLO_30.temporal_extent.start.isoformat()
     # In the order of the dataclass; a field left at its default (the DEM has no band of classes, no listing in a
-    # harvested catalogue, no look of its own and no scaling) is left out.
-    left_out = {"band_classes", "also_listed_as", "band_looks", "band_scaling"}
+    # harvested catalogue, no look of its own, no scaling and no radar band) is left out.
+    left_out = {"band_classes", "also_listed_as", "band_looks", "band_scaling", "sar_quantity"}
     assert list(plain) == [name for name in COP_DEM_GLO_30.__dataclass_fields__ if name not in left_out]
 
 

@@ -10,3 +10,5 @@ general: [band_math, masking, normalization, reprojection, value_masking]
 terms:
   # The terrain operator (M5-10): what it computes from a model of heights.
   terrain: [slope, aspect, hillshade, terrain analysis, Hangneigung, Neigung, Exposition, Schummerung, Geländeanalyse]
+  # The dB operator on radar backscatter (DS-05a): the picture in decibels.
+  sar_backscatter: [decibel, dB, backscatter in decibels, Dezibel, Rückstreuung in Dezibel]

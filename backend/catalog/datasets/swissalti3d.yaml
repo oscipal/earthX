@@ -80,6 +80,7 @@ capabilities:
   quad_pol: false
   # A model of heights in metres: slope, aspect and hillshade (adr/0023 F5, M5-10).
   terrain: true
+  sar_backscatter: false
   # One model, one mosaic over all tiles (M5-08 F1): extent, not density (adr/0004 §5).
   single_coverage_product: true
 # Classified by Otto (M5-08 F4, KLAERUNGEN B11): no SPDX identifier; every permission on, attribution mandatory, tier

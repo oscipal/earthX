@@ -77,6 +77,7 @@ capabilities:
   quad_pol: false
   # A model of heights in metres: slope, aspect and hillshade (adr/0023 F5, M5-10).
   terrain: true
+  sar_backscatter: false
   # One model, one mosaic over all tiles: extent, not density (adr/0004 §5).
   single_coverage_product: true
 # Classified by Otto on 16.11.2026 (M5-09 F2, KLAERUNGEN B11): CC BY 4.0, tier processing. The licence stands in the

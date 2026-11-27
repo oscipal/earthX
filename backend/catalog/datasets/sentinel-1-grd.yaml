@@ -71,6 +71,8 @@ capabilities:
   quad_pol: false
   # No heights: the terrain operator stays out (adr/0023 F5).
   terrain: false
+  # DS-05a: radar backscatter in whole numbers (adr/0030 F2).
+  sar_backscatter: true
   single_coverage_product: false
 # DS-04 plan F6 (Otto 07.11.2026): as Sentinel-2, the Sentinel Data Legal Notice, tier Processing, the same
 # attribution and the same terms (adr/0003 §11.2).
@@ -188,6 +190,12 @@ band_units:
   vh: DN
   hh: DN
   hv: DN
+# What the radar bands measure (adr/0030 §8): the amplitude, so `sar_db` takes 20·log10 (adr/0030 §5.2).
+sar_quantity:
+  vv: amplitude
+  vh: amplitude
+  hh: amplitude
+  hv: amplitude
 # What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
 band_descriptions:
   vv: VV polarisation amplitude

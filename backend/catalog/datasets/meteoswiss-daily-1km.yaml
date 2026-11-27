@@ -85,6 +85,7 @@ capabilities:
   quad_pol: false
   # Temperatures and sunshine are no heights.
   terrain: false
+  sar_backscatter: false
   # A series of days: the coverage is the fixed grid (plan §5.4).
   single_coverage_product: false
 # Classified by Otto (plan G1 = 2, 18.11.2026, correcting F8): CC BY 4.0, which the terms of use of MeteoSwiss open

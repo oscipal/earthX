@@ -73,6 +73,7 @@ capabilities:
   quad_pol: false
   # No heights: the terrain operator stays out (adr/0023 F5).
   terrain: false
+  sar_backscatter: false
   # A time series, not a single coverage: density, not extent (adr/0004 §5).
   single_coverage_product: false
 # adr/0003 §11.2: checked by Otto against the Sentinel Data Legal Notice. Tier Processing: modification and
