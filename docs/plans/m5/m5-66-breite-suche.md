@@ -327,16 +327,13 @@ Gleicher Hash in der Spalte `Reihenfolge` heißt: gleiche Treffer in gleicher Re
 
 Daraus folgten §2a (Weg 3) und die Einträge zu §3; F2 = 2 war zu diesem Zeitpunkt umgesetzt (Tiefe wächst mit der Seite, §2 Punkt 7, Zeiten je Seite in §2).
 
-**F7 — Einstellungen von Postgres** (Vorschlag, nicht umgesetzt, weil M5-43 `docker-compose.yml` umbaut):
+**Antworten Otto zu Weg 3, F7 und F8 (27.11.2026):**
 
-1. `shared_buffers` 512 MB (heute 128 MB; Suchtabelle 526 MB, gelistete Einträge 1,4 GB samt Toast und Indizes), `work_mem` 16 MB (heute 4 MB; „data“ sortierte auf die Platte), `effective_cache_size` nach dem Speicher von Docker; mit M5-43 im neuen Dienst `postgres` **(Empfehlung)**
-2. Zusätzlich `jit = off` für den ganzen Dienst (in `catalog-load` schon je Lauf aus)
-3. Nichts ändern
-
-**F8 — Glossargruppen im Volltext** („Gewässer“ 1,7 s im synthetischen Bestand):
-
-1. Mit M5-23 messen und angehen, wie F4 **(Empfehlung)**
-2. Eigene kleine Aufgabe
+| Frage | Antwort | Folge |
+|---|---|---|
+| Weg 3 | angenommen, mit zwei Auflagen | Schwelle 20 und Folgen als Entscheidung in `adr/0026` §15 Punkt 7 und im Entscheidungslog; in der Zeile M5-23 (`plans/m5/m5-discovery-und-suche.md` §6.2): Schwelle mit dem Vektorarm neu bewerten, Bewertungs-Set mit Fragen zu breiten Wörtern |
+| F7 | 1 | `shared_buffers` 512 MB, `work_mem` 16 MB; umgesetzt in **M5-43** (Zeile dort in §6.2), nicht hier |
+| F8 | 1 | Glossargruppen im Volltext mit **M5-23** |
 
 Die Fragen F1–F6 stehen unten unverändert als Historie.
 

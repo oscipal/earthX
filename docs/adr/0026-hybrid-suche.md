@@ -635,7 +635,7 @@ Anlass: Zielgröße 10⁶ gelistete Einträge (Otto, 14.11.2026, `plans/m5/m5-35
 
 ---
 
-## 15. Nachtrag M5-66: Tiefe je Arm, Filter vor dem Rang, Trefferzahl (Otto, 27.11.2026: F1, F3, F5, F6 = 1, F2 = 2, F4 = 1 als Teil von M5-23)
+## 15. Nachtrag M5-66: Tiefe je Arm, Filter vor dem Rang, Trefferzahl, Trigramm-Arm als Ergänzung (Otto, 27.11.2026: F1, F3, F5, F6 = 1, F2 = 2, F4 = 1 als Teil von M5-23; Weg 3 angenommen)
 
 Anlass: M5-42 F5 = 1 (Otto, 23.11.2026). Bericht, Messung und Recherche: `plans/m5/m5-66-breite-suche.md`.
 
@@ -645,4 +645,9 @@ Anlass: M5-42 F5 = 1 (Otto, 23.11.2026). Bericht, Messung und Recherche: `plans/
 4. **Blättern** (ergänzt §4.4 „Größe der Antwort“, F2 = 2): Die Tiefe je Arm wächst mit der Seite (`max(1 000, offset + limit + 1)`); die Liste endet nie vor dem letzten Treffer (M5-56).
 5. **Reihenfolge:** Für Treffer, die in einem Arm hinter Platz 1 000 liegen, fällt dieser Beitrag weg; gemessen ändert sich die ganze Liste ab Platz 40 (drei Wörter) bzw. ab etwa 800 (ein Wort), die ersten 20 in keiner der 15 Messungen (Plan §3).
 6. **Folge für M5-23:** Der Vektorarm bekommt dieselbe Tiefe; `hnsw.ef_search` bleibt nach §14 Punkt 1 nie kleiner als sie. Die Arme werden dort gleichzeitig abgefragt (F4); Ziel unter 1 s ohne Filter bei 10⁵.
-7. **Trigramm-Arm nur als Ergänzung** (Weg 3, Plan §2a; Auftrag Otto 27.11.2026): Er läuft nur, wo der Volltext nach allen Filtern weniger als 20 Treffer hat (Tippfehler). Bei breiten Wörtern ordnet der Volltext allein, die Trefferzahl zählt die gelaufenen Arme. GiST-KNN (`<<->`) war schnell, liefert aber Gleichstände nicht ganz (A1); nur Titel als Trigramm-Text verlor die meisten Treffer. Bewertungs-Set gleich.
+7. **Trigramm-Arm nur als Ergänzung (fest, Otto, 27.11.2026; Weg 3, Plan §2a):**
+   - **Schwelle 20** (`TRIGRAMS_BELOW`): Der Trigramm-Arm läuft nur, wo der Volltext nach allen Filtern weniger als 20 Treffer hat, also weniger als eine Seite. Er ist für Tippfehler da; ein Tippfehler hat keinen Volltext-Treffer.
+   - **Folgen:** Bei breiten Wörtern ordnet der Volltext allein; die erste Seite weicht dadurch von der Fusion mit Trigrammen ab (gemessen 7 bis 20 von 20 gleich). Die Trefferzahl zählt nur die gelaufenen Arme und ist bei breiten Wörtern kleiner: lose Trigramm-Treffer wie „Wasser…“ für „water“ fallen weg („Wasser Pegel Messstelle“ 750 statt 7 754).
+   - **Gemessen:** breite Wörter ohne Filter 0,25–0,59 s, mit Filter 0,07–0,25 s bei 10⁵ synthetischen Einträgen; Bewertungs-Set Frage für Frage gleich.
+   - **Verworfen:** GiST-KNN (`<<->`) war schnell, liefert Gleichstände aber nicht ganz (A1); nur Titel als Trigramm-Text verlor die meisten Treffer; Region nach dem Ranking unnötig.
+   - **Mit M5-23** wird die Schwelle neu bewertet, sobald der Vektorarm da ist, und das Bewertungs-Set bekommt Fragen mit breiten Wörtern.
