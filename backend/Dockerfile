@@ -1,5 +1,6 @@
 # One image for all four earthx processes (architekturplan.md 3.2, 12.1), plus
-# the local runner as a second stage on top of it (adr/0016 F1).
+# the local runner as a second stage on top of it (adr/0016 F1), and the stage
+# `search` with the embedding model for `api` and `catalog-load` (M5-23).
 #
 # Stage `app` sets no CMD/ENTRYPOINT on purpose ("ein Image, vier Startbefehle"):
 # each docker-compose service picks its own `command:`, and docker-compose.yml
@@ -67,6 +68,7 @@ COPY catalog/hosts.yaml ./catalog/hosts.yaml
 # lexical arm and the terms per capability.
 COPY catalog/places.json ./catalog/places.json
 COPY catalog/glossary.yaml ./catalog/glossary.yaml
+COPY catalog/search_background.yaml ./catalog/search_background.yaml
 COPY catalog/capability_terms.yaml ./catalog/capability_terms.yaml
 # The categories of the Data catalogue (M5-40 G4): read by every process with the registry, which checks them.
 COPY catalog/categories.yaml ./catalog/categories.yaml
@@ -85,6 +87,37 @@ COPY catalog/approvals ./catalog/approvals
 COPY catalog/place_names.yaml ./catalog/place_names.yaml
 COPY catalog/geodata.yaml ./catalog/geodata.yaml
 COPY catalog/municipalities.json ./catalog/municipalities.json
+
+# The embedding model of the dataset search (M5-23, adr/0026 F2; docs/plans/m5/m5-23-vektorsuche.md §4.2), fetched
+# while the image is built, never at run time: one revision of the model repository, each file checked against its
+# SHA-256, so a changed file stops the build. Python's own `urllib`, so the stage needs no package. A stage of its own,
+# so that only `search` copies from it and the runner never carries the model (F2 a). Raising the model is a change of
+# MODEL_REVISION and both hashes together, and of `MODEL_NAME` in earthx/catalog/embedding.py.
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS model-files
+ARG MODEL_REPOSITORY=ibm-granite/granite-embedding-97m-multilingual-r2
+ARG MODEL_REVISION=835ad14087e140460703cf0fae09f97d469d65c2
+ARG MODEL_ONNX_SHA256=68e592b160673d30250824c1116bc6ab33f70efb22b97c9e1d7ce1e69c1c9d70
+ARG TOKENIZER_SHA256=4f2842d568e2724370aec203652a42ac783c7937f8347a1a2cc7506d71f1582f
+RUN python - <<'FETCH'
+import hashlib, os, pathlib, urllib.request
+base = f"https://huggingface.co/{os.environ['MODEL_REPOSITORY']}/resolve/{os.environ['MODEL_REVISION']}/"
+target = pathlib.Path("/models/granite-embedding-97m-multilingual-r2")
+target.mkdir(parents=True)
+for source, name, expected in (("onnx/model.onnx", "model.onnx", os.environ["MODEL_ONNX_SHA256"]),
+                               ("tokenizer.json", "tokenizer.json", os.environ["TOKENIZER_SHA256"])):
+    path = target / name
+    urllib.request.urlretrieve(base + source, path)
+    found = hashlib.sha256(path.read_bytes()).hexdigest()
+    if found != expected:
+        raise SystemExit(f"{name}: SHA-256 {found}, expected {expected}")
+FETCH
+
+# `api` and `catalog-load` (docker-compose.yml): the app with the model. HF_HUB_OFFLINE is a second guard behind
+# reading the tokenizer from its file: nothing in this image may ask Hugging Face.
+FROM app AS search
+COPY --from=model-files /models /app/models
+ENV EARTHX_EMBEDDING_MODEL=/app/models/granite-embedding-97m-multilingual-r2 \
+    HF_HUB_OFFLINE=1
 
 # The local runner (adr/0016 F1, F10): the same code and the same locked
 # dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends
