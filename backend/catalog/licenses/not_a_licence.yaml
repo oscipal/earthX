@@ -1,0 +1,40 @@
+# Statements that are never a licence (Otto's rule of 19.11.2026, docs/plans/m5/m5-20-lizenzliste.md §1 K7 and §3;
+# M5-67 §23.5): the address of a feed or of a page, a statement of access, a disclaimer, a note. Such a statement
+# counts for no match: a find with only such statements waits as no_licence, not as "waiting for a grade". Never a
+# grade of a licence, and none of these may stand in terms.yaml or spellings.yaml. Each statement verbatim, as in the
+# data (blanks at the edges and a trailing '/' ignored); match: prefix only for a long text known by its beginning.
+- statement: Weitere Informationen zu den Daten und Veröffentlichungen erhalten Sie über das Portal.
+  kind: note
+  added_on: 2026-11-25
+- statement: Weitere Informationen zu den Daten und Veröffentlichungen erhalten Sie über das Portal
+  kind: note
+  added_on: 2026-11-25
+- statement: https://data-lra-cha.opendata.arcgis.com/api/feed/dcat-ap/3.0.0.json
+  kind: feed
+  added_on: 2026-11-25
+- statement: https://www.offenedaten-wuppertal.de/page/nutzungsbedingungen-kontakt-lizenzen
+  kind: page
+  added_on: 2026-11-25
+- statement: Es gelten keine Zugriffsbeschränkungen
+  kind: access
+  added_on: 2026-11-25
+- statement: Es gelten keine Zugriffsbeschränkungen.
+  kind: access
+  added_on: 2026-11-25
+- statement: http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations
+  kind: access
+  added_on: 2026-11-25
+- statement: https://opendata.kreis-borken.de/pages/datenschutz
+  kind: page
+  added_on: 2026-11-25
+- statement: Der Zugang zu den Daten ist nach § 3 des Informationsfreiheitsgesetzes beschränkt.
+  kind: access
+  added_on: 2026-11-25
+- statement: Der Zugang zu den Daten ist nach § 6 des Informationsfreiheitsgesetzes beschränkt.
+  kind: access
+  added_on: 2026-11-25
+# The full text was not at hand (the files of the run cut it at 200 characters).
+- statement: Es erfolgt ein kompletter Haftungsausschluss. Es wird keinerlei Gewähr für die Richtigkeit der Daten übernommen. Es wird keine Haftung für Schäden übernommen, die durch die Nutzung der bereitgestellte
+  kind: disclaimer
+  match: prefix
+  added_on: 2026-11-25

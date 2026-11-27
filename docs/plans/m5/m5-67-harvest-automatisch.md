@@ -541,3 +541,112 @@ Ernte aller vier Quellen und Bericht von earth-search liefen, dann brach der Lau
 4. **Test, der es gefunden hätte.** `tests/container_tree.py` baut je Dienst den Baum nach, den Dockerfile (Stufe `app`, jede `COPY`-Zeile) und Compose (Mounts unter `/app`) ergeben, und startet darin den Einstieg des Dienstes als eigenen Prozess; dort zeigt `CATALOG_DIR` auf das `catalog/` des Baums. `tests/test_harvest_container_files.py` verlangt für jeden Dienst des Profils `harvest`, dass jeder Pfad unter `catalog/`, den ein geladenes Modul als Konstante nennt, im Baum liegt; ohne die Mounts schlagen drei Dienste mit der Liste der fehlenden Dateien fehl. `tests/integration/test_harvest_container_steps.py` lässt die Schritte `sources`, `spellings`, `grants`, `report` (mit `--classify`), `linkcheck --dry-run`, `decide`, `summary` und `harvest` (mit unbekannter Quelle, ohne Abruf) im Baum laufen, mit den Argumenten des Skripts, und löscht je eine Regeldatei, um die Meldung zu prüfen. **Grenze:** Das echte Image läuft nur im CI-Job `compose-topology`; ihn um die Schritte zu erweitern braucht eine Änderung an `.github/` und liegt bei Otto (Frage im PR).
 5. **Branch-Name, Entscheidung Otto (25.11.2026): immer `harvest/<Tag>-<HHmm>`, auch wenn der Name frei ist.** Vorher nahm der erste Lauf eines Tages `harvest/<Tag>` und die Uhrzeit nur bei vergebenem Namen (§22.4). Das war so geplant, aber im Probelauf vom 24.11. nahm der zweite Lauf wieder `harvest/2026-11-24`, weil er #413 samt Branch vorher geschlossen hatte. Jetzt trägt jeder Lauf seine Uhrzeit; nur ein zweiter Lauf in derselben Minute hängt `-<n>` an. PR-Titel „Harvest run <Tag> <HH:mm>“ immer mit Uhrzeit. Das Aufräumen gescheiterter Drafts erkennt die Namen unverändert. Der CI-Job `compose-topology` bleibt unverändert (Otto: der Nachbau-Test genügt).
 6. **Nicht geprüft in der Sitzung:** das Skript (keine PowerShell) und das echte Image (kein Docker). Offen beobachtet, nicht geändert: `gh pr checks --json` beendet sich laut Hilfe bei wartenden Checks mit 8; ob es bei einem roten Check mit 1 endet, ist hier nicht prüfbar. Endet es so, liest `Lines` die Ausgabe nicht (gibt `$null` zurück, das Skript behandelt es als „wartet“), und ein roter Check würde erst nach 90 min als nicht grün gemeldet. Folge wäre nur Wartezeit, kein falscher Merge. Otto sieht es am ersten Lauf mit rotem Check.
+
+## 23. Fix 3: Linkprüfung nach dem ersten Probelauf schärfen (25.11.2026, Stufe B)
+
+Grundlage: Probelauf vom 25.11. (`docs/harvest/laeufe/2026-11-25/`, PR [#419](https://github.com/oscipal/earthX/pull/419)): fällig 102 662, geprüft 95 821, bestanden 11 406, durchgefallen 15 467, nicht prüfbar 68 948. Aus der Sitzung wird keine Quelle abgerufen (`adr/0002`); die Formen der Schnittstellen stammen aus Dokumentation und Quellcode der Portal-Software (Belege je Zeile in `linkcheck.yaml`). Zwei Draft-PRs: PR A Linkprüfung und Befundliste (Punkte 1–4, 6, dieser Nachtrag), PR B `not_a_licence` (Punkt 5).
+
+### 23.1 GovData-Adressform (Punkt 1)
+
+- **Bestätigt (Otto, 25.11.2026):** `https://www.govdata.de/suche/daten/<name>` führt zur Seite des Datensatzes (Beispiel `3d-meshes-brandenburg`), `/web/guest/suchen/-/details/<name>` und `/daten/-/details/<name>` nicht. `catalog_page` hatte schon diese Form; neu `catalog_page_check.form_confirmed_on: 2026-11-25`. Ab dem nächsten Lauf werden die rund 56 500 Katalogseiten über `package_search` geprüft (eine Anfrage je 40 Namen).
+- **Geht es über die Extraktor-Version von selbst? Nein.** `catalog_page` ändert sich nicht, also auch die Version nicht. Die Links in alter Form baut nicht `catalog_page`: Sie stehen in den Daten (Feld `url`, `extras` `uri`/`guid`) und sind Rang-2-Kandidaten [P, `ckan.py` `_page_candidates`]. **Neu:** Einstellung `catalog_page_aliases` der Quell-Datei (nur CKAN, mit `{name}`): Eine Adresse in einer dieser Formen ist nie Link „Source“, der Fund bekommt seine Katalogseite in der Form von `catalog_page`. Die Liste geht in die Extraktor-Version ein; mit dem geänderten `ckan.py` wertet der nächste Harvest jeden Fund ohne Anfrage neu aus.
+- **A25** Eine Adresse in alter Form fällt als Kandidat weg, statt umgeschrieben zu werden: Nennt sie den eigenen Namen, ist das Ergebnis dasselbe; nennt sie einen anderen, ist die eigene Katalogseite richtig.
+- Offen beobachtet, nicht geändert: `robots_exception.evidence` nennt noch `https://www.govdata.de/daten/-/details/govdata-metadatenkatalog` (Ottos Beleg vom 19.11.); die Form führt heute nicht mehr zur Seite. Neuer Beleg nur von Otto.
+
+### 23.2 Seiten, die per Skript laden: Prüfung je Linkform (Punkt 2)
+
+`no_title` traf 12 553 Links, fast alle aus Single-Page-Apps. Grundsatz bleibt: **„Seite antwortet“ ist nie bestanden.** Neu ist die Liste `link_forms` in `backend/catalog/linkcheck.yaml`, eingestellt je Form wie `catalog_page_check`, ohne Sondercode je Host:
+
+```yaml
+link_forms:
+  - link: https://www.geoportal.rlp.de/map?LAYER[id]={layer}&LAYER[zoom]={zoom}
+    check: api            # oder none (mit why)
+    api: https://www.geoportal.rlp.de/mapbender/php/mod_layerISOMetadata.php?SERVICE=WMS&outputFormat=iso19139&Id={layer}
+    evidence: https://github.com/mrmap-community/Mapbender2.8/blob/master/http/php/mod_layerISOMetadata.php
+    form_confirmed_on: null
+```
+
+- **Form:** Host, Teile des Pfads und des Fragments, Namen der Abfrage (Reihenfolge egal, keiner zu viel oder doppelt) wie in `link`; ein Platzhalter nimmt einen ganzen Teil aus `[A-Za-z0-9._~-]`, so dass kein Wert die Adresse der Schnittstelle verlassen kann.
+- **`check: api`:** Gefragt wird nur die Schnittstelle (über `gateway`, Allowlist genau ihre Hosts, Takt und `robots.txt`), nie die App. Bestanden wie eine Seite: `200`, und der Datensatz nennt Titel oder Kennung des Eintrags. Unbekannte Kennung: `404` (fällt durch, §23.3) oder ein Datensatz ohne diesen Titel (`no_title`). Erst mit `form_confirmed_on`, sonst `form_unconfirmed`.
+- **`check: none`:** keine belegte sichere Prüfung; `no_safe_check`, Einträge unsichtbar, Befund `UNGEPRUEFT <Form>` mit Zahl.
+
+| Form (Links im Lauf) | Prüfung | Beleg |
+|---|---|---|
+| `www.geoportal.rlp.de/map?LAYER[id]…` (6 727) und `www.geoportal.hessen.de/…` (36) | `api`: ISO 19139 des Layers aus Mapbender 2; antwortet auch bei unbekannter ID mit `200` und „title not given“, also entscheidet nur der Titel | Quellcode Mapbender 2.8 (Fork mrmap-community); Pfad bei Hessen nur aus der gemeinsamen Software [A] |
+| `open.bydata.de/datasets/{id}` (2 901) | `api`: piveau hub-search `GET /datasets/{id}`, `404` bei unbekannter ID | OpenAPI und README von piveau-hub-search; Basispfad `/api/hub/search` ist der Standard der Software, bei bydata nicht belegt [A] |
+| GeoNetwork `…/srv/{lang}/catalog.search#/metadata/{uuid}` (Herne 130, Frankfurt 126, geocat.ch 59) | `api`: `…/srv/api/records/{uuid}/formatters/xml`, `404` bei unbekannter UUID | Quellcode GeoNetwork 3.12 und 4 (`MetadataApi`, `ApiUtils`) |
+| `odlinfo.bfs.de/…/Messstelle.html?id={kenn}` (301) | `api`: WFS des BfS, Zeitreihe 24 h mit `viewparams=kenn:{kenn}`; unbekannte Kennung vermutlich leere Antwort mit `200`, dann `no_title` | OpenAPI bundesAPI/strahlenschutz-api, Datenschnittstelle ODL-Info |
+| `mobilithek.info//offers/{id}` (803) | `none` | keine Schnittstelle je Angebot dokumentiert |
+| `map.bern.ch/geoportal/#/produkt/{x}` (133), `data.geo.so.ch?filter=` (154), `www.agi.dij.be.ch/…detail.html?type=geoproduct&code=` (211), `metadata.geo.sg.ch/produkte/{x}` (47), `www.kiel.de/opendata/index.php?id=` (64) | `none` | keine Schnittstelle je Produkt dokumentiert |
+| `datenregister.berlin.de/dataset/{id}` (402, alle `403`) | `none` | §23.4 |
+
+**Wichtig für den nächsten Lauf:** Er ist kein Probelauf mehr (`docs/harvest/laeufe/` hat einen Ordner). Bisher hielt der Schutz die veröffentlichten Einträge dieser Formen sichtbar; jetzt sind sie `form_unconfirmed` bzw. `no_safe_check`, also ungeprüft, und werden verborgen (nicht gelöscht), bis eine Prüfung besteht. Mit Ottos Bestätigung (F15) kommen die `api`-Formen im übernächsten Lauf zurück.
+
+### 23.3 Tote Links nicht schützen (Punkt 3)
+
+`open.rlp.de/dataset/{x}` (1 268× `404`) und `registry.gdi-de.org/id/de.bw/{id}` (1 043× `404`) waren vom Schutz gedeckt. Neu: `404` und `410` zählen für den Schutz nicht und werden nie geschützt, auch wenn ihre Gruppe geschützt ist; solche Einträge werden auch in großer Zahl verborgen. Der Schutz bleibt für Timeouts, `429`, `5xx`, `no_title`, `403` und die übrigen Gründe. Die Laufdateien zeigen sie als „weg (404/410)“.
+
+- **A26** `404`/`410` zählen weder im Zähler noch im Nenner des Anteils: Ein Host mit 100 toten und 20 `no_title` bleibt geschützt (20 von 20), statt dass die `no_title` mit verborgen würden.
+- **Grenze:** Ein falsch gebautes Muster, dessen Adressen alle `404` liefern, wird jetzt ganz verborgen. Dagegen hilft nur, dass Adressformen bestätigt sind (`catalog_page_check`, `link_forms`).
+
+### 23.4 `403` bei datenregister.berlin.de (Punkt 4)
+
+Nicht der User-Agent: Das Berliner Open-Data-Handbuch nennt das Datenregister das „nicht-öffentliche“ Redaktionssystem des Portals (Konto nötig); öffentlich ist `daten.berlin.de` [Q: github.com/berlinonline/open-data-handbuch]. Am `gateway` ändert sich deshalb nichts; die Form steht als `none` in `linkcheck.yaml`. Ob die Links auf die öffentliche Seite umgebaut werden können, ist F17.
+
+### 23.5 Keine Lizenz (Punkt 5, PR B)
+
+Nach Ottos Regel (19.11.2026, Lizenzliste §1 K7 und §3) sind Feed-Adressen, Seiten-URLs, Zugangsangaben, INSPIRE `noLimitations`, Haftungsausschlüsse und Hinweise wie „Weitere Informationen … über das Portal“ nie Lizenzen. Neue Datei `backend/catalog/licenses/not_a_licence.yaml` (je Zeile `statement`, `kind`, `match` `exact` oder `prefix`, `added_on`); der Lader prüft, dass keine Angabe zugleich in `terms.yaml` oder `spellings.yaml` steht. Wirkung: Eine solche Angabe zählt beim Abgleich nicht. Hat ein Fund nur solche Angaben, wartet er still als `no_licence` und steht nicht mehr als „wartet auf Einstufung“ in der Befundliste; die Liste der wartenden Angaben (`spellings`) lässt sie weg.
+
+Vorschlag aus dem Lauf (Otto bestätigt im PR, F19):
+
+| Funde | Angabe | Art |
+|---|---|---|
+| 332 / 19 | „Weitere Informationen zu den Daten und Veröffentlichungen erhalten Sie über das Portal“ (mit und ohne Punkt) | Hinweis |
+| 166 | `https://data-lra-cha.opendata.arcgis.com/api/feed/dcat-ap/3.0.0.json` | Feed |
+| 116 | `https://www.offenedaten-wuppertal.de/page/nutzungsbedingungen-kontakt-lizenzen` | Seite |
+| 82 / 5 | „Es gelten keine Zugriffsbeschränkungen“ (mit und ohne Punkt) | Zugang |
+| 36 | `http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations` | Zugang |
+| 18 | `https://opendata.kreis-borken.de/pages/datenschutz` | Seite |
+| 16 / 5 | „Der Zugang zu den Daten ist nach § 3 (§ 6) des Informationsfreiheitsgesetzes beschränkt.“ | Zugang |
+| 8 | „Es erfolgt ein kompletter Haftungsausschluss. …“ (Präfix, der volle Text liegt der Sitzung nicht vor) | Haftungsausschluss |
+
+Nicht aufgenommen: `mdd-nrw-nutzungsbedingungen` (27): der Name von Nutzungsbedingungen, laut Lizenzliste „Otto: Bedingungen lesen“; also eine mögliche Lizenz.
+
+### 23.6 Befundliste kürzer (Punkt 6)
+
+Je Host ein Befund `SCHUTZ <Host>` mit den Zahlen des Hosts und den geschützten Mustern als Unterpunkte (die fünf größten mit Zahl, dann „und n weitere Muster, siehe `linkpruefung.md`“); Beispiele stehen nur noch in `linkpruefung.md`. Ein Muster ohne geschützten Host steht unter seinem Host mit „Host nicht geschützt“. `befunde.md` ist einmalig von Hand umgestellt (100 Zeilen → 27 Befunde), damit der nächste Lauf nicht die alten Schlüssel als erledigt abhakt.
+
+- **A27** `MUSTER`-Befunde nur noch bei mindestens 5 Fehlschlägen (durchgefallen samt `404`/`410`); ungeprüfte Formen stehen als `UNGEPRUEFT`, nicht zusätzlich als `MUSTER`. Ein Muster, das nur an `robots.txt` scheitert, steht damit nur in `linkpruefung.md`.
+
+### 23.7 Fragen an Otto
+
+**F15 — Adressformen der `api`-Prüfung bestätigen?** Je Form einen Link im Browser öffnen (aus `linkpruefung.md` des Laufs vom 25.11., z. B. RLP `…/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=42853`, bydata `…/datasets/zaehlstellen-b512-2012`) und prüfen, ob die Seite den Datensatz zeigt.
+1. Du nennst im PR die Formen, die stimmen; ich setze `form_confirmed_on` auf den Tag deines Tests, vor dem nächsten Lauf **(Empfehlung)**
+2. Alle sieben ohne Test bestätigen
+3. Bleiben unbestätigt (Einträge unsichtbar)
+
+**F16 — bydata: Basispfad der Schnittstelle nicht belegt** (`/api/hub/search` ist der Standard von piveau).
+1. Du öffnest zusätzlich `https://open.bydata.de/api/hub/search/datasets/zaehlstellen-b512-2012`; zeigt er JSON mit dem Titel, bleibt die Form `api` **(Empfehlung)**
+2. Form auf `none` setzen
+
+**F17 — Berlin?**
+1. Bleibt `none` (ungeprüft, unsichtbar), Befund `UNGEPRUEFT` **(Empfehlung)**
+2. Eigene Aufgabe: Links auf `https://daten.berlin.de/datensaetze/<name>` umbauen (ob der Name dem CKAN-Namen entspricht, ist nicht belegt; braucht deinen Browsertest)
+
+**F18 — Fund mit echter Lizenz und einer Nicht-Lizenz-Angabe daneben?**
+1. Die Nicht-Lizenz zählt nicht, die eingestufte Lizenz entscheidet (wie gebaut) **(Empfehlung)**
+2. Der Fund wartet weiter (`unknown_licence`)
+
+**F19 — Liste `not_a_licence` (§23.5)?**
+1. So übernehmen, `mdd-nrw-nutzungsbedingungen` bleibt draußen, Haftungsausschluss als Präfix **(Empfehlung)**
+2. Auch `mdd-nrw-nutzungsbedingungen` aufnehmen
+3. Haftungsausschluss erst mit vollem Text (dann wartet er weiter in der Liste)
+
+### 23.8 Antworten Otto (25.11.2026) und Nachtrag
+
+- **F15 = 1:** Ottos Browsertest vom 25.11.: Alle sieben `api`-Formen zeigen den Datensatz (RLP, Hessen, bydata, Herne, Frankfurt, geocat.ch, BfS); `form_confirmed_on: 2026-11-25` für alle.
+- **F16 = 1:** `https://open.bydata.de/api/hub/search/datasets/zaehlstellen-b512-2012` zeigt den Datensatz; bydata bleibt `api`.
+- **F17 = 1:** Berlin bleibt `none`; Befund H-2026-11-25-01 in `befunde.md`: Links auf `daten.berlin.de` umstellen (eigene Aufgabe).
+- **F18 = 1, F19 = 1:** PR B wie vorgeschlagen.
+- **A28 (Nachtrag beim Umsetzen):** Ein geschütztes Ergebnis ist im nächsten Lauf wieder fällig (Priorität 2 wie `unchecked`), nicht erst nach 30 Tagen. Vorher galten durchgefallene, geschützte Ergebnisse des Probelaufs als frisch: Die Regeln dieses Nachtrags (404 ohne Schutz, Prüfung je Linkform) hätten für RLP, bydata, `open.rlp.de` usw. erst nach einem Monat gegriffen, und die Einträge wären so lange sichtbar geblieben. Ein Schutz entscheidet nichts; also wird erneut geprüft. Kosten: Hosts, die dauerhaft geschützt bleiben (z. B. `www.gkd.bayern.de` mit rund 7 800 Links bei 1 s, etwa 2,2 h), werden in jedem Lauf geprüft und teilen sich das Budget mit dem Rest; die Hosts laufen parallel.
+- **Schätzung des nächsten (ersten echten) Laufs [A]:** Der Probelauf hätte 9 213 veröffentlichte Einträge verborgen. Dazu kommen, weil der Schutz sie nicht mehr hält: rund 2 300 tote Links (`open.rlp.de` 1 268, `registry.gdi-de.org/id/de.bw` 1 043) und rund 1 800 Links der Formen ohne sichere Prüfung (Mobilithek 803, Berlin 402, Kanton Bern 211, Solothurn 154, Stadt Bern 133, Kiel 64, St. Gallen 47). Zusammen **etwa 13 000** von rund 102 000 sichtbaren Einträgen (Spanne grob 11 000–16 000). Unsicher: die rund 10 300 Links der `api`-Formen (bestehen sie, bleiben sie sichtbar; fällt bei einer Form ein großer Anteil durch, greift wieder der Schutz) und die 56 500 GovData-Katalogseiten über die CKAN-API (erwartet fast alle bestanden). Die Zahlen der Gruppen zählen Links aller Zustände, nicht nur veröffentlichte; die Schätzung ist deshalb eher eine Obergrenze. Die Laufdateien nennen nach dem Lauf die genaue Zahl.
