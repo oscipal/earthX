@@ -27,6 +27,7 @@ import binascii
 import json
 import re
 from collections.abc import Mapping, Sequence
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import datetime as Instant
 from typing import Annotated, Any
@@ -381,7 +382,13 @@ async def search_collections(
     if query.category is not None:
         full_ids = [c.dataset_id for c in registry if c.category == query.category] if registry is not None else []
     kept = Kept(entry=query.entry, category=query.category, full_ids=full_ids, regions=query.regions)
-    async with request.app.state.earthx_cache_pool.connection() as conn:
+    vectors = getattr(request.app.state, "earthx_query_vectors", None)
+    async with AsyncExitStack() as stack:
+        conn = await stack.enter_async_context(request.app.state.earthx_cache_pool.connection())
+        # The vector arm runs beside the full text on a connection of its own pool (M5-23 plan §4.5).
+        vector_conn = (
+            await stack.enter_async_context(request.app.state.earthx_vector_pool.connection()) if vectors else None
+        )
         # The depth grows with the page, one beyond it, so that the list never ends before the hits do and a next
         # page is linked while there is one (M5-66 F2 = 2; never cut silently, M5-56).
         result: SearchResult = await search_datasets(
@@ -392,6 +399,8 @@ async def search_collections(
             kept=kept,
             depth=max(DEPTH, query.offset + query.limit + 1),
             count_up_to=MAX_COUNTED,
+            vectors=vectors,
+            vector_conn=vector_conn,
         )
         ids = result.ids
         page = ids[query.offset : query.offset + query.limit]

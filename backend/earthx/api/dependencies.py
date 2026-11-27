@@ -36,6 +36,7 @@ LOGGER = logging.getLogger("earthx.api.dependencies")
 # footprints per request, not a batch load (module docstring).
 _CACHE_POOL_MIN_SIZE = 1
 _CACHE_POOL_MAX_SIZE = 5
+_VECTOR_POOL_MAX_SIZE = 5
 
 # M3-07a: the geocoder's own gateway, built and validated separately from the
 # registry's (below). An unset `EARTHX_GEOCODER_URL` turns place search off — the
@@ -175,7 +176,18 @@ def build_gateway(policy: Policy, slots: ReadSlots) -> Gateway:
 
 
 @asynccontextmanager
-async def cache_pool() -> AsyncIterator[AsyncConnectionPool]:
+async def vector_pool() -> AsyncIterator[AsyncConnectionPool]:
+    """The connections of the vector arm of the dataset search, which runs beside the full text (M5-23 plan §4.5).
+
+    A pool of its own (A3): a search holds one connection of the cache pool and one of this, never two of one pool, so
+    searches under load cannot each hold one and wait for another.
+    """
+    async with cache_pool(max_size=_VECTOR_POOL_MAX_SIZE) as pool:
+        yield pool
+
+
+@asynccontextmanager
+async def cache_pool(*, max_size: int = _CACHE_POOL_MAX_SIZE) -> AsyncIterator[AsyncConnectionPool]:
     """A small pool for the search cache, opened for the process lifetime.
 
     Connection details come from the standard ``PG*`` environment variables (libpq
@@ -185,7 +197,7 @@ async def cache_pool() -> AsyncIterator[AsyncConnectionPool]:
     pool = AsyncConnectionPool(
         conninfo="",
         min_size=_CACHE_POOL_MIN_SIZE,
-        max_size=_CACHE_POOL_MAX_SIZE,
+        max_size=max_size,
         kwargs={"autocommit": True},
         open=False,
     )
