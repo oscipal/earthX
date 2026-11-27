@@ -5,7 +5,7 @@ Alle Dateien laufen im Container `postgres` (`docker compose cp`, dann `docker c
 
 | Datei | wofür |
 |---|---|
-| `versions.sql` | Fassungen von Postgres und Erweiterungen, Collation-Version je Datenbank, Größe |
+| `versions.sql` | Fassungen von Postgres und Erweiterungen, Collation-Version je Datenbank, Größe, `shared_buffers` und `work_mem` |
 | `counts.sql` | genaue Zeilenzahl je Tabelle, vorher und nachher zu vergleichen |
 | `upgrade.sql` | `ALTER EXTENSION … UPDATE` für alle Erweiterungen, `REINDEX DATABASE`, Collation-Version auffrischen (eine Datenbank) |
 | `upgrade-all.sh` | `upgrade.sql` in jeder Datenbank, die Verbindungen annimmt |

@@ -43,6 +43,14 @@ Mehrstufig (F1 = 3, §9a); die erste Fassung dieses PR installierte pgvector aus
 
 `services.postgres`: `build: ./compose/postgres` statt `image: postgis/postgis:16-3.4`. Volume, Umgebung und Healthcheck bleiben. `docker compose build` baut das Image mit.
 
+**Speicher (Nachtrag M5-66 F7 = 1, Otto 27.11.2026):** `shared_buffers = 512MB` (Vorgabe 128 MB) und `work_mem = 16MB` (Vorgabe 4 MB). Begründung aus M5-66: Die Suchtabelle (526 MB) und die gelisteten Einträge (1,4 GB samt Toast und Indizes) passen nicht in 128 MB, breite Suchen lasen deshalb Tausende Blöcke von der Platte; die Sortierung bei „data“ lief mit 4 MB auf die Platte.
+
+Gesetzt als `command: ["postgres", "-c", …]` in `docker-compose.yml`, nicht als Konfigurationsdatei im Image:
+- **Bestehendes Volume:** `postgresql.conf` liegt im Datenverzeichnis und stammt aus dem ersten `initdb`. Eine Datei im Image wirkt dort nur über `config_file` und ersetzte dann die ganze Konfiguration. Startparameter gelten sofort, auch für Ottos Bestand, und gehen `postgresql.auto.conf` (`ALTER SYSTEM`) vor. In der Sitzung auf dem gewechselten Volume aus §10 geprüft: `SHOW` meldet 512MB und 16MB [M].
+- **Speicher ist Sache des Rechners, nicht des Image:** Die Testteile der CI starten das Image mit den Vorgaben; nur der Compose-Job läuft mit den Werten und prüft, dass Postgres damit `healthy` wird.
+- `effective_cache_size` (in M5-66 F7 nach dem Speicher von Docker vorgeschlagen) bleibt ungesetzt: Für Ottos Rechner ist kein Wert entschieden.
+- Test: `backend/tests/compose/test_compose_postgres.py`.
+
 ## 5. CI (`.github/workflows/ci.yml`)
 
 - **`backend-tests` (vier Teile):** Ein Service-Container lässt sich nicht aus einem Dockerfile bauen (M5-41 §7 Punkt 2). Der Service `postgres` fällt weg; jeder Teil baut das Dockerfile mit `docker/setup-buildx-action` und `docker/build-push-action` (`load: true`, `cache-from`/`cache-to` vom Typ `gha`, eigener `scope`), startet den Container mit `docker run` auf `127.0.0.1:5432` und wartet auf `healthy`. Umgebung und Werte wie bisher. Den Cache schreibt nur Teil 1, alle lesen ihn.
@@ -195,7 +203,7 @@ Compare-Object (Get-Content "$out\zeilen-vorher.txt") (Get-Content "$out\zeilen-
 docker compose logs --since 2m postgres | Select-String 'collation version mismatch'
 ```
 
-Erwartet: `server|PostgreSQL 16.16 …`, jede Datenbank `|2.41`, `postgis|3.7.0`, `postgis_topology|3.7.0`, `vector offered|0.8.7`; `Compare-Object` und `Select-String` geben **nichts** aus (gleiche Zeilenzahlen, keine Warnung). `postgis_tiger_geocoder|3.4.3` steht noch da; ihn entfernt der nächste Befehl (F4 = 1), in deiner Datenbank und in `template_postgis`:
+Erwartet: `server|PostgreSQL 16.16 …`, jede Datenbank `|2.41`, `postgis|3.7.0`, `postgis_topology|3.7.0`, `vector offered|0.8.7`, `setting|shared_buffers|512MB` und `setting|work_mem|16MB` (vorher 128MB und 4MB); `Compare-Object` und `Select-String` geben **nichts** aus (gleiche Zeilenzahlen, keine Warnung). `postgis_tiger_geocoder|3.4.3` steht noch da; ihn entfernt der nächste Befehl (F4 = 1), in deiner Datenbank und in `template_postgis`:
 
 ```powershell
 docker compose exec -T postgres sh -c 'for db in $POSTGRES_DB template_postgis; do psql -U $POSTGRES_USER -d $db -c ''DROP EXTENSION IF EXISTS postgis_tiger_geocoder''; done'
