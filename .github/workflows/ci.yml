@@ -69,22 +69,10 @@ jobs:
 
     # The T-C tests of M1-04 run against a real Postgres, in CI and in the cloud
     # session alike (docs/adr/0002-testaufteilung.md §2). They are part of the same
-    # `pytest` both places run (§6), so the service belongs on each of these jobs
-    # rather than on one of its own. Same image as docker-compose.yml.
-    services:
-      postgres:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_USER: ci
-          POSTGRES_PASSWORD: ci-throwaway
-          POSTGRES_DB: earthx
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ci -d earthx"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # `pytest` both places run (§6), so Postgres belongs on each of these jobs rather
+    # than on one of its own. Same image as docker-compose.yml: built from
+    # compose/postgres/Dockerfile in the steps below, because a service container
+    # cannot be built from a Dockerfile (M5-43).
 
     # Throwaway values for a container that lives for the length of this job.
     env:
@@ -98,6 +86,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # PostGIS plus pgvector (M5-43, adr/0026 §14 point 5). The layers come from the
+      # GitHub Actions cache; part 1 writes it, every part reads it.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the Postgres image
+        uses: docker/build-push-action@v6
+        with:
+          context: compose/postgres
+          load: true
+          tags: earthx-postgres:ci
+          cache-from: type=gha,scope=postgres
+          cache-to: ${{ matrix.shard == 1 && 'type=gha,scope=postgres,mode=max' || '' }}
+
+      - name: Start Postgres
+        run: |
+          docker run -d --name postgres -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_USER="$PGUSER" -e POSTGRES_PASSWORD="$PGPASSWORD" -e POSTGRES_DB="$PGDATABASE" \
+            --health-cmd "pg_isready -U $PGUSER -d $PGDATABASE" \
+            --health-interval 2s --health-timeout 5s --health-retries 30 \
+            earthx-postgres:ci
+          for _ in $(seq 1 60); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' postgres)"
+            [ "$status" = "healthy" ] && exit 0
+            sleep 1
+          done
+          docker logs postgres
+          echo "Postgres did not become healthy."
+          exit 1
 
       - uses: actions/setup-python@v5
         id: python
