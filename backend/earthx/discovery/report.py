@@ -762,7 +762,7 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any], lic
         # Only the statements the catalogue does not know: a known one beside it is no reason to wait (Otto,
         # 23.11.2026: a publisher's pair showed what was granted, the cause was the identifier beside the address).
         for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
-            if statement not in licences.by_statement:
+            if statement not in licences.by_statement and not licences.is_not_a_licence(statement):
                 result.pairs[(row.publisher or "–", statement[:100])] += 1
     elif row.waiting_reason == "not_granted":
         result.pairs[(row.publisher or "–", _not_granted(licences, row.source_id, row.publisher, derived.licence.refs))] += 1

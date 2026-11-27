@@ -183,7 +183,13 @@ def run(conn: psycopg.Connection, catalogue_dir: Path, out: Path, day: date) -> 
     granted = read_grant_to_all(catalogue.terms, catalogue_dir / "grant-to-all.yaml").licenses
     standard = standard_refs(catalogue, granted)
     known = catalogue.by_statement
-    waiting = Counter({s: n for s, n in waiting_statements(conn).items() if normal_statement(s) not in known})
+    waiting = Counter(
+        {
+            s: n
+            for s, n in waiting_statements(conn).items()
+            if normal_statement(s) not in known and not catalogue.is_not_a_licence(normal_statement(s))
+        }
+    )
     # What is merged is what is written: the file of `out` (a mount of the checkout), not the copy in the image.
     existing = _existing(out / SPELLINGS_FILE)
     withdrawn = {normal_statement(s.statement) for s in existing if s.withdrawn_on is not None}

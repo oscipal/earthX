@@ -975,6 +975,20 @@ def test_the_statements_of_extracted_finds_are_counted_for_new_spellings(world: 
     assert waiting_statements(world.conn)[statement] == 2
 
 
+def test_a_statement_that_is_never_a_licence_does_not_wait_for_a_grade(world: World, tmp_path: Path) -> None:
+    # M5-67 §23.5: such a find waits silently as no_licence and is not listed as waiting for a grade.
+    from datetime import date
+
+    from earthx.catalog.licences import LICENSES_DIR
+    from earthx.discovery.spellings import run
+
+    access = "Es gelten keine Zugriffsbeschränkungen"
+    other = f"Freitext ohne Einstufung ({world.ckan.source_id})"
+    world.put(world.ckan, _find("a", licence_statements=[access]), _find("b", licence_statements=[other]))
+    _, waiting = run(world.conn, LICENSES_DIR, tmp_path, date(2026, 11, 25))
+    assert access not in waiting and waiting[other] == 1
+
+
 def test_a_title_with_a_mail_address_never_goes_into_the_report(world: World) -> None:
     world.put(world.ckan, _find("a"), _find("m", title="Bodenkarte, Fragen an hans.muster@amt.example.org"))
     approval, markdown = world.report().files
