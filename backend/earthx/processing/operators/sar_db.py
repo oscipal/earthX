@@ -46,7 +46,7 @@ class SarDbParams(BaseModel):
 
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
-    bands: list[str] = Field(min_length=1, max_length=1, description="The band of digital numbers.")
+    bands: list[str] = Field(min_length=1, max_length=1, description="The band of uncalibrated digital numbers (DN).")
     quantity: Literal["amplitude", "intensity"] = Field(
         description="What the band measures: 20·log10 of an amplitude, 10·log10 of an intensity."
     )
@@ -194,7 +194,11 @@ SAR_DB = Operator(
     op_version=1,
     category="radar",
     title="SAR dB",
-    description="Compute the backscatter of a radar band in decibels and add it to the bands.",
+    # Says what v1 reads (Otto, 27.11.2026): whole numbers are digital numbers, never σ⁰; the calibration (DS-05d) changes it.
+    description=(
+        "Add a radar band in decibels, computed from its uncalibrated digital numbers (DN), not calibrated "
+        "backscatter (σ⁰)."
+    ),
     citation=None,
     params=SarDbParams,
     requires=Requirement(

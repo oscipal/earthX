@@ -1691,7 +1691,9 @@ class StepPreset:
 
     The step adds the band ``name``; ``params`` are the step's other parameters, bands named as in the data. ``adjustable``
     names those of ``params`` a person may change right under "Quick processing" (Otto, 17.11.2026; the value in
-    ``params`` is where they start), the others stay as they are. How the band is drawn is the operator's look (adr/0035;
+    ``params`` is where they start), the others stay as they are. ``tooltip`` is the sentence of the button where the title
+    and the band alone would hide what the values are ("VV dB": of uncalibrated digital numbers, Otto, 27.11.2026); without
+    one the button names the title and the band. How the band is drawn is the operator's look (adr/0035;
     Nachtrag M5-14 to adr/0030 §8), not part of the preset. ``catalog`` checks
     the form; whether the operator takes the parameters and may run as a tile on the dataset is checked when ``api`` is
     built (``processing.quick_presets``). No defaults (B10).
@@ -1703,6 +1705,7 @@ class StepPreset:
     op_version: int
     params: Mapping[str, object]
     adjustable: tuple[str, ...]
+    tooltip: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.params, Mapping):
@@ -1776,6 +1779,14 @@ def _step_preset_problem(preset: StepPreset) -> str | None:
         return f"makes {', '.join(unknown)} adjustable, which its params do not set"
     if "bands" in adjustable:
         return "keeps the bands it reads fixed"
+    tooltip = preset.tooltip
+    if tooltip is not None:
+        if not isinstance(tooltip, str) or not tooltip.strip() or tooltip != tooltip.strip() or "\n" in tooltip:
+            return "has a tooltip of one line of text, or none"
+        if len(tooltip) > MAX_NOTICE_TOOLTIP_CHARS:
+            return f"has a tooltip of at most {MAX_NOTICE_TOOLTIP_CHARS} characters"
+        if reference := internal_reference_in(tooltip):
+            return f"has a tooltip that names {reference}, which no user can open"
     return None
 
 

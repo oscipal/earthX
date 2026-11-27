@@ -1,6 +1,6 @@
 # DS-05a — dB für Sentinel-1: Operator `sar_db`, Capability `sar_backscatter`, „VV dB“ und „VH dB“
 
-**Stand:** 27.11.2026, Plan mit Fragen F1–F6 und Auslegungen A1–A9, umgesetzt nach den Empfehlungen in zwei Draft-PRs (§11, §12); Antworten Otto offen.
+**Stand:** 27.11.2026, Plan **angenommen** (Otto, 27.11.2026: F1–F6 je Option 1, A1–A9), mit drei Nachträgen (§13); umgesetzt in zwei Draft-PRs (§11, §12).
 **Stufe B.** Höchstens zwei PRs (Auftrag Otto, 27.11.2026).
 **Aufgabe (Otto, 27.11.2026):**
 
@@ -200,3 +200,18 @@ step_presets:
 - „Quick processing“ je Szene (A7), Legende (F5).
 - **Befund aus dem Browser-Check:** Die Kachel-URL der Ansicht trägt die Schritte nicht (die Ansicht zeichnet aus der Vorlage der Szene und ihrem Look); die Legende erkennt das Preset deshalb am Look (`index`), nicht an `op` in der URL.
 - **Laufen lassen:** Vitest aller Dateien zu Processing, Store, Presets, Legende und Ansicht (97 Dateien, 2869 Tests grün), `npm run lint`, `npx tsc -b`. Browser-Checks: neu `e2e/ds-05a-sar-db.cjs` (hell und dunkel, 1280×800 und 360×740: grün), dazu `quick-processing.cjs`, `preset-params.cjs`, `map-legend.cjs` grün. `s1-pass.cjs` und `processing-panel.cjs` scheitern auf `main` ebenso (Selektoren, die es seit früheren Umbauten nicht mehr gibt); nicht Teil dieser Aufgabe.
+
+---
+
+## 13. Antworten Otto (27.11.2026) und Nachträge
+
+**F1–F6 = 1**, A1–A9 angenommen. Dazu drei Punkte:
+
+1. **Unkalibriert kenntlich machen, nur im Tooltip.** Die Werte sind dB der Rohwerte (DN), nicht σ⁰ (das kommt mit DS-05d). Kein Hinweistext in der Oberfläche.
+   - „VV dB“ und „VH dB“: neues, optionales Feld `tooltip` am Schritt-Preset der Registry (eine Zeile, höchstens 200 Zeichen, kein Verweis auf eigene Dokumente; ohne `tooltip` bleibt „<Titel> of <Band>.“). Sentinel-1: „VV in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰).“, ebenso VH. In der Collection als `earthx:step_presets[].tooltip`; das Frontend nimmt es als Tooltip des Knopfs.
+   - „SAR dB“: Der Tooltip im Panel ist die Beschreibung des Operators, neu „Add a radar band in decibels, computed from its uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰).“; das Feld „Bands“ sagt „The band of uncalibrated digital numbers (DN).“
+   - **Für DS-05d:** Presets „VV dB“/„VH dB“ (Tooltip, wohl auf σ⁰ statt DN), die Beschreibung von `sar_db` und die Legende werden nach der Kalibrierung angepasst; vermerkt in der Zeile DS-05d des M5-Plans (§6.2). `sar_db` v1 liest ohnehin nur ganze Zahlen (A2); σ⁰ in Gleitkomma braucht dB mit Toleranzregel (`adr/0030` F2).
+2. **DN 0 wird nodata** [M, Tests]: in der Kachel (Statistik der ganzen Szene: Minimum endlich ≥ 0, `count` ohne die Nullen; Kachel gleich Job auch in der Maske), im Job (jede 0 maskiert, Statistik des Ergebnisses ohne sie, endlich) und in der Flächenstatistik (`area_statistics` gleich der des Ergebnisses). Das gilt auch, wenn die Datei 0 nicht als nodata erklärt: Die Tabelle führt 0 als leer (NaN, maskiert), nie −∞ oder eine Zahl.
+3. **HH/HV:** `sar_db` läuft im Panel auf einer HH/HV-Szene mit `hh` bzw. `hv` [M]: Die Registry lässt alle vier Bänder zu (Test), das Panel schlägt das erste DN-Band der Szene vor (`hh`, Name `hh_db`; Vitest), der Browser-Check fügt den Schritt auf der HH/HV-Szene hinzu. Es fehlen dort nur die Presets.
+
+Die roten Checks `s1-pass.cjs` und `processing-panel.cjs` nimmt Otto in eine eigene Aufgabe.

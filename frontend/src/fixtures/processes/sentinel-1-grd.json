@@ -464,7 +464,7 @@
           },
           "step_sar_db_v1": {
             "additionalProperties": false,
-            "description": "Compute the backscatter of a radar band in decibels and add it to the bands.",
+            "description": "Add a radar band in decibels, computed from its uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰).",
             "properties": {
               "op": {
                 "const": "sar_db"
@@ -477,7 +477,7 @@
                 "description": "The panel's form (K8): the band in digital numbers, what it measures and the name of the band in dB.",
                 "properties": {
                   "bands": {
-                    "description": "The band of digital numbers.",
+                    "description": "The band of uncalibrated digital numbers (DN).",
                     "items": {
                       "type": "string"
                     },
