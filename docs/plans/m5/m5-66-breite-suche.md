@@ -87,6 +87,68 @@ Jede Seite hat 20 Treffer und einen Link `next`. Die Zeit hängt kaum von der Se
 
 `numberMatched` ist in allen Fällen bis 10 000 gleich wie auf `main` und fehlt darüber. **Was bleibt [M]:** Bei einem breiten Wort ohne Filter kostet das Ranken aller Treffer im Volltext etwa 0,5 s je 5·10⁴ Treffer, der Trigramm-Arm 0,2–0,4 s, Übertragung und Fusion großer Gleichstände bis 0,3 s („Karte“: 19 384 Einträge in der Fusion). Beide Arme laufen nacheinander (F4).
 
+## 2a. Trigramm-Arm bei breiten Wörtern (Auftrag Otto 27.11.2026, Punkte 1–4)
+
+**Befund auf Ottos Bestand** (`scripts/m5-66-explain.py`, rund 102 000 Einträge) [M]:
+- 85–95 % der Zeit einer Suche ohne Filter liegen im Trigramm-Arm, der Volltext braucht 10–190 ms.
+- „data“ und „map“: Parallel Seq Scan mit `word_similarity` auf jeder Zeile; bei „data“ sortiert er sogar auf die Platte.
+- „water“: Der Bitmap Heap Scan prüft 18 000 Kandidaten und liest dafür 13 000 Blöcke von der Platte (`shared_buffers` 128 MB, Heap 152 MB). Danach rechnet er die Ähnlichkeit für 10 638 Treffer noch einmal, mit 25–40 µs je Zeile.
+- „water + Region DE“: Die Region trifft 91 % der Einträge und grenzt kaum ein. Der Plan verbindet dafür alle 83 000 Einträge der Region mit den Treffern und wird damit teurer (2,0 s statt 1,2 s).
+
+**Stand der Technik** (Recherche eines Hilfsagenten, 27.11.2026, Quelltext von PostgreSQL 16 auf GitHub, G = gelesen):
+- **GIN prüft immer nach.** `gin_trgm_consistent` setzt für die Wortähnlichkeit `*recheck = true` („All cases served by this function are inexact“). Die Ähnlichkeit wird im Heap Scan also je Kandidat gerechnet und für die Sortierung noch einmal [G, `contrib/pg_trgm/trgm_gin.c`].
+- **GiST kann nach Abstand sortieren, GIN nicht.** Mit `gist_trgm_ops` sortiert GiST nach `<<->`/`<->>` (KNN). Laut Doku ist das „quite efficiently by GiST indexes, but not by GIN“ und lohnt sich, „when only a small number of the closest matches is wanted“. Die Wortdistanz wird nachgerechnet, die Reihenfolge ist exakt [G, `pgtrgm.sgml`, `trgm_gist.c`, `nodeIndexscan.c`].
+- **Der Planer unterschätzt die Kosten.** `word_similarity` und die Operatoren haben im Katalog keine `COST`, gelten also als 1 Einheit wie ein Vergleich von Zahlen. Real kosten sie 8–40 µs, deshalb wählt der Planer leicht einen Seq Scan [G, `pg_trgm--1.3.sql`, `create_function.sgml`].
+- **Kosten nach Textlänge:** `word_similarity` zerlegt beide Texte in Trigramme und sortiert sie, also O(m log m) in der Textlänge. `<%` bricht an der Schwelle ab, `word_similarity()` rechnet ganz [G, `trgm_op.c`].
+- **Unscharfe Suche als Ergänzung:** Elasticsearch warnt vor den Kosten breiter Fuzzy-Abfragen (`max_expansions` 50, `prefix_length`) [G, Doku im Repo `elastic/elasticsearch`]. Dass Suchsysteme Fuzzy nur bei wenigen exakten Treffern einsetzen, ist nicht belegt [A].
+- **Gesperrt:** postgresql.org, postgrespro.com, cybertec-postgresql.com, elastic.co.
+
+**Die vier Wege, gemessen** [M] auf dem synthetischen Bestand mit verlängerten Schlagworten: Trigramm-Text im Mittel 155 Zeichen, Heap 257 MB, also größer als `shared_buffers` wie bei Otto. Trigramm-Arm allein, bester von 3:
+
+| Anfrage | heute | 1: GiST-KNN, beste 1 000 | Volltext allein (3) |
+|---|---|---|---|
+| data | 1 078 ms | 64 ms | 290 ms |
+| map | 509 ms | 52 ms | 318 ms |
+| water | 1 255 ms | 54 ms | 412 ms |
+| water + Region DE | 465 ms | 61 ms | 356 ms |
+| watr (Tippfehler) | 514 ms | 101 ms | 1 ms |
+
+1. **GiST-KNN:** schnell, aber nicht verwendbar.
+   - Bei breiten Wörtern haben fast alle Treffer dieselbe Ähnlichkeit 1,0 („map“: 13 143 Zeilen, nur 2 verschiedene Werte).
+   - KNN liefert davon 1 000 in beliebiger Reihenfolge. A1/F3 = 1 verlangt aber den ganzen Gleichstand.
+   - Die Zahl bis 10 000 bräuchte ohnehin alle Treffer.
+   - Dazu käme ein zweiter Index von 61 MB über eine Migration.
+   - Die Index-Form `%>` statt `<%` und erzwungene Bitmap-Scans änderten nichts (gemessen).
+2. **Kurzer Text:** Nur der Titel ist 4,7-mal billiger (0,36 statt 1,69 s über alle Zeilen). Aber „water“ trifft dann 887 statt 13 356 Einträge, weil die meisten Treffer aus den Schlagworten kommen. Es bräuchte eine Migration, und die Rechnung liefe weiter über jeden Kandidaten. Nicht gewählt.
+3. **Trigramme nur als Ergänzung, gewählt** (`TRIGRAMS_BELOW` = 20):
+   - Der Trigramm-Arm läuft nur, wenn der Volltext weniger als eine Seite findet (unter 20 Treffer nach allen Filtern). Er ist für Tippfehler da, und ein Wort, das der Volltext breit kennt, braucht ihn nicht.
+   - Ein Tippfehler („watr“) hat keinen Volltext-Treffer, dort laufen die Trigramme weiter.
+   - Mit der Schwelle 1 000 statt 20 bliebe „Wasser Pegel Messstelle“ bei 1,5–1,6 s (750 Volltext-Treffer).
+4. **Region nach dem Ranking:** mit Weg 3 nicht mehr nötig. Den teuren Join gibt es nur im Trigramm-Arm, und der läuft bei „water + Region DE“ nicht mehr.
+
+**Folgen von Weg 3:**
+- Die erste Seite breiter Wörter ändert sich (§3).
+- `numberMatched` zählt nur, was die gelaufenen Arme finden. „Wasser Pegel Messstelle“ hat jetzt 750 statt 7 754 Treffer; vorher kamen über die Trigramme lose Treffer wie „Wasser…“ für „water“ dazu. „data + Kategorie water“ hat 2 122 statt über 10 000.
+- Das Bewertungs-Set ist für alle Fragen gleich: Mit `trigrams_below = 10⁹` gegen 20 geprüft, gleiche Antworten. Seine Kandidaten sind wenige Einträge, der Volltext findet dort nie 20.
+- Nicht gelöst ist eine Glossargruppe („Gewässer“: 5 Begriffe in 3 Konfigurationen, Phrasen mit Nachprüfung). Dort kostet der Volltext selbst 1,7 s, vorher 4,1 s. Das gehört zu M5-23 (F4) und steht als F8 unten.
+
+**Route nach Weg 3** [M], gleicher Bestand, bester von 3:
+
+| Anfrage | vor Weg 3 | mit Weg 3 | erste Seite gleich |
+|---|---|---|---|
+| data | 1 381 ms | 265 ms | 11/20 |
+| map | 838 ms | 300 ms | 18/20 |
+| water | 1 652 ms | 363 ms | ja |
+| Karte | 1 400 ms | 589 ms | 12/20 |
+| Bebauungsplan | 1 225 ms | 253 ms | ja |
+| Wasser Pegel Messstelle | 1 672 ms | 523 ms | 7/20 |
+| data + Kategorie water | 231 ms | 67 ms | 9/20 |
+| map + Region DE-RP | 372 ms | 189 ms | 9/20 |
+| water + Region CH | 322 ms | 222 ms | ja |
+| water + boundaries + DE | 670 ms | 246 ms | 10/20 |
+
+**Postgres-Einstellungen:** nicht geändert, `docker-compose.yml` baut M5-43 um. Vorschlag als F7.
+
 ## 3. Reihenfolge der ersten Treffer [M]
 
 - **Ohne Tiefe gleich:** Mit unbegrenzter Tiefe (`depth=10⁹`) liefert der neue Code für alle 15 gemessenen Anfragen dieselben ersten 20 wie `main`. Ohne Filter ändert die Umstellung keine Reihenfolge; mit Filter kann sie es nach A2 (§2 Punkt 1), in den Messungen nicht auf den ersten 20.
@@ -104,7 +166,9 @@ Jede Seite hat 20 Treffer und einen Link `next`. Die Zeit hängt kaum von der Se
 - **Grenze [A]:** Auf die ersten 20 wirkt die Tiefe nur, wenn ein Treffer in einem Arm unter den ersten etwa 20 und im anderen hinter Platz 1 000 liegt und ein Nachbar fast denselben Wert hat. Die Seite ab Platz 40 kann sich ändern, die erste Seite hat sich in keiner Messung der Sitzung geändert.
 - **Ottos Bestand (Messung 27.11.2026, rund 102 000 Einträge):** Die erste Seite hat sich bei drei von 16 Anfragen geändert, gleich geblieben ist sie bei allen ohne Filter, mit Region allein und bei „data“ mit Kategorie:
   - „map + Kategorie water“ (26 Treffer) und „water + Kategorie water“ (58 Treffer): **A2 (F6 = 1).** Kein Arm hat hier mehr als 58 Treffer, die Tiefe von 1 000 schneidet also nichts ab; anders als auf `main` ist nur, dass die Plätze unter den Treffern der Kategorie vergeben werden statt unter allen.
-  - „map + Kategorie boundaries + Region DE“ (6 734 Treffer): Hier können beide Ursachen wirken, A2 und die Tiefe. Welche es ist, zeigt der Teil „order“ von `scripts/m5-66-explain.py` (§8): Hash der ersten Seite wie gebaut, ohne Tiefe und auf dem Weg von `main` (Rang über alle, Filter danach). Gleicher Hash „wie gebaut“ und „ohne Tiefe“ heißt A2 allein.
+  - „map + Kategorie boundaries + Region DE“ (6 734 Treffer): ebenfalls **A2**. `scripts/m5-66-explain.py` auf Ottos Bestand: Hash der ersten Seite „wie gebaut“ gleich „ohne Tiefe“, aber verschieden vom Weg von `main` (Rang über alle, Filter danach); die Tiefe ändert also nichts (Otto, 27.11.2026).
+  - Alle drei Änderungen kommen damit von A2 (F6 = 1), keine von der Tiefe.
+- **Weg 3 (§2a) ändert die erste Seite breiter Wörter:** Ab 20 Treffern des Volltexts läuft der Trigramm-Arm nicht mehr. Bei breiten Wörtern ordnet dann der Volltext allein; vorher hob der Trigramm-Arm Einträge mit dem Wort in Kennung, Titel oder Schlagwort zusätzlich an (alle im Gleichstand auf Platz 1). Gemessen auf dem synthetischen Bestand (§2a, Tabelle): erste Seite gleich bei „water“, „Bebauungsplan“, „water + Region CH“ und „Sentinel-2“; sonst 7 bis 18 der 20 Treffer gleich, in anderer Reihenfolge. Das Bewertungs-Set ist Frage für Frage gleich (§2a).
 
 ## 4. `catalog-load` ohne Änderung (PR 2)
 
@@ -250,7 +314,31 @@ Gleicher Hash in der Spalte `Reihenfolge` heißt: gleiche Treffer in gleicher Re
 | F5 | 1 | unter 3 s im Programm; Start der Container misst Otto getrennt (§8) |
 | F6 | 1 | Plätze unter den Treffern des Filters (A2) |
 
-Otto misst am 27.11. mit `scripts/m5-66-messung.ps1` und schickt die Ausgaben. Die Fragen stehen unten unverändert als Historie.
+**Messung Otto (27.11.2026, rund 102 000 Einträge, vor Weg 3):**
+
+| | vorher | nachher |
+|---|---|---|
+| `catalog-load` ganz (mit `pgstac-migrate`) | 14,4–15,5 s | 7,1–8,4 s |
+| `catalog-load` im Programm (Zeitzeilen) | — | 3,6–4,6 s (F5 erfüllt, Otto) |
+| data / map / water | 2,64 / 1,45 / 1,53 s | 1,88 / 1,12 / 1,28 s |
+| mit Kategorie water | 1,38–2,59 s | 0,08–0,09 s |
+| mit Region CH | 1,34–2,85 s | 0,18–0,93 s |
+| water + Region DE | 1,41 s | 1,66 s |
+
+Daraus folgten §2a (Weg 3) und die Einträge zu §3; F2 = 2 war zu diesem Zeitpunkt umgesetzt (Tiefe wächst mit der Seite, §2 Punkt 7, Zeiten je Seite in §2).
+
+**F7 — Einstellungen von Postgres** (Vorschlag, nicht umgesetzt, weil M5-43 `docker-compose.yml` umbaut):
+
+1. `shared_buffers` 512 MB (heute 128 MB; Suchtabelle 526 MB, gelistete Einträge 1,4 GB samt Toast und Indizes), `work_mem` 16 MB (heute 4 MB; „data“ sortierte auf die Platte), `effective_cache_size` nach dem Speicher von Docker; mit M5-43 im neuen Dienst `postgres` **(Empfehlung)**
+2. Zusätzlich `jit = off` für den ganzen Dienst (in `catalog-load` schon je Lauf aus)
+3. Nichts ändern
+
+**F8 — Glossargruppen im Volltext** („Gewässer“ 1,7 s im synthetischen Bestand):
+
+1. Mit M5-23 messen und angehen, wie F4 **(Empfehlung)**
+2. Eigene kleine Aufgabe
+
+Die Fragen F1–F6 stehen unten unverändert als Historie.
 
 ## 10. Fragen an Otto (beantwortet, §9)
 
