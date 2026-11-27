@@ -114,7 +114,8 @@ def test_the_steps_in_the_container_read_and_write_the_mounted_approvals() -> No
 
 def test_only_a_pass_counts_and_the_pr_number_is_checked() -> None:
     state = CODE[CODE.index("function Get-CheckState") : CODE.index("function Commit")]
-    assert "skipping" not in state.split("#")[0] and "elseif ($check.bucket -ne 'pass') { return 'fail' }" in state
+    assert "skipping" not in state.split("#")[0] and "elseif ($check.bucket -ne 'pass') {\n                $script:RedChecks += $name" in state
+    assert "if ($script:RedChecks.Count) { return 'fail' }" in state
     assert "$view[0] -notmatch '^[0-9]+$'" in CODE
 
 
@@ -207,13 +208,14 @@ def test_every_run_takes_a_branch_named_by_its_time_and_closes_the_old_failed_dr
     assert "'rev-parse', '--verify', '--quiet', $Name" in taken and "'ls-remote', '--exit-code', '--heads', 'origin', $Name" in taken
     assert '"Harvest run $Label (failed)"' in CODE and '"Harvest run $Label"' in CODE
     # The old failed drafts: only drafts, only runs of this script (title and branch), a comment, the branch goes.
-    closing = _between("function Close-FailedRuns", "function Branch-Taken")
-    assert "'--draft'" in closing and "'--state', 'open'" in closing
-    assert "'^harvest/[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)*$'" in closing and r"'^Harvest run .+ \(failed\)$'" in closing
+    closing = _between("function Close-EarlierRuns", "function Branch-Taken")
+    assert "'--state', 'open'" in closing and "'--author', '@me'" in closing
+    assert "'^harvest/[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)*$'" in closing and "'^Harvest run '" in closing
+    assert "$pr.isDraft -and $pr.title -match '\\(failed\\)$'" in closing
     assert "'gh', 'pr', 'close'" in closing and "'--comment'" in closing and "'--delete-branch'" in closing
     assert "throw" not in closing  # a pull request that cannot be closed never stops the run
     # It happens after the checks and before the new branch, and it is the only place that closes or deletes anything.
-    assert CODE.index("$Closed = Close-FailedRuns") < CODE.index("$Step = 'Branch'")
+    assert CODE.index("$Closed = Close-EarlierRuns") < CODE.index("$Step = 'Branch'")
     assert CODE.count("'pr', 'close'") == 1 and CODE.count("'branch', '-D'") == 2  # 2: here, and the empty run's own branch
 
 
@@ -225,3 +227,48 @@ def test_the_branch_names_the_script_makes_are_the_ones_it_closes() -> None:
     for name in ("harvest/", "harvest/main", "harvest/2026-11-24-fix", "feature/2026-11-24", "harvest/2026-11-24/x",
                  "xharvest/2026-11-24", "harvest/2026-11-24\nmain"):
         assert not pattern.match(name), name
+
+
+# --- M5-67 fix 4 (27.11.2026): the second run of 25.11. ------------------------------------------------------------------
+
+
+def test_a_source_whose_harvest_failed_says_so_when_its_report_is_left_out() -> None:
+    # The run of 25.11. 15:43: the harvest of govdata stopped (robots), the window showed no "Bericht govdata" line, and
+    # nothing said why. Plan §3 step 5: no harvest, no report in this run; the window says it, with the reason, twice.
+    harvest = _between("foreach ($source in $Sources)", "$Step = 'Lizenzen'")
+    assert 'Say "Ernte $source gescheitert: $failure"' in harvest and "$(Reason)" in harvest
+    reports = _between("$Step = 'Bericht'", "$Step = 'Linkpruefung'")
+    assert "foreach ($source in $Sources)" in reports and "$Harvested -notcontains $source" in reports
+    skipped = reports[reports.index("-notcontains") : reports.index('Say "Bericht $source ..."')]
+    assert 'Say "Bericht $source uebersprungen: Ernte gescheitert' in skipped and "continue" in skipped
+    assert "throw" not in skipped  # a failed source never stops the others
+
+
+def test_a_pull_request_with_a_red_required_check_is_closed_by_the_next_run_with_its_reason() -> None:
+    closing = _between("function Close-EarlierRuns", "function Branch-Taken")
+    # Only red: one that waits for its checks, or is green and not merged, stays and is a finding.
+    assert "(Get-CheckState \"$($pr.number)\") -eq 'fail'" in closing
+    assert "if (-not $why) { continue }" in closing and "$script:FailedChecks" in closing
+    # Only a check that failed counts, not one cancelled by hand or skipped: a rerun can still make it green.
+    state = _between("function Get-CheckState", "function Commit")
+    assert "if ($check.bucket -eq 'fail') { $script:FailedChecks += $name }" in state
+    assert "-and $script:FailedChecks.Count" in closing
+    # Never someone else's pull request, a fork's, or one that is not a run of this script.
+    assert "'--author', '@me'" in closing and "if ($pr.isCrossRepository) { continue }" in closing
+    assert "-notmatch '^Harvest run '" in closing
+    # The comment says why, and the line in the window says which were closed.
+    assert '$why = "Pflicht-Check rot: $red."' in closing and "$why Ein neuer Lauf" in closing
+    assert "PRs frueherer Laeufe geschlossen" in CODE and "Native \"close PR" in closing
+    assert "'--delete-branch'" in closing
+
+
+def test_the_state_of_the_checks_comes_from_the_list_and_not_from_the_exit_code_of_gh() -> None:
+    # `gh pr checks` ends with 1 on a red check and 8 on a pending one and prints its list all the same; read only on 0,
+    # a red check looked pending and the run waited the 90 minutes (plan §22a.6).
+    state = _between("function Get-CheckState", "function Commit")
+    assert "'--json', 'name,bucket') @(0, 1, 8)" in state
+    assert "if ($null -eq $json -or -not $json.Count) { return 'pending' }" in state
+    assert "[int[]]$Accept = @(0)" in _between("function Lines", "function Reason")
+    assert "if ($Accept -notcontains $code) { return $null }" in _between("function Lines", "function Reason")
+    # Every other call keeps the exit code 0 as the only success.
+    assert len(re.findall(r"\) @\(0, 1, 8\)", CODE)) == 1
