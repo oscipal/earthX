@@ -147,7 +147,7 @@ Jede Seite hat 20 Treffer und einen Link `next`. Die Zeit hängt kaum von der Se
 | water + Region CH | 322 ms | 222 ms | ja |
 | water + boundaries + DE | 670 ms | 246 ms | 10/20 |
 
-**Postgres-Einstellungen:** nicht geändert, `docker-compose.yml` baut M5-43 um. Vorschlag als F7.
+**Postgres-Einstellungen:** nicht hier; umgesetzt in M5-43 (F7 = 1, §9).
 
 ## 3. Reihenfolge der ersten Treffer [M]
 
