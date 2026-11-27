@@ -16,6 +16,10 @@ services:
     # PostGIS plus pgvector, built from compose/postgres/Dockerfile (M5-43).
     build:
       context: ./compose/postgres
+    # M5-66 F7: the search table and the listed entries outgrow the default 128 MB of shared buffers, and wide
+    # searches sorted to disk with 4 MB of work_mem. On the command line, so they also apply to an existing volume,
+    # whose postgresql.conf initdb wrote; CI's test jobs keep the defaults.
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "work_mem=16MB"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
