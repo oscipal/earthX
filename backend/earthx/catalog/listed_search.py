@@ -32,7 +32,6 @@ __all__ = [
     "listed_documents",
     "listed_entry",
     "listed_page",
-    "matching_listed",
 ]
 
 
@@ -157,19 +156,6 @@ async def full_entries(conn: Any, ids: Sequence[str], regions: Sequence[str]) ->
         await cur.execute(statement, {"ids": list(ids), "regions": list(regions)})
         rows = await cur.fetchall()
     return sorted((sort_title(title), dataset_id) for dataset_id, title in rows)
-
-
-async def matching_listed(conn: Any, ids: Sequence[str], where: ListedFilter) -> frozenset[str]:
-    """The published entries of ``ids`` that ``where`` matches."""
-    if not ids:
-        return frozenset()
-    condition, params = _conditions(where)
-    statement = sql.SQL("SELECT dataset_id FROM public.earthx_listed_entry WHERE dataset_id = ANY(%(ids)s) AND {}").format(
-        condition
-    )
-    async with conn.cursor() as cur:
-        await cur.execute(statement, {**params, "ids": list(ids)})
-        return frozenset(row[0] for row in await cur.fetchall())
 
 
 async def listed_documents(conn: Any, ids: Sequence[str]) -> dict[str, dict[str, Any]]:

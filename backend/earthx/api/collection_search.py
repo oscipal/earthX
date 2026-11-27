@@ -6,7 +6,9 @@ never puts an area in a URL. Without any parameter the answer is the first page 
 no request returns every collection at once.
 
 With ``q`` the ids come from :func:`~earthx.catalog.search.search_datasets` in rank order, full and listed entries
-alike; a page holds at most :data:`MAX_TEXT_PAGE` collections and goes on by ``offset``. Without ``q``
+alike, with the filters of kind of entry, category and region in its statements (M5-66); a page holds at most
+:data:`MAX_TEXT_PAGE` collections and goes on by ``offset`` up to the end of the fused hits, and ``numberMatched`` is
+exact up to :data:`MAX_COUNTED` and left out above. Without ``q``
 full and listed entries come in one order, title then id (M5-40 plan F3): the full ones of the filter from the same
 search, the listed ones a page at a time from ``earthx_listed_entry``; a page holds :data:`DEFAULT_PAGE` collections
 unless ``limit`` says otherwise, at most :data:`MAX_LISTING_PAGE`, and goes on by the keyset ``token`` of its last
@@ -51,9 +53,8 @@ from earthx.catalog.listed_search import (
     full_entries,
     listed_documents,
     listed_page,
-    matching_listed,
 )
-from earthx.catalog.search import MAX_QUERY_CHARS, SearchResult, box_area, search_datasets
+from earthx.catalog.search import MAX_QUERY_CHARS, Kept, SearchResult, box_area, search_datasets
 
 #: adr/0026 §4.4: at most 20 hits per page of a text search.
 MAX_TEXT_PAGE = 20
@@ -376,20 +377,17 @@ async def search_collections(
     if query.text is None:
         return await _catalogue_page(request, query, body=body)
     registry = getattr(request.app.state, "earthx_registry", None)
+    full_ids = None
+    if query.category is not None:
+        full_ids = [c.dataset_id for c in registry if c.category == query.category] if registry is not None else []
+    kept = Kept(entry=query.entry, category=query.category, full_ids=full_ids, regions=query.regions)
     async with request.app.state.earthx_cache_pool.connection() as conn:
-        result: SearchResult = await search_datasets(conn, query.text, area=query.area, period=query.period)
-        full = tuple(i for i in result.ids if i not in result.listed) if query.entry != "listed" else ()
-        if query.category is not None:
-            full = tuple(i for i in full if registry is not None and i in registry and registry.get(i).category == query.category)
-        if query.regions and full:
-            kept = {dataset_id for _, dataset_id in await full_entries(conn, full, query.regions)}
-            full = tuple(dataset_id for dataset_id in full if dataset_id in kept)
-        listed: frozenset[str] = frozenset()
-        if query.entry != "full" and result.listed:
-            where = ListedFilter(category=query.category, regions=query.regions)
-            listed = await matching_listed(conn, sorted(result.listed), where)
-        ids = tuple(i for i in result.ids if i in listed or i in full)
+        result: SearchResult = await search_datasets(
+            conn, query.text, area=query.area, period=query.period, kept=kept, count_up_to=MAX_COUNTED
+        )
+        ids = result.ids
         page = ids[query.offset : query.offset + query.limit]
+        listed = result.listed
         documents = await listed_documents(conn, [i for i in page if i in listed])
     by_id = {c["id"]: c for c in await _collections(request, [i for i in page if i not in listed])}
     for dataset_id, document in documents.items():
@@ -402,9 +400,10 @@ async def search_collections(
     answer: dict[str, Any] = {
         "collections": collections,
         "links": links,
-        "numberMatched": len(ids),
         "numberReturned": len(collections),
     }
+    if result.matched is not None:
+        answer["numberMatched"] = result.matched
     _add_ignored(answer, {i: names for i, names in result.ignored_filters_by_collection.items() if i in page})
     return answer
 
