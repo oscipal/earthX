@@ -187,6 +187,7 @@ class TestOrderSchema:
             "#/$defs/step_mask_values_v1",
             "#/$defs/step_normalize_v4",
             "#/$defs/step_reproject_v4",
+            "#/$defs/step_sar_db_v1",
             "#/$defs/step_scale_v1",
             "#/$defs/step_terrain_v1",
         ]
@@ -238,6 +239,7 @@ class TestOrderSchema:
             "step_mask_values_v1",
             "step_normalize_v4",
             "step_reproject_v4",
+            "step_sar_db_v1",
             "step_terrain_v1",
         ]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
@@ -348,6 +350,7 @@ class TestWhatThePanelReads:
             "step_mask_values_v1",
             "step_normalize_v4",
             "step_reproject_v4",
+            "step_sar_db_v1",
             "step_terrain_v1",
         ]
         for op in ("band_math", "mask"):

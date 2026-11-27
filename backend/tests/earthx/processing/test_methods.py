@@ -252,6 +252,7 @@ class TestEveryOperatorSaysItsStep:
         ("normalize", 4): {"method": "robust", "bands": ["red"]},
         ("reproject", 1): {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
         ("terrain", 1): {"product": "slope", "bands": ["dtm"], "name": "slope", "slope_unit": "percent"},
+        ("sar_db", 1): {"bands": ["vv"], "quantity": "amplitude", "name": "vv_db"},
     }
 
     @pytest.mark.parametrize(("op", "version"), sorted(REGISTRY))

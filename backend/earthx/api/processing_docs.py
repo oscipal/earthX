@@ -286,6 +286,8 @@ def _step_schemas(
         params.pop("$schema", None)
         if operator.op == "reproject" and config is not None and not config.capabilities.interpolation:
             _without_interpolation(params)
+        if operator.dataset_schema is not None and config is not None:
+            operator.dataset_schema(config, params)
         inner = params.pop("$defs", {})
         prefix = f"{name}__"
         for key, value in inner.items():

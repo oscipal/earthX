@@ -461,6 +461,79 @@
             "x-earthx-tiers": [
               "T2"
             ]
+          },
+          "step_sar_db_v1": {
+            "additionalProperties": false,
+            "description": "Compute the backscatter of a radar band in decibels and add it to the bands.",
+            "properties": {
+              "op": {
+                "const": "sar_db"
+              },
+              "op_version": {
+                "const": 1
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8): the band in digital numbers, what it measures and the name of the band in dB.",
+                "properties": {
+                  "bands": {
+                    "description": "The band of digital numbers.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 1,
+                    "minItems": 1,
+                    "title": "Bands",
+                    "type": "array"
+                  },
+                  "name": {
+                    "description": "Name of the new band: a letter, then letters, digits or _; free in the data and the other results.",
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "title": "Name",
+                    "type": "string"
+                  },
+                  "quantity": {
+                    "const": "amplitude",
+                    "description": "What the band measures: 20·log10 of an amplitude, 10·log10 of an intensity.",
+                    "title": "Quantity"
+                  }
+                },
+                "required": [
+                  "bands",
+                  "quantity",
+                  "name"
+                ],
+                "title": "SarDbParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "SAR dB",
+            "type": "object",
+            "x-earthx-kind": "pixel",
+            "x-earthx-looks": {
+              "by": {
+                "amplitude": {
+                  "colormap": "greys_r",
+                  "scale": "measured"
+                },
+                "intensity": {
+                  "colormap": "greys_r",
+                  "scale": "measured"
+                }
+              },
+              "param": "quantity"
+            },
+            "x-earthx-passes-values": false,
+            "x-earthx-tiers": [
+              "T1",
+              "T2"
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -525,6 +598,9 @@
                 },
                 {
                   "$ref": "#/$defs/step_normalize_v4"
+                },
+                {
+                  "$ref": "#/$defs/step_sar_db_v1"
                 }
               ]
             },

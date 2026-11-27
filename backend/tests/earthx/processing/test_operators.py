@@ -36,6 +36,7 @@ class TestRegistry:
             ("reproject", 2),
             ("reproject", 3),
             ("reproject", 4),
+            ("sar_db", 1),
             ("terrain", 1),
         }
 
@@ -53,6 +54,7 @@ class TestRegistry:
             ("reproject", 2),
             ("reproject", 3),
             ("reproject", 4),
+            ("sar_db", 1),
             ("terrain", 1),
             ("scale", 1),
             ("coarsen", 1),

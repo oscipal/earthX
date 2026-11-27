@@ -231,6 +231,9 @@ class Operator:
     properties: Callable[[BaseModel], dict[str, Any]] = field(default=_no_properties)
     #: Why these parameters do not fit this entry (empty means they do); only :func:`applicable` calls it.
     dataset_check: Callable[[DatasetConfig, BaseModel], list[str]] = field(default=_no_dataset_reasons)
+    #: ``dataset_schema(config, params_schema)``: narrows the JSON Schema of the parameters in place to what this entry
+    #: allows, for the process description of one dataset (``sar_db``: the quantity the entry states). ``None`` for none.
+    dataset_schema: Callable[[DatasetConfig, dict[str, Any]], None] | None = None
     #: Which bands of the stock the step needs and changes (:class:`BandUse`), for the planner (adr/0020 §4).
     bands_used: Callable[[BaseModel], BandUse] = field(default=_keeps_every_band)
     #: Whether every value the step writes is a value it read: selecting, hiding, ``nearest`` and ``mode``. Only then
