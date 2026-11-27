@@ -47,7 +47,9 @@ Broad words (M5-66, docs/plans/m5/m5-66-breite-suche.md): the filters of the Dat
 entry, category, regions) stand in both arms, before any rank, so that a filter never drops hits after the depth. Each
 arm hands its places up to :data:`DEPTH` to the fusion, a tie at the last place whole; every hit is still ranked in
 SQL, since an exact rank needs each ``tsvector``. ``matched`` counts the hits of both arms together up to
-:data:`COUNT_UP_TO` and is ``None`` above it (M5-40 F4).
+:data:`COUNT_UP_TO` and is ``None`` above it (M5-40 F4). The trigram arm runs only where the full text has fewer hits
+than :data:`TRIGRAMS_BELOW`: it is there for typing errors, and for a word the full text knows widely it computed the
+similarity of tens of thousands of candidates (way 3 of the plan, §2a).
 
 Every text goes to SQL as a parameter, never into the statement.
 """
@@ -75,6 +77,10 @@ TRIGRAM_THRESHOLD = 0.5
 #: The places of each arm that go into the fusion (M5-42 F5 = 1, M5-66), a tie at the last one whole: every hit is
 #: ranked in SQL, only these are fused. A hit beyond it in one arm adds nothing there to its fused score.
 DEPTH = 1_000
+#: The trigram arm runs only where the full text has fewer hits than this, less than a page (M5-66, way 3): it is
+#: there for typing errors, and a word the full text knows widely needs none. For a broad word it cost 0.5-1.3 s at
+#: 10⁵ entries, as the similarity of every candidate is computed.
+TRIGRAMS_BELOW = 20
 #: Up to here the search counts its hits exactly (M5-40 F4); above it the number is left out.
 COUNT_UP_TO = 10_000
 #: The share of the units a dataset has to match under :attr:`Joining.SHARE`.
@@ -553,6 +559,7 @@ async def search_datasets(
     kept: Kept = ALL_KEPT,
     depth: int = DEPTH,
     count_up_to: int = COUNT_UP_TO,
+    trigrams_below: int = TRIGRAMS_BELOW,
 ) -> SearchResult:
     """The datasets for ``text`` within ``area`` (a GeoJSON polygon in WGS 84) and ``period`` (either end open), ranked.
 
@@ -605,7 +612,8 @@ async def search_datasets(
                 )
             # A similarity is at most 1: above it, the arm finds nothing and pg_trgm would refuse the threshold.
             trigrams = []
-            if normal and threshold <= 1:
+            known_widely = bool(full_text) and full_text[0][3] >= trigrams_below
+            if normal and threshold <= 1 and not known_widely:
                 await conn.execute(
                     "SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(threshold),)
                 )

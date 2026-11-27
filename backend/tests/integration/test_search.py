@@ -30,6 +30,7 @@ from earthx.catalog.search import (
     MIN_SHARE,
     TEXT_FIRST_MAX,
     TIME_FILTER,
+    TRIGRAMS_BELOW,
     Joining,
     Kept,
     QueryTooLong,
@@ -804,3 +805,20 @@ async def test_several_units_rank_as_the_sum_of_their_ranks_in_the_order_of_the_
     # "Kappa Liste": every title has both words; the order is that of "Kappa" alone, the ranks of "Liste" being equal.
     assert await _ids(aconn, "Kappa Liste", threshold=1.1) == await _ids(aconn, "Kappa", threshold=1.1)
     assert await _ids(aconn, "Kappa Liste", threshold=1.1, depth=1) == ("kappa-5",)
+
+
+async def test_the_trigram_arm_runs_only_where_the_full_text_has_less_than_a_page(grid, aconn):
+    # M5-66 way 3: "Alpha" is in 3 600 titles of the grid; "Alpga atlas" only the trigrams find (similarity 0.5), behind
+    # the tie of the grid, so without a depth.
+    with psycopg.connect() as conn:
+        insert_row(conn, "alpga-atlas", title="Alpga atlas")
+        write_listed_search_index(conn, [config.dataset_id for config in CATALOGUE])
+        conn.commit()
+    assert TRIGRAMS_BELOW == 20
+    assert "alpga-atlas" not in await _ids(aconn, "Alpha", depth=10**9)
+    assert "alpga-atlas" in await _ids(aconn, "Alpha", trigrams_below=10**9, depth=10**9)
+    # Fewer full-text hits than a page: the trigrams run. A typing error has none, and they find the grid.
+    assert "alpga-atlas" in await _ids(aconn, "Alpga")
+    assert len([i for i in await _ids(aconn, "Alpah") if i.startswith("grid-")]) == 3_600
+    # The number counts the hits of the arms that ran: the grid and "Terrain Alpha", not "Alpga atlas".
+    assert (await search_datasets(aconn, "Alpha", glossary=GLOSSARY, count_up_to=10_000)).matched == 3_601
