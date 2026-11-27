@@ -299,7 +299,8 @@ true_color: []
 # "Dual-pol RGB" comes with DS-05c (adr/0030 §9).
 composite_presets: []
 # "VV dB" and "VH dB", released on GRD by Otto on 06.11.2026 (adr/0018 §9.4); a scene of HH and HV shows neither
-# (DS-05a F3). Drawn with the look of `sar_db`.
+# (DS-05a F3). Drawn with the look of `sar_db`. The tooltip says the values are dB of uncalibrated DN, not σ⁰ (Otto,
+# 27.11.2026); it changes with the calibration (DS-05d).
 step_presets:
 - name: vv_db
   title: VV dB
@@ -307,12 +308,14 @@ step_presets:
   op_version: 1
   params: {bands: [vv], quantity: amplitude}
   adjustable: []
+  tooltip: VV in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰).
 - name: vh_db
   title: VH dB
   op: sar_db
   op_version: 1
   params: {bands: [vh], quantity: amplitude}
   adjustable: []
+  tooltip: VH in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰).
 # adr/0018 F2, DS-04 plan §4.4; the tooltips confirmed by Otto on 08.11.2026 (F10).
 notices:
 - code: approximate_geolocation

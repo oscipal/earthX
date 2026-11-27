@@ -76,6 +76,14 @@ class TestTheEntries:
         ]
         assert SENTINEL_1_GRD.composite_presets == ()
 
+    def test_the_buttons_of_sentinel_1_say_the_values_are_uncalibrated_digital_numbers(self) -> None:
+        """Otto, 27.11.2026: dB of DN, not σ⁰, in the tooltip and nowhere else in the interface."""
+        published = to_stac_collection(SENTINEL_1_GRD)["earthx:step_presets"]
+        assert [entry["tooltip"] for entry in published] == [
+            f"{band} in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰)."
+            for band in ("VV", "VH")
+        ]
+
     @pytest.mark.parametrize("entry", [ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021])
     def test_the_others_offer_none(self, entry) -> None:
         assert (entry.composite_presets, entry.step_presets) == ((), ())
@@ -118,6 +126,7 @@ class TestTheCollection:
             "op_version": 1,
             "params": {"product": "slope", "bands": ["data"], "method": "horn", "slope_unit": "degrees", "name": "slope"},
             "adjustable": ["slope_unit"],
+            "tooltip": None,
         }
         assert to_stac_collection(COP_DEM_GLO_30)["earthx:composite_presets"] == []
 
@@ -188,6 +197,11 @@ class TestTheFormOfAStepPreset:
             ({"adjustable": ("azimuth", "azimuth")}, "names an adjustable parameter twice"),
             ({"adjustable": ("slope_unit",)}, "makes slope_unit adjustable, which its params do not set"),
             ({"adjustable": ("bands",)}, "keeps the bands it reads fixed"),
+            ({"tooltip": ""}, "a tooltip of one line of text, or none"),
+            ({"tooltip": " Light "}, "a tooltip of one line of text, or none"),
+            ({"tooltip": "Light\nand shadow"}, "a tooltip of one line of text, or none"),
+            ({"tooltip": "x" * 201}, "a tooltip of at most 200 characters"),
+            ({"tooltip": "Hillshade as in M5-10."}, "a tooltip that names M5-1, which no user can open"),
         ],
     )
     def test_a_broken_step_preset_is_refused(self, changes: dict, reason: str) -> None:
