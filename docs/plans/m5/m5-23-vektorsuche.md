@@ -1,6 +1,7 @@
 # M5-23 — Suche Teil 2: Vektorarm, Modellwahl, alle Arme gleichzeitig
 
 - **Auftrag:** Otto, 27.11.2026, Stufe B (`plans/m5/m5-discovery-und-suche.md` §6.2, Zeile M5-23).
+- **Status:** F1–F8 von Otto am 27.11.2026 beantwortet, alle = 1 (§10a). Umgesetzt wie empfohlen.
 - **Grundlage:** `adr/0026` §4.3, §4.4, §6 Schritte 3 und 4, §8, §14, §15; `plans/m5/m5-41-pgvector.md` §6, §8, §9; `plans/m5/m5-42-suche-gelistete.md` §4, F6; `plans/m5/m5-66-breite-suche.md` §2a, F4, F8; `plans/m5/m5-43-postgres-pgvector.md` (pgvector 0.8.7 in Compose, CI und Cloud-Umgebung); Entscheidungslog bis 27.11.2026.
 - **Belegstufen** wie in `adr/0026`: **M** in dieser Sitzung gemessen, **P** im Repo oder an der Primärquelle selbst gelesen, **P\*** Primärquelle über einen Hilfsagenten gelesen, **S** nur Suchtreffer, **A** eigene Ableitung.
 - **Zwei Draft-PRs:** PR 1 (`claude/upbeat-brown-zzfsrn`) dieser Plan und der Vektorarm (§4); PR 2 (`claude/upbeat-brown-zzfsrn-broad`, baut auf PR 1 auf) breite Wörter, Glossar im Volltext, Klassennamen, neue Fragen des Sets und das Messskript (§5, §6, §9). Die Schwelle des Trigramm-Arms bleibt (§6a).
@@ -93,7 +94,8 @@ Bester Wert je Modell, bei dem Filter- und Negativfragen bestehen; die Schwelle 
 
 - **Absolut** (Kosinus ≥ s) besteht mit keinem Modell: Für granite-97m-r2 fp32 kostet jede Schwelle, die vier Negativfragen leert (ab 0,82), Deutsch unter 0,9 [M].
 - **Relativ:** Für jede Anfrage q werden μ(q) und σ(q) der Kosinuswerte zu 46 festen Hintergrundtexten gerechnet (23 deutsch, 23 englisch, kurze Titel wie „Abfallkalender und Wertstoffhöfe“, „road noise map“, ohne Bezug zu Fernerkundung). Ein Treffer zählt, wenn `(cos − μ(q)) / σ(q) ≥ 2,7`. Das gleicht aus, dass manche Anfragen zu allem ähnlich sind.
-- **Gemessen [M]:** besteht bei 2,5–2,8 mit allen 46 Texten, bei 2,7–2,9 nur mit den deutschen, bei 2,6–2,8 nur mit den englischen, mit der ersten Hälfte der Liste nicht (dann 3 von 5 Negativfragen). Vorschlag 2,7.
+- **Gemessen [M]:** besteht bei 2,5–2,8 mit allen 46 Texten, bei 2,7–2,9 nur mit den deutschen, bei 2,6–2,8 nur mit den englischen, mit der ersten Hälfte der Liste nicht (dann 3 von 5 Negativfragen). Gewählt 2,7.
+- **Bekanntes Risiko (Otto, 27.11.2026):** Das Fenster ist schmal (2,5–2,8). Es hängt an wenigen Fragen: Bei 19 deutschen Fragen verschiebt eine Frage Recall@5 um 0,05, und welche Negativfrage Treffer hat, entscheidet ein Abstand von wenigen Zehnteln. Eine andere Liste von Hintergrundtexten verschiebt das Fenster. **Neu geprüft wird es, sobald das Set wächst** (neue Fragen, neue Datensätze mit Note 2) oder das Modell, die Hintergrundtexte oder der eingebettete Text sich ändern: dieselbe Abtastung von z in Schritten von 0,1 wie hier, Ergebnis im PR der Änderung. Liegt 2,7 dann nicht mehr im Fenster, wird nachgestellt; verschwindet das Fenster, ist die Mindestähnlichkeit neu zu entscheiden.
 - Die Hintergrundtexte liegen als YAML in `catalog` (`backend/catalog/search_background.yaml`), ihre Vektoren rechnet `api` beim Start (46 Texte; Start mit Modell 2,3 s [M]). Kein Text aus Nutzeranfragen.
 
 ## 4. Umsetzung (PR 1)
@@ -108,9 +110,17 @@ Bester Wert je Modell, bei dem Filter- und Negativfragen bestehen; die Schwelle 
 
 - Neue Stufe `model-files` auf demselben Basis-Image wie `app`: lädt `onnx/model.onnx` und `tokenizer.json` von Hugging Face an der festen Revision `835ad14087e140460703cf0fae09f97d469d65c2` und prüft je Datei den SHA-256 (Python `urllib`, kein zusätzliches Paket). Bricht bei Abweichung ab.
 - Neue Stufe `search` = `app` + die Modelldateien unter `/app/models/` + `EARTHX_EMBEDDING_MODEL`. Die Dienste `api` und `catalog-load` bauen `target: search`; alle anderen, auch `runner`, bleiben auf `app` ohne Modell (`adr/0026` F2 a). Test: der Runner baut auf `app`, keine Stufe außer `search` kopiert aus `model-files`.
-- Zur Laufzeit kein Netz: `tokenizers` liest nur `Tokenizer.from_file`; `huggingface_hub` ist keine Abhängigkeit. Ein Test prüft, dass `earthx` weder `from_pretrained` aufruft noch `huggingface_hub` importiert.
+- Zur Laufzeit kein Netz: `tokenizers` liest nur `Tokenizer.from_file`. `tokenizers` bringt `huggingface_hub` als Abhängigkeit mit; es steht deshalb auf der Verbotsliste von `http-only-in-gateway`, ein Test verbietet `from_pretrained`, und das Image setzt `HF_HUB_OFFLINE=1`.
 - Neue Abhängigkeiten in `requirements.txt` und Lock: `onnxruntime`, `tokenizers` (MIT bzw. Apache-2.0). Hinweis zu Dritten für das Modell (Apache-2.0).
 - **Speicher je Prozess `api`** [M]: das geladene Modell mit Tokenizer kostet rund **690 MB** RSS (ohne Modell 87 MB für die Imports der Suche); `enable_cpu_mem_arena` und `enable_mem_pattern` ändern daran nichts (662 MB je Sitzung von ONNX Runtime). Zum Vergleich wären es mit MiniLM-L12 int8 (118 MB Datei) deutlich weniger, dafür besteht das Set nicht (F1).
+- **Wie oft das Modell lokal geladen wird [P]:** Compose startet einen Container `api` mit einem Prozess (`uvicorn` ohne `--workers`, keine Replikate). Dieser Prozess lädt das Modell einmal beim Start (`load_query_vectors` im Lifespan) und nutzt dieselbe Sitzung von ONNX Runtime für alle Anfragen, je Anfrage in einem Thread mit einem Faden. Dazu lädt `catalog-load` es während seines Laufs (einmaliger Container, bis 0,94 GB). `tiler`, `worker`, `harvester` und der Runner bauen `target: app` und haben kein Modell. Ein Umbau ist lokal nicht nötig.
+- **Vermerk für M6 (mehrere Instanzen):** Jede Instanz `api` lädt das Modell selbst, also rund 0,7 GB RAM je Instanz; mit `--workers n` in einem Container n-mal, weil jeder Prozess eine eigene Sitzung hat. Wege, wenn das zu teuer wird: (a) Instanzen mit einem Prozess und mehr Instanzen statt Worker; (b) ein eigener kleiner Dienst nur fürs Einbetten der Anfrage (ein Modell für alle `api`, eine Anfrage ~15 ms, Aufruf intern ohne `gateway`, da Plattformdienst; braucht eine Entscheidung zur Modulgrenze und zum Ausfallverhalten); (c) ein kleineres Modell, wenn das Set es trägt. `catalog-load` bleibt einmalig. Zu entscheiden mit der Planung von M6.
+
+### 4.2a Bauzeit mit dem Modell [M]
+
+- **CI, Job `compose-topology`, Schritt „Build images“** (`docker compose build`, alle Dienste): auf `main` 69 s (Lauf 2166), mit der Stufe `model-files` 86 s (Lauf 2170, PR 1); der ganze Job 2:23 gegen 2:46 min. Der Job hat keinen Cache über Läufe hinweg; jeder Lauf baut die Stufe kalt und lädt das Modell (415 MB) neu. Innerhalb des Laufs nutzt der folgende Bau des Runners die Schichten (1–2 s wie auf `main`). Die vier Test-Teile bauen nur das Postgres-Image und sind nicht betroffen.
+- **Mit Cache** gibt es in der CI also heute nicht. Gemessen in der Sitzung, nur die Stufe `model-files`: kalt 47 s, aus dem Cache 0,3 s. Ein Cache vom Typ `gha` für `compose-topology` (wie bei Postgres in M5-43) hieße eine Änderung an `.github/workflows/ci.yml`; nicht in diesem PR, nur mit Erlaubnis.
+- **Bei Otto:** Der erste `docker compose build` lädt das Modell einmal; danach liegt die Stufe im lokalen Cache und kostet nichts, solange Revision und Prüfsummen gleich bleiben.
 
 ### 4.3 Einbetten in `catalog-load`
 
@@ -292,6 +302,10 @@ Zurückschicken: `vorher-suche.csv`, `nachher-suche.csv`, `*-laden.txt`, `*-spei
 2. Alle sechs entfernen
 3. Alle sechs behalten
 
+### 10a. Antworten Otto (27.11.2026)
+
+F1–F8 = 1. Dazu vor dem Abschluss (Otto, 27.11.2026): Speicher und Vermerk für M6 (§4.2), das schmale Fenster der Schwelle als bekanntes Risiko (§3.3), `test_module_boundaries[runner]` (§12), Bauzeit der CI mit dem Modell (§4.2a), Hosts der Umgebung (F8: entfernt werden `cdn-lfs.hf.co`, `cdn-lfs-us-1.hf.co`, `cas-bridge.xethub.hf.co`; es bleiben `huggingface.co`, `us.aws.cdn.hf.co`, `cas-bridge.xethub-eu.hf.co`).
+
 ## 11. Auslegungen
 
 - **A1:** Ohne konfiguriertes Modell (Tests, Entwicklung ohne die Stufe `search`) läuft die Suche lexikalisch wie bisher, `api` meldet das beim Start. Im Image ist das Modell immer gesetzt.
@@ -310,6 +324,7 @@ Zurückschicken: `vorher-suche.csv`, `nachher-suche.csv`, `*-laden.txt`, `*-spei
 - `api`: Startprüfung ohne Embeddings der vollen Einträge; Route mit und ohne Modell.
 - Image: Stufen, Runner ohne Modell, Prüfsummen gesetzt; kein `from_pretrained`, kein `huggingface_hub`.
 - Bewertungs-Set mit Vektorarm besteht F5; Prüfwerte der Fixture; gleichzeitig und nacheinander gleiche Antworten.
+- `test_module_boundaries[runner]`: Der Vertrag `runner` verbietet jedes Modul von `catalog`, das der Runner nicht braucht, auch ein neues (`adr/0016` F2). `catalog.embedding` fehlte dort; der Test war in der CI rot, auf `main` grün. Mein erster Befund „scheitert auch auf `main`“ war falsch: Die Gegenprobe lief mit `git stash`, das die damals unversionierte Datei `embedding.py` liegen ließ. Behoben in `.importlinter`. Ebenso fehlte 039 in der Liste von `test_migrations.py`.
 - PR 2: gleiche Ränge mit den Einzelwörtern einer Einheit; eine Glossargruppe ohne Glied im Index ist unbekannt; Klassennamen im Suchtext; Zählung und Ratsche des Sets mit Q53–Q56.
 
 ## 13. Quellen
