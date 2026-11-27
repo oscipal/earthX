@@ -135,6 +135,36 @@ Vollständig geprüft, in dieser Reihenfolge:
 Beides kostet beim Sitzungsstart Zeit (Paketinstallation, Migration) und gehört
 deshalb ins Setup-Skript, dessen Ergebnis zwischengespeichert wird.
 
+> **Nachtrag 2026-11-27 (M5-43, `plans/m5/m5-43-postgres-pgvector.md`):** Die
+> Sitzung braucht pgvector ≥ 0.8.4 (`adr/0026` §14); Ubuntu führt nur 0.6.0, und
+> `apt.postgresql.org` ist gesperrt [gemessen]. Das Setup der Umgebung baut deshalb
+> pgvector 0.8.7 aus dem GitHub-Tag. Otto trägt das Skript selbst ein; es gilt erst
+> für neu gestartete Sitzungen. In einer Sitzung am 27.11.2026 als Ganzes
+> ausgeführt: 19 s, Exit 0, danach `default_version = '0.8.7'`. Das Skript der
+> Umgebung, vollständig (ersetzt das bisherige):
+>
+> ```bash
+> #!/bin/bash
+> {
+>   apt-get update -qq || echo "WARN: apt-get update teilweise fehlgeschlagen"
+>   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-16-postgis-3 \
+>     || echo "ERROR: PostGIS-Installation fehlgeschlagen"
+>   # M5-43: pgvector 0.8.7 aus dem GitHub-Tag (Ubuntu hat nur 0.6.0, PGDG ist gesperrt)
+>   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-server-dev-16 build-essential \
+>     && rm -rf /tmp/pgvector \
+>     && git clone -q --depth 1 --branch v0.8.7 https://github.com/pgvector/pgvector.git /tmp/pgvector \
+>     && make -C /tmp/pgvector OPTFLAGS="" \
+>     && make -C /tmp/pgvector install \
+>     && rm -rf /tmp/pgvector \
+>     || echo "ERROR: pgvector-Installation fehlgeschlagen"
+> } > /var/log/earthx-setup.log 2>&1
+> exit 0
+> ```
+>
+> Der Hook legt die Erweiterung nicht an; das tut die Migration von M5-23. Ob
+> pgvector da ist, prüft der T-C-Test
+> `backend/tests/integration/test_postgres_extensions.py`.
+
 Nicht geprüft: ein S3-kompatibler Objektspeicher. MinIO wird üblicherweise als
 Container ausgeliefert und ist damit aus dem Grund aus Abschnitt 4 nicht
 verfügbar. Für Tests, die einen Objektspeicher brauchen, bleibt es bei der
