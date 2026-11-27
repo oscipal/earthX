@@ -573,6 +573,8 @@ Ottos zweiter Lauf am 25.11. (15:43, PR [#425](https://github.com/oscipal/earthX
 2. Ich ergänze vorab den Pfad in der Meldung des Gateways (`RobotsDisallowed`) und im Bericht der Ernte, dann steht er beim nächsten Fehlschlag im Befund; das ändert `gateway` (Sicherheitsmodul, eigene Aufgabe, Stufe B)
 3. Nichts tun; der nächste Lauf zeigt, ob es wieder auftritt
 
+**Antwort Otto (27.11.2026): F20 = 3.** Nichts tun; der nächste Lauf zeigt, ob der `robots`-Stopp wieder auftritt. Tritt er auf, schickt Otto die Zeilen aus `harvest-govdata.txt`, und die Ursache wird dann geprüft. Keine Änderung an `gateway` oder Ernte.
+
 ## 23. Fix 3: Linkprüfung nach dem ersten Probelauf schärfen (25.11.2026, Stufe B)
 
 Grundlage: Probelauf vom 25.11. (`docs/harvest/laeufe/2026-11-25/`, PR [#419](https://github.com/oscipal/earthX/pull/419)): fällig 102 662, geprüft 95 821, bestanden 11 406, durchgefallen 15 467, nicht prüfbar 68 948. Aus der Sitzung wird keine Quelle abgerufen (`adr/0002`); die Formen der Schnittstellen stammen aus Dokumentation und Quellcode der Portal-Software (Belege je Zeile in `linkcheck.yaml`). Zwei Draft-PRs: PR A Linkprüfung und Befundliste (Punkte 1–4, 6, dieser Nachtrag), PR B `not_a_licence` (Punkt 5).
