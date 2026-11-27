@@ -9,9 +9,9 @@
 ## 1. Kurzfassung
 
 1. **Heute** (lexikalisch, `main` vom 27.11.) [M]: Deutsch Recall@5 0,789, MRR@10 0,763; Englisch 0,976 / 0,964; Filterfragen 5/5, Negativfragen 4/5. Auf Deutsch fehlen Q16 „Satellitenbilder in Echtfarben“, Q18 „Radarbilder bei Bewölkung“, Q38 „Schneebedeckung“, Q39 „Wasserflächen erkennen“. (Der Auftrag nennt 0,727; das war der Stand nach M5-22c, vor M5-42.)
-2. **Modell:** `ibm-granite/granite-embedding-97m-multilingual-r2` (Apache-2.0, 97 Mio. Parameter, 384 Dimensionen), ONNX in fp32 (390 MB). Unter sieben Kandidaten ist es das einzige, mit dem das Set F5 besteht: Deutsch 0,947 / 0,868, Englisch 1,0 / 0,929, Negativfragen 4/5, Filterfragen 5/5 [M, §3.2]. Die int8-Fassungen desselben Modells verlieren (Deutsch 0,895) [M].
+2. **Modell:** `ibm-granite/granite-embedding-97m-multilingual-r2` (Apache-2.0, 97 Mio. Parameter, 384 Dimensionen), ONNX in fp32 (390 MB, im Prozess `api` rund 690 MB). Unter sieben Kandidaten ist es das einzige, mit dem das Set F5 besteht: Deutsch 0,947 / 0,868, Englisch 1,0 / 0,929, Negativfragen 4/5, Filterfragen 5/5 [M, §3.2; gleich im Test der CI, §4.6]. Die int8-Fassungen desselben Modells verlieren (Deutsch 0,895) [M].
 3. **Was eingebettet wird:** die Teile A und B des Suchtexts (Kennung, Titel, Titel der Dubletten, Schlagworte, Ortsnamen, Kategorie), ohne Beschreibung. Mit Beschreibung besteht kein Modell [M].
-4. **Mindestähnlichkeit relativ zur Anfrage:** Ein Treffer zählt im Vektorarm, wenn sein Kosinus mindestens 2,7 Standardabweichungen über dem mittleren Kosinus derselben Anfrage zu 48 festen Hintergrundtexten liegt. Eine feste Kosinusschwelle besteht mit keinem Modell, weil Negativfragen und gesuchte Treffer im selben Bereich liegen [M, §3.3].
+4. **Mindestähnlichkeit relativ zur Anfrage:** Ein Treffer zählt im Vektorarm, wenn sein Kosinus mindestens 2,7 Standardabweichungen über dem mittleren Kosinus derselben Anfrage zu 46 festen Hintergrundtexten liegt. Eine feste Kosinusschwelle besteht mit keinem Modell, weil Negativfragen und gesuchte Treffer im selben Bereich liegen [M, §3.3].
 5. **Index und Weg** wie `adr/0026` §14: Spalte `halfvec(384)`, HNSW, gefiltert exakt bis 5·10⁴ Zeilen. Tiefe wie die lexikalischen Arme (§15).
 6. **Gleichzeitig:** Die Anfrage wird eingebettet, während der Volltext läuft; Volltext und Vektorarm laufen auf zwei Verbindungen gleichzeitig; der Trigramm-Arm danach nur unter 20 Volltext-Treffern (§4.5).
 7. **Einbetten** nur, was neu ist oder sich geändert hat, in Stapeln mit eigener Transaktion nach dem Hauptlauf von `catalog-load` (M5-42 §4, F6).
@@ -83,16 +83,16 @@ Bester Wert je Modell, bei dem Filter- und Negativfragen bestehen; die Schwelle 
 
 - **Ohne Mindestähnlichkeit** erreicht jedes Modell Deutsch Recall@5 1,0: Der Vektorarm liefert dann jeden der 11 Einträge, und die gesuchten stehen unter den ersten fünf. Dafür hat jede Negativfrage Treffer. Der Engpass sind die Negativfragen, nicht der Rang.
 - **Bei e5** liegen die Kosinuswerte der Negativfragen (0,80–0,84) über denen mancher gesuchten Treffer (Q34 „Hangneigung berechnen“ 0,79–0,80) [M]. Mit e5 bringt der Vektorarm am Set deshalb nichts.
-- **Mit granite-97m-r2 fp32** findet der Vektorarm Q16 und Q18 auf Platz 1 bzw. unter den ersten fünf; Q38 und Q39 (Quick processings NDSI, NDWI) bleiben darunter. Q50 „hourly weather forecast“ trifft die Tageswerte von MeteoSchweiz und ist die eine Negativfrage mit Treffer.
+- **Mit granite-97m-r2 fp32** findet der Vektorarm Q16 und Q18 unter den ersten fünf; in der Umsetzung (§4.6, CI-Form mit Fixture) auch Q39 auf Platz 1, nur Q38 „Schneebedeckung“ fehlt noch. Die eine Negativfrage mit Treffer ist Q48 „ocean salinity“ (zwei Treffer; einer davon kam schon vom Trigramm-Arm).
 - **Q51 „Sentinel-3“:** Jedes Modell legt es neben Sentinel-2. Der Vektorarm hält deshalb dieselbe Regel für Zahlen in Namen wie der Volltext (§4.4); damit bleibt die Liste leer.
 - **Grenzen [A]:** 19 deutsche Fragen; ein Wechsel einer Frage verschiebt Recall@5 um 0,05. Das Fenster der Schwelle ist schmal (2,5–2,8). Die Wahl ist eine am Set, keine allgemeine Aussage über die Modelle.
 
 ### 3.3 Mindestähnlichkeit relativ zur Anfrage
 
 - **Absolut** (Kosinus ≥ s) besteht mit keinem Modell: Für granite-97m-r2 fp32 kostet jede Schwelle, die vier Negativfragen leert (ab 0,82), Deutsch unter 0,9 [M].
-- **Relativ:** Für jede Anfrage q werden μ(q) und σ(q) der Kosinuswerte zu 48 festen Hintergrundtexten gerechnet (24 deutsch, 24 englisch, kurze Titel wie „Abfallkalender und Wertstoffhöfe“, „road noise map“, ohne Bezug zu Fernerkundung). Ein Treffer zählt, wenn `(cos − μ(q)) / σ(q) ≥ 2,7`. Das gleicht aus, dass manche Anfragen zu allem ähnlich sind.
-- **Gemessen [M]:** besteht bei 2,5–2,8 mit allen 48 Texten, bei 2,7–2,9 nur mit den deutschen, bei 2,6–2,8 nur mit den englischen, mit der ersten Hälfte der Liste nicht (dann 3 von 5 Negativfragen). Vorschlag 2,7.
-- Die Hintergrundtexte liegen als YAML in `catalog`, ihre Vektoren rechnet `api` beim Start (48 Texte, unter 1 s). Kein Text aus Nutzeranfragen.
+- **Relativ:** Für jede Anfrage q werden μ(q) und σ(q) der Kosinuswerte zu 46 festen Hintergrundtexten gerechnet (23 deutsch, 23 englisch, kurze Titel wie „Abfallkalender und Wertstoffhöfe“, „road noise map“, ohne Bezug zu Fernerkundung). Ein Treffer zählt, wenn `(cos − μ(q)) / σ(q) ≥ 2,7`. Das gleicht aus, dass manche Anfragen zu allem ähnlich sind.
+- **Gemessen [M]:** besteht bei 2,5–2,8 mit allen 46 Texten, bei 2,7–2,9 nur mit den deutschen, bei 2,6–2,8 nur mit den englischen, mit der ersten Hälfte der Liste nicht (dann 3 von 5 Negativfragen). Vorschlag 2,7.
+- Die Hintergrundtexte liegen als YAML in `catalog` (`backend/catalog/search_background.yaml`), ihre Vektoren rechnet `api` beim Start (46 Texte; Start mit Modell 2,3 s [M]). Kein Text aus Nutzeranfragen.
 
 ## 4. Umsetzung (PR 1)
 
@@ -108,7 +108,7 @@ Bester Wert je Modell, bei dem Filter- und Negativfragen bestehen; die Schwelle 
 - Neue Stufe `search` = `app` + die Modelldateien unter `/app/models/` + `EARTHX_EMBEDDING_MODEL`. Die Dienste `api` und `catalog-load` bauen `target: search`; alle anderen, auch `runner`, bleiben auf `app` ohne Modell (`adr/0026` F2 a). Test: der Runner baut auf `app`, keine Stufe außer `search` kopiert aus `model-files`.
 - Zur Laufzeit kein Netz: `tokenizers` liest nur `Tokenizer.from_file`; `huggingface_hub` ist keine Abhängigkeit. Ein Test prüft, dass `earthx` weder `from_pretrained` aufruft noch `huggingface_hub` importiert.
 - Neue Abhängigkeiten in `requirements.txt` und Lock: `onnxruntime`, `tokenizers` (MIT bzw. Apache-2.0). Hinweis zu Dritten für das Modell (Apache-2.0).
-- **Speicher je Prozess `api`:** wird im PR gemessen (Gewichte 390 MB fp32).
+- **Speicher je Prozess `api`** [M]: das geladene Modell mit Tokenizer kostet rund **690 MB** RSS (ohne Modell 87 MB für die Imports der Suche); `enable_cpu_mem_arena` und `enable_mem_pattern` ändern daran nichts (662 MB je Sitzung von ONNX Runtime). Zum Vergleich wären es mit MiniLM-L12 int8 (118 MB Datei) deutlich weniger, dafür besteht das Set nicht (F1).
 
 ### 4.3 Einbetten in `catalog-load`
 
@@ -211,7 +211,7 @@ Breite Wörter und Glossarwörter (M5-66 F8), gegen die Datensätze des Sets ben
 3. multilingual-e5-small int8 (118 MB); am Set ohne Gewinn
 
 **F2 — Mindestähnlichkeit?**
-1. Relativ zur Anfrage gegen 48 feste Hintergrundtexte, Schwelle 2,7 in der Konfiguration **(Empfehlung)**
+1. Relativ zur Anfrage gegen 46 feste Hintergrundtexte, Schwelle 2,7 in der Konfiguration **(Empfehlung)**
 2. Feste Kosinusschwelle (besteht am Set mit keinem Modell)
 3. Keine Schwelle; F5 für Negativfragen ändern
 
