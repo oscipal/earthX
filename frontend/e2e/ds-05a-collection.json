@@ -1,0 +1,397 @@
+{
+ "description": "Sentinel-1 C-band SAR, Level-1 Ground Range Detected, as cloud-optimized GeoTIFF in radar geometry. Served by Earth Search v1 (Element 84) from the Registry of Open Data on AWS.",
+ "earthx:access": {
+  "account": "none",
+  "account_paths": [],
+  "account_provider": null,
+  "cors": true,
+  "method": "anonymous HTTPS, no authentication header; the bucket is not requester pays",
+  "token_free_checked_at": "2026-11-08"
+ },
+ "earthx:auxiliary_assets": [
+  "thumbnail",
+  "safe-manifest",
+  "schema-product-vv",
+  "schema-product-vh",
+  "schema-product-hh",
+  "schema-product-hv",
+  "schema-calibration-vv",
+  "schema-calibration-vh",
+  "schema-calibration-hh",
+  "schema-calibration-hv",
+  "schema-noise-vv",
+  "schema-noise-vh",
+  "schema-noise-hh",
+  "schema-noise-hv"
+ ],
+ "earthx:band_units": {
+  "hh": "DN",
+  "hv": "DN",
+  "vh": "DN",
+  "vv": "DN"
+ },
+ "earthx:bands": [
+  {
+   "description": "VV polarisation amplitude",
+   "earthx:look": {
+    "colormap": "greys_r",
+    "scale": "measured"
+   },
+   "earthx:look_origin": "unit",
+   "name": "vv"
+  },
+  {
+   "description": "VH polarisation amplitude",
+   "earthx:look": {
+    "colormap": "greys_r",
+    "scale": "measured"
+   },
+   "earthx:look_origin": "unit",
+   "name": "vh"
+  },
+  {
+   "description": "HH polarisation amplitude",
+   "earthx:look": {
+    "colormap": "greys_r",
+    "scale": "measured"
+   },
+   "earthx:look_origin": "unit",
+   "name": "hh"
+  },
+  {
+   "description": "HV polarisation amplitude",
+   "earthx:look": {
+    "colormap": "greys_r",
+    "scale": "measured"
+   },
+   "earthx:look_origin": "unit",
+   "name": "hv"
+  }
+ ],
+ "earthx:capabilities": {
+  "band_math": true,
+  "interpolation": true,
+  "masking": false,
+  "ml_processing": false,
+  "normalization": true,
+  "quad_pol": false,
+  "reprojection": false,
+  "roi": true,
+  "sar_backscatter": true,
+  "single_coverage_product": false,
+  "terrain": false,
+  "time_range": true,
+  "value_masking": false
+ },
+ "earthx:category": "radar",
+ "earthx:composite_presets": [],
+ "earthx:data_class": "raster-time-series",
+ "earthx:default_render": {
+  "asset_selection": "first_present",
+  "assets": [
+   "vv",
+   "hh"
+  ],
+  "colormap_name": null,
+  "expression": null,
+  "resampling": "nearest",
+  "rescale": [
+   [
+    90.0,
+    250.0
+   ],
+   [
+    70.0,
+    750.0
+   ]
+  ],
+  "title": "Co-polarisation (VV or HH)"
+ },
+ "earthx:distributions": [],
+ "earthx:entry": "full",
+ "earthx:format": "cog",
+ "earthx:georeferencing": "gcp_tps",
+ "earthx:health": {
+  "status": "ok"
+ },
+ "earthx:index_presets": [],
+ "earthx:legal_note": null,
+ "earthx:legal_status": "cleared",
+ "earthx:license_flags": {
+  "attribution_modified": "Contains modified Copernicus Sentinel data {year}",
+  "attribution_required": true,
+  "attribution_unmodified": "Copernicus Sentinel data {year}",
+  "commercial_use": true,
+  "derivatives": true,
+  "distribution": true,
+  "name": "Sentinel Data Legal Notice",
+  "share_alike": false,
+  "spdx_id": null,
+  "terms_notice": {
+   "en": "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data are provided without any express or implied warranty, including as regards quality and suitability for any purpose; by using them the user renounces any claims for damages against the European Union and the providers of the data. The waiver encompasses any dispute, including contracts and torts claims, that might be filed in court, in arbitration or in any other form of dispute settlement."
+  },
+  "terms_url": "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice",
+  "tier": "processing",
+  "url": "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice"
+ },
+ "earthx:limitations": [
+  "Placed only by the ground control points of each scene, without terrain correction; this holds for every pixel, not only the preview.",
+  "Values are uncalibrated digital numbers (DN), not calibrated backscatter.",
+  "The original files are the cloud-optimized GeoTIFFs as the bucket operator converted them, not the ESA SAFE product."
+ ],
+ "earthx:mask": null,
+ "earthx:maturity": "stable",
+ "earthx:notices": [
+  {
+   "code": "approximate_geolocation",
+   "label": "Approximate geolocation",
+   "tooltip": "Placed by the scene's own ground control points without terrain correction; positions can be off by tens of metres, more in steep terrain."
+  },
+  {
+   "code": "uncalibrated_dn",
+   "label": "Uncalibrated (DN)",
+   "tooltip": "Values are the digital numbers of the GRD product, not calibrated backscatter, so dB thresholds from the literature do not apply."
+  }
+ ],
+ "earthx:search_capabilities": {
+  "aoi_coverage": true,
+  "evaluate": true
+ },
+ "earthx:search_filters": [
+  {
+   "area_based": false,
+   "description": "Whether the satellite flew towards the north (ascending) or the south (descending).",
+   "group": "Orbit",
+   "kind": "values",
+   "oneOf": [
+    {
+     "const": "ascending",
+     "title": "Ascending"
+    },
+    {
+     "const": "descending",
+     "title": "Descending"
+    }
+   ],
+   "property": "sat:orbit_state",
+   "title": "Orbit direction",
+   "type": "string",
+   "unit": null,
+   "within_aoi": null
+  },
+  {
+   "area_based": false,
+   "description": "The track of the 12-day repeat cycle the scene lies on, 1 to 175. Scenes of one track look alike.",
+   "group": "Orbit",
+   "kind": "range",
+   "maximum": 175.0,
+   "minimum": 1.0,
+   "property": "sat:relative_orbit",
+   "title": "Relative orbit",
+   "type": "integer",
+   "unit": null,
+   "within_aoi": null
+  },
+  {
+   "area_based": false,
+   "description": "How the radar scanned the ground. IW is the mode over land; EW covers the polar seas and sea ice.",
+   "group": "Acquisition",
+   "kind": "values",
+   "oneOf": [
+    {
+     "const": "IW",
+     "title": "Interferometric Wide swath (IW)"
+    },
+    {
+     "const": "EW",
+     "title": "Extra Wide swath (EW)"
+    },
+    {
+     "const": "SM",
+     "title": "Stripmap (SM)"
+    }
+   ],
+   "property": "sar:instrument_mode",
+   "title": "Acquisition mode",
+   "type": "string",
+   "unit": null,
+   "within_aoi": null
+  },
+  {
+   "area_based": false,
+   "description": "The scene holds at least one of the chosen polarizations. Most scenes hold VV and VH, polar ones HH and HV.",
+   "group": "Acquisition",
+   "kind": "values",
+   "oneOf": [
+    {
+     "const": "VV",
+     "title": "VV"
+    },
+    {
+     "const": "VH",
+     "title": "VH"
+    },
+    {
+     "const": "HH",
+     "title": "HH"
+    },
+    {
+     "const": "HV",
+     "title": "HV"
+    }
+   ],
+   "property": "sar:polarizations",
+   "title": "Polarization",
+   "type": "string",
+   "unit": null,
+   "within_aoi": null
+  }
+ ],
+ "earthx:source": {
+  "adapter": "earth-search-v1",
+  "asset_checksum": "crc64nvme",
+  "asset_hosts": [
+   "sentinel-s1-l1c.s3.eu-central-1.amazonaws.com"
+  ],
+  "asset_href_rewrites": [
+   {
+    "from_prefix": "s3://sentinel-s1-l1c/",
+    "to_prefix": "https://sentinel-s1-l1c.s3.eu-central-1.amazonaws.com/"
+   }
+  ],
+  "asset_keys": [],
+  "data_region": "aws:eu-central-1",
+  "endpoint": "https://earth-search.aws.element84.com/v1",
+  "item_holding": "federated",
+  "item_states": null,
+  "page_url": "https://radiantearth.github.io/stac-browser/#/external/earth-search.aws.element84.com/v1/collections/sentinel-1-grd",
+  "source_collection_id": "sentinel-1-grd"
+ },
+ "earthx:step_presets": [
+  {
+   "adjustable": [],
+   "name": "vv_db",
+   "op": "sar_db",
+   "op_version": 1,
+   "params": {
+    "bands": [
+     "vv"
+    ],
+    "name": "vv_db",
+    "quantity": "amplitude"
+   },
+   "title": "VV dB"
+  },
+  {
+   "adjustable": [],
+   "name": "vh_db",
+   "op": "sar_db",
+   "op_version": 1,
+   "params": {
+    "bands": [
+     "vh"
+    ],
+    "name": "vh_db",
+    "quantity": "amplitude"
+   },
+   "title": "VH dB"
+  }
+ ],
+ "earthx:true_color": [],
+ "earthx:viewer": {
+  "browse": "preview_tiles",
+  "group_by": [
+   "datetime",
+   "s1:datatake_id"
+  ],
+  "max_zoom": 19,
+  "min_zoom": 0,
+  "overview": "scenes",
+  "overview_resampling": null,
+  "overview_substitute": null,
+  "quicklook_nodata_max": null,
+  "results_group_by": [
+   "datetime",
+   "s1:datatake_id"
+  ]
+ },
+ "extent": {
+  "spatial": {
+   "bbox": [
+    [
+     -180.0,
+     -90.0,
+     180.0,
+     90.0
+    ]
+   ]
+  },
+  "temporal": {
+   "interval": [
+    [
+     "2014-10-10T00:28:21Z",
+     null
+    ]
+   ]
+  }
+ },
+ "id": "sentinel-1-grd",
+ "keywords": [
+  "sentinel-1",
+  "radar",
+  "SAR",
+  "C-band",
+  "backscatter",
+  "Rückstreuung",
+  "GRD",
+  "copernicus"
+ ],
+ "license": "proprietary",
+ "links": [
+  {
+   "href": "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice",
+   "rel": "license",
+   "title": "Sentinel Data Legal Notice"
+  }
+ ],
+ "providers": [
+  {
+   "name": "ESA",
+   "roles": [
+    "producer",
+    "processor",
+    "licensor"
+   ],
+   "url": "https://earth.esa.int/web/guest/home"
+  },
+  {
+   "name": "AWS",
+   "roles": [
+    "host"
+   ],
+   "url": "https://registry.opendata.aws/sentinel-1"
+  },
+  {
+   "name": "Element 84",
+   "roles": [
+    "processor"
+   ],
+   "url": "https://element84.com"
+  }
+ ],
+ "sci:citation": "Copernicus Sentinel-1 Level-1 GRD, European Space Agency; cloud-optimized GeoTIFF distributed by Element 84, Earth Search v1, collection sentinel-1-grd, https://earth-search.aws.element84.com/v1/collections/sentinel-1-grd",
+ "stac_extensions": [
+  "https://stac-extensions.github.io/scientific/v1.0.0/schema.json"
+ ],
+ "stac_version": "1.0.0",
+ "summaries": {
+  "gsd": [
+   3.5,
+   10.0,
+   25.0,
+   40.0
+  ]
+ },
+ "title": "Sentinel-1 GRD",
+ "type": "Collection"
+}
