@@ -11,7 +11,7 @@ import { groupIndexOfItem } from './grouping';
 import { canonicalJson, type AoiProvenance, type ExportLayout, type JsonSchema, type Order, type OrderAoi, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
 import type { PassesRule } from './processingDefaults';
-import { addsBand, bandNamesOf, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
+import { addsBand, bandNamesOf, isExpression, nameProblem, ownersOf, readsBandsAddsBand, resultNameOf } from './processingBands';
 import { terrainForm } from './terrainFields';
 import {
   AFTER_REPROJECT,
@@ -646,7 +646,7 @@ export function readProblem(
   // Bands the stock holds but the step may not read: those a result of a job did not keep in its output (NM4-05b).
   hidden: readonly string[] = [],
 ): { field: 'expression' | 'bands' | 'band'; message: string } | null {
-  const field = step.op === 'normalize' ? 'bands' : step.op === 'mask_values' ? 'band' : 'expression';
+  const field = step.op === 'normalize' || readsBandsAddsBand(step) ? 'bands' : step.op === 'mask_values' ? 'band' : 'expression';
   // Text that is no expression at all is told before anything else (review of #250); an empty one is the form's "Required".
   if (step.op === 'band_math' && typeof step.values.expression === 'string' && step.values.expression.trim() !== '' && !isExpression(step.values.expression)) {
     return { field, message: 'Enter a valid expression' };
@@ -654,7 +654,7 @@ export function readProblem(
   const names =
     step.op === 'band_math' && typeof step.values.expression === 'string'
       ? namesInExpression(step.values.expression)
-      : (step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string'
+      : (step.op === 'normalize' || readsBandsAddsBand(step)) && typeof step.values.bands === 'string'
         ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
         : step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== ''
           ? new Set([step.values.band])
@@ -666,7 +666,7 @@ export function readProblem(
     if (result.index < index || !names.has(result.name) || data.includes(result.name)) continue;
     return { field, message: result.index === index ? `'${result.name}' is the band this step adds` : `'${result.name}' is added by a later step` };
   }
-  if ((step.op !== 'band_math' && step.op !== 'mask_values' && step.op !== 'terrain') || data.length === 0) return null;
+  if ((step.op !== 'band_math' && step.op !== 'mask_values' && !readsBandsAddsBand(step)) || data.length === 0) return null;
   const known = new Set([...data, ...results.filter((r) => r.index < index).map((r) => r.name)]);
   const unknown = [...names].find((name) => !known.has(name));
   return unknown === undefined ? null : { field, message: `'${unknown}' is not a band name` };
