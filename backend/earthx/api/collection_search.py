@@ -7,8 +7,8 @@ no request returns every collection at once.
 
 With ``q`` the ids come from :func:`~earthx.catalog.search.search_datasets` in rank order, full and listed entries
 alike, with the filters of kind of entry, category and region in its statements (M5-66); a page holds at most
-:data:`MAX_TEXT_PAGE` collections and goes on by ``offset`` up to the end of the fused hits, and ``numberMatched`` is
-exact up to :data:`MAX_COUNTED` and left out above. Without ``q``
+:data:`MAX_TEXT_PAGE` collections and goes on by ``offset`` to the last hit, the depth of each arm growing with the page
+(plan F2 = 2), and ``numberMatched`` is exact up to :data:`MAX_COUNTED` and left out above. Without ``q``
 full and listed entries come in one order, title then id (M5-40 plan F3): the full ones of the filter from the same
 search, the listed ones a page at a time from ``earthx_listed_entry``; a page holds :data:`DEFAULT_PAGE` collections
 unless ``limit`` says otherwise, at most :data:`MAX_LISTING_PAGE`, and goes on by the keyset ``token`` of its last
@@ -54,7 +54,7 @@ from earthx.catalog.listed_search import (
     listed_documents,
     listed_page,
 )
-from earthx.catalog.search import MAX_QUERY_CHARS, Kept, SearchResult, box_area, search_datasets
+from earthx.catalog.search import DEPTH, MAX_QUERY_CHARS, Kept, SearchResult, box_area, search_datasets
 
 #: adr/0026 §4.4: at most 20 hits per page of a text search.
 MAX_TEXT_PAGE = 20
@@ -382,8 +382,16 @@ async def search_collections(
         full_ids = [c.dataset_id for c in registry if c.category == query.category] if registry is not None else []
     kept = Kept(entry=query.entry, category=query.category, full_ids=full_ids, regions=query.regions)
     async with request.app.state.earthx_cache_pool.connection() as conn:
+        # The depth grows with the page, one beyond it, so that the list never ends before the hits do and a next
+        # page is linked while there is one (M5-66 F2 = 2; never cut silently, M5-56).
         result: SearchResult = await search_datasets(
-            conn, query.text, area=query.area, period=query.period, kept=kept, count_up_to=MAX_COUNTED
+            conn,
+            query.text,
+            area=query.area,
+            period=query.period,
+            kept=kept,
+            depth=max(DEPTH, query.offset + query.limit + 1),
+            count_up_to=MAX_COUNTED,
         )
         ids = result.ids
         page = ids[query.offset : query.offset + query.limit]
