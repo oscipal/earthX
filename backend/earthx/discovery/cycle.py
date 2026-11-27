@@ -31,7 +31,7 @@ from typing import Any
 import psycopg
 import yaml
 
-from earthx.catalog.approvals import APPROVALS_DIR, load_approvals
+from earthx.catalog.approvals import APPROVALS_DIR, is_file_name, load_approvals
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.registry import ConfigError
@@ -372,7 +372,7 @@ def findings_of(
         if count >= 2:
             found.append(Finding(f"LIZENZ {statement[:60]}", f"{count} Funde warten auf eine Einstufung von Otto."))
     for source_id, message in sorted(source_errors.items()):
-        found.append(Finding(f"QUELLE {source_id}", f"Harvest gescheitert: {message}"))
+        found.append(Finding(f"QUELLE {source_id}", f"Harvest gescheitert: {message} {REPORT_SKIPPED}"))
     for pr in open_prs:
         found.append(Finding(f"PR {pr}", "PR eines früheren Laufs ist noch offen (nicht gemergt)."))
     return found
@@ -409,6 +409,9 @@ def _rule_files(approvals: Path) -> list[str]:
         if (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("decided_by") == "rules"
     )
 
+
+#: What the files of the run add to a source whose harvest failed: its report does not run (plan M5-67 §3 step 5).
+REPORT_SKIPPED = "Bericht übersprungen: ohne Ernte entfällt er in diesem Lauf."
 
 #: Why a find became no candidate, in German (``discovery.propose``).
 SKIPPED_TEXT = {
@@ -493,7 +496,7 @@ def run_files(
             + ("; kein Stapel" if stack is None else f"; Stapel {stack['batch_id']} mit {stack['entries']} Einträgen")
         )
     for source_id, message in sorted(source_errors.items()):
-        lines.append(f"- **{source_id}:** Harvest gescheitert: {message}")
+        lines.append(f"- **{source_id}:** Harvest gescheitert: {message} {REPORT_SKIPPED}")
     for source_id, message in sorted((source_pauses or {}).items()):
         lines.append(f"- **{source_id}:** Hinweis, planmäßige Pause (kein Fehler): {message}")
     lines += ["", "## Freigabe nach Regeln", ""]
@@ -556,9 +559,8 @@ def run_files(
     for source_id, text in sorted(classify.items()):
         excerpt = [line[:300] for line in text.splitlines()[:600]]
         files[f"{source_id}-classify.md"] = f"# Classify-Auszug {source_id}\n\n```\n" + "\n".join(excerpt) + "\n```\n"
-    files["fehler.log"] = (run_error or "keine") + "\n" + "".join(
-        f"{source_id}: {message}\n" for source_id, message in sorted(source_errors.items())
-    )
+    errors = ([run_error] if run_error else []) + [f"{i}: {message}" for i, message in sorted(source_errors.items())]
+    files["fehler.log"] = "\n".join(errors or ["keine"]) + "\n"
     return {name: clean(text) for name, text in files.items()}
 
 
@@ -682,9 +684,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-_FILE_NAME = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z][a-z0-9-]{1,62}(?:-\d+)?\.yaml")
-
-
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     configure_logging()
@@ -695,7 +694,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         with psycopg.connect(autocommit=True) as conn:
             if args.command == "decide":
-                if not all(_FILE_NAME.fullmatch(name) for name in args.files):
+                if not all(is_file_name(name) for name in args.files):
                     print("cycle failed: decide takes names of approval files", file=sys.stderr)
                     return 1
                 reports = {p.stem.removeprefix("report-"): _load(p) for p in sorted(args.run.glob("report-*.json"))}
