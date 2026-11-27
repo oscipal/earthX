@@ -1,0 +1,207 @@
+# Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
+# the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
+# `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
+# `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
+# `excluded_entries` are entries with a warning sign (M5-67 plan §5, in the report); they stay out and wait.
+# Only entries whose own link passed the automatic check become visible (M5-67 plan §4). Never a name, an address or the words of a request here: the repository is public.
+source_id: fsdi-stac
+batch_id: 13
+fingerprint: 14a7513d2e50d08bb0db496de2bc65145c082af9a82d082cb559602dde37e1ea
+created_on: 2026-11-27
+entries: 107
+decision: approved
+decided_on: 2026-11-27
+excluded_rules: []
+revoked_on: null
+sample:
+- dataset_id: fsdi-stac.ch.bafu.gefahren-waldbrand_praeventionsmassnahmen_kantone
+  why: new_rule
+  title: Forest fire prevention measures of the cantons
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.gefahren-waldbrand_praeventionsmassnahmen_kantone
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN, cantons/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.schutzgebiete-paerke_nationaler_bedeutung
+  why: new_rule
+  title: Swiss National Park and parks of national importance (Zones)
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.schutzgebiete-paerke_nationaler_bedeutung
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN, cantons/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.wald-foehnhaeufigkeit_jahr
+  why: random
+  title: Frequency of Föhn in the year, period variable (maximum 1969-2013)
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.wald-foehnhaeufigkeit_jahr
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.wald-wasserverfuegbarkeit_pflanzen
+  why: random
+  title: Water availability for plants
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.wald-wasserverfuegbarkeit_pflanzen
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.landesforstinventar-produktionsregionen
+  why: random
+  title: Production regions NFI
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.landesforstinventar-produktionsregionen
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.landesforstinventar-schutzwaldregionen
+  why: random
+  title: Protection forest regions NFI
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.landesforstinventar-schutzwaldregionen
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.wald-relative_luftfeuchte_jahr_1981_2010
+  why: random
+  title: Relative air humidity in the year, period 1981-2010
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.wald-relative_luftfeuchte_jahr_1981_2010
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.geochemischer-bodenatlas_schweiz_natrium
+  why: random
+  title: 'Geochemical soil atlas of Switzerland: Sodium'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.geochemischer-bodenatlas_schweiz_natrium
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.schutzgebiete-biosphaerenreservate
+  why: random
+  title: Biosphere reserves
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.schutzgebiete-biosphaerenreservate
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.bundesinventare-moorlandschaften
+  why: random
+  title: Federal Inventory of Mire Landscapes of Particular Beauty and National Significance
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.bundesinventare-moorlandschaften
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.auen-ausserhalb_bundesinventar_alpin
+  why: random
+  title: Alpine Floodplains outside of the federal inventary
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.auen-ausserhalb_bundesinventar_alpin
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.luftreinhaltung-ozon
+  why: random
+  title: Air pollution by Ozone
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.luftreinhaltung-ozon
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.landesforstinventar-waldmischungsgrad
+  why: random
+  title: Forest mix rate NFI
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.landesforstinventar-waldmischungsgrad
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.bundesinventare-hochmoore
+  why: random
+  title: Federal Inventory of Raised and Transition Bogs of National Importance
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.bundesinventare-hochmoore
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.trockenheitsdaten-numerisch
+  why: random
+  title: Numeric data from drought platform
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.trockenheitsdaten-numerisch
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.geochemischer-bodenatlas_schweiz_quecksilber
+  why: random
+  title: 'Geochemical soil atlas of Switzerland: Mercury'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.geochemischer-bodenatlas_schweiz_quecksilber
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.auen-ausserhalb_bundesinventar
+  why: random
+  title: Floodplains outside of the federal inventary
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.auen-ausserhalb_bundesinventar
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+excluded_entries:
+- fsdi-stac.ch.bafu.hydrologie-hochwasserstatistik
+- fsdi-stac.ch.bafu.hydrologie-niedrigwasserstatistik
+decided_by: rules
