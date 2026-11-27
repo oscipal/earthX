@@ -41,6 +41,7 @@
    - volle Zeile: Kategorie über die Kennungen der Registry (`full_ids`, die Kategorie steht nicht im Index), Region nach derselben Regel wie bisher (`full_entries`: die Box überlappt die Region mehr als an der Grenze), jetzt über die Spalte `geometry` aus Migration 038;
    - `entry=full` bzw. `listed` lässt die andere Art Zeile ganz weg.
    Die Route filtert danach nichts mehr; `matching_listed` entfällt.
+   **Auslegung A2 (aus dem Review):** Damit vergibt jeder Arm seine Plätze unter den Treffern des Filters, nicht mehr unter allen. Ein weggefilterter Treffer nimmt keinen Platz mehr ein, und die RRF kann behaltene Treffer anders ordnen als auf `main`, auch ohne Tiefe. Beispiel: Volltext A, B, C, X, Y; Trigramme B, C, X, Y, A; der Filter behält A, B, C. Auf `main` hat A im Trigramm-Arm Platz 5: B 0,032522, C 0,032002, A 0,031778. Jetzt Platz 3, weil X und Y nicht mehr davor stehen: B 0,032522, A 0,032266, C 0,032002. A rückt vor C. In den gemessenen Anfragen mit Filter (Tabelle unten) waren die ersten 20 trotzdem gleich wie auf `main`. Die Plätze über alle Treffer zu bilden und erst danach zu filtern, hieße, mit Filter wieder alle Treffer zu ranken und zu übertragen; der Gewinn mit Filter (3- bis 6-fach) ginge verloren (F6).
 2. **Tiefe je Arm 1 000 (`DEPTH`):** Jeder Arm gibt seine besten 1 000 Treffer an die Fusion (RRF, k = 60). Gerankt wird in SQL wie bisher jeder Treffer (§1, Lesart), aber nur die besten verlassen Postgres gerankt. Die Fusion hat damit höchstens etwa 2 000 Einträge statt 10⁵.
 3. **Ein Gleichstand wird nie geteilt (Auslegung A1):** Die Tiefe gilt nach dem Platz `rank()` (1, 2, 2, 4), nicht nach der Zeilenzahl. Alle Treffer mit demselben Wert wie Platz 1 000 kommen mit. Grund: Im Trigramm-Arm teilen sich bei breiten Wörtern Tausende Treffer einen Wert („map“: 13 144 Treffer mit Ähnlichkeit 1,0, nur 2 verschiedene Werte). Ein Schnitt nach Titel nähme daraus 1 000 alphabetisch – im ersten Versuch fehlte dadurch der bisher erste Treffer, und schon Platz 1 änderte sich bei 12 von 15 Anfragen. Mit der Regel A1 bleiben die ersten 20 in allen 15 gemessenen Anfragen gleich (§3). Folge: Bei breiten Wörtern kann ein Arm mehr als 1 000 Treffer liefern (gemessen bis 13 465).
 4. **Trefferzahl (Auftrag Punkt 1, M5-40 F4):** Jeder Arm liefert zusätzlich die Zahl seiner Treffer. Hat ein Arm höchstens 10 000, liefert er alle Kennungen, und `numberMatched` ist die Größe der Vereinigung beider Arme, genau. Hat ein Arm mehr als 10 000 oder die Vereinigung mehr, fehlt `numberMatched`. Die Zahl zählt nach allen Filtern, wie bisher.
@@ -75,7 +76,7 @@
 
 ## 3. Reihenfolge der ersten Treffer [M]
 
-- **Ohne Tiefe gleich:** Mit unbegrenzter Tiefe (`depth=10⁹`) liefert der neue Code für alle 15 gemessenen Anfragen dieselben ersten 20 wie `main`; die Umstellung selbst ändert keine Reihenfolge.
+- **Ohne Tiefe gleich:** Mit unbegrenzter Tiefe (`depth=10⁹`) liefert der neue Code für alle 15 gemessenen Anfragen dieselben ersten 20 wie `main`. Ohne Filter ändert die Umstellung keine Reihenfolge; mit Filter kann sie es nach A2 (§2 Punkt 1), in den Messungen nicht auf den ersten 20.
 - **Mit Tiefe 1 000 und A1:** Die ersten 20 sind in allen 15 Anfragen gleich wie auf `main`, ebenso die Seite ab Platz 200 („data“). Die bestehenden Tests der Suche und das Bewertungs-Set haben weit weniger als 1 000 Treffer je Arm; für sie ist das Ergebnis gleich (§7).
 - **Wo es sich ändert:** Die Fusion verliert den Beitrag eines Arms, in dem ein Treffer hinter Platz 1 000 liegt. Erster Unterschied der ganzen Liste: „data“ ab Platz 818, „map“ 947, „Karte“ 972, „water“ 1 060, „Gewässer“ 328, „Bebauungsplan“ keiner. Früh liegt er bei mehreren Wörtern:
 
@@ -110,9 +111,9 @@
 **Maßnahmen**, jede ohne Wirkung auf das Ergebnis:
 
 1. **Zeit je Schritt ausgeben:** `catalog-load` schreibt am Ende eine Zeile je Schritt (`step <name>: <s> s`), ohne Kennungen, Texte oder Flächen.
-2. **YAML mit libyaml:** Derselbe strenge Leser (YAML 1.2 core, keine Anker, Aliase, doppelten Schlüssel) auf dem C-Parser von PyYAML. Anker und Aliase prüft ein Durchgang über die Ereignisse des C-Parsers (0,08 s für `govdata.yaml`); gemessen 0,4 s statt 1,6 s. Findet libyaml einen Fehler oder einen Anker, liest der Python-Leser die Datei noch einmal, damit die Meldung gleich bleibt. Fehlt libyaml, liest der Python-Leser wie bisher. Gleiche Daten für alle 44 YAML-Dateien des Repos.
+2. **YAML mit libyaml:** Derselbe strenge Leser (YAML 1.2 core, keine Anker, Aliase, doppelten Schlüssel) auf dem C-Parser von PyYAML. Anker und Aliase prüft ein Durchgang über die Ereignisse des C-Parsers (0,08 s für `govdata.yaml`); gemessen 0,4 s statt 1,6 s. Findet libyaml einen Fehler oder einen Anker, oder enthält der Text einen Tab (libyaml nimmt Tabs an, wo der Python-Leser ablehnt; Befund des Reviews), liest der Python-Leser die Datei, damit die Meldung gleich bleibt. Fehlt libyaml, liest der Python-Leser wie bisher. Gleiche Daten für alle 44 YAML-Dateien des Repos.
 3. **JIT aus in der Transaktion von `catalog-load`** (`SET LOCAL jit = off`): Die Abfragen laufen einmal je Lauf, die Übersetzung kostet mehr, als sie spart (Hash-Vergleich 1,6 s → 1,0 s). Die Hashes der Dubletten einmal gruppiert statt je Eintrag eine Unterabfrage brachte nichts (gemessen) und ist nicht drin. Der Rest (0,7 s) ist der Hash selbst; ihn anders zu bilden, hieße neue `text_hash` und einmal alle 10⁵ Zeilen neu schreiben (bei 10⁵ etwa 50 s, M5-42 §3).
-4. **Handeinträge:** Ein veröffentlichter Handeintrag mit gleichem Dokument (`content_sha256`), gleicher Datei (`approval_sha256`) und gleichem Sortiertitel wird ohne Anweisung übersprungen, solange sich die Grenzen im Lauf nicht geändert haben (`write_regions` meldet 0). Das sind genau die Fälle, in denen der Upsert bisher nichts schrieb; teuer war nicht die Fläche (0,05 s), sondern die Regionen der CORINE-Fläche über Europa im Upsert (1,3 s).
+4. **Handeinträge:** Vor dem Upsert fragt eine Abfrage die gespeicherte Zeile mit genau seiner Bedingung (veröffentlicht, gleiches Dokument, gleiche Datei, gleicher Sortiertitel, gleicher Fußabdruck als Bytes); trifft sie, entfällt der Upsert. Teuer war nicht die Fläche (0,05 s), sondern die Regionen der CORINE-Fläche über Europa, die der Upsert vor dem Vergleich ableitet (1,3 s). Nach dem Review ersetzt diese Abfrage einen Vergleich ohne Fußabdruck, der bei anders gemessener Fläche (z. B. neues PostGIS) nicht geschrieben hätte.
 5. **Ortsnamen:** Liegt ein Land ganz in der Box, zählt es mit seiner beim Lesen gemessenen Fläche, ohne geodätische Fläche der Schnittmenge (0,7 → 0,2 s). Die `text_hash` aller Registry-Einträge sind gleich.
 6. **Gemeinden und Regionen:** eine Anfrage für alle Zeilen (`unnest`) mit derselben Bedingung `IS DISTINCT FROM`.
 7. **Embeddings:** Es gibt sie noch nicht (Vektorarm M5-23). `plans/m5/m5-42-suche-gelistete.md` §4 Punkt 2 legt schon fest, dass nur Zeilen mit geändertem `text_hash` neu eingebettet werden; das bleibt die Vorgabe für M5-23.
@@ -125,11 +126,11 @@
 | Suchindex voller Einträge | 0,6 s | 0,2 s |
 | Regionen (mit erstem Laden von PostGIS) | 0,1–0,2 s | 0,3 s |
 | Gemeinden | 0,3–0,6 s | 0,1 s |
-| Handeinträge und Sperrliste | 1,35–1,5 s | 0,00 s |
+| Handeinträge und Sperrliste | 1,35–1,5 s | 0,05 s |
 | Rücknahme von Lizenzen | 0,05–0,3 s | 0,3 s |
 | Suchindex gelisteter Einträge | 1,0–2,0 s | 1,1 s |
 | Rest | 0,1 s | 0,05 s |
-| **zusammen** | **7,1–7,4 s** | **2,7–2,8 s** |
+| **zusammen** | **7,1–7,4 s** | **2,7–2,9 s** |
 
 Alle Zähler des Laufs sind 0 wie vorher. Bei Otto kommt der Start der Container dazu (§8 misst ihn getrennt).
 
@@ -243,6 +244,11 @@ Gleicher Hash in der Spalte `Reihenfolge` heißt: gleiche Treffer in gleicher Re
 1. Eigene Folgeaufgabe, erst nach Ottos Messung: beide Arme gleichzeitig auf zwei Verbindungen (Zeit des langsameren statt Summe, geschätzt −30 bis −40 %) **(Empfehlung)**
 2. Gleich in diesem PR
 3. Nichts weiter
+
+**F6 — Plätze mit Filter (A2, aus dem Review).**
+
+1. Plätze unter den Treffern des Filters, wie gebaut; die Reihenfolge kann sich gegenüber `main` verschieben, wenn weggefilterte Treffer vor behaltenen standen **(Empfehlung)**
+2. Plätze unter allen Treffern, danach filtern; Reihenfolge wie `main`, mit Filter aber kein Gewinn (wieder 0,8–1,3 s)
 
 **F5 — Zielwert `catalog-load` ohne Änderung.**
 

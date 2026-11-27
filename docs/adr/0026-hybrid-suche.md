@@ -635,11 +635,11 @@ Anlass: Zielgröße 10⁶ gelistete Einträge (Otto, 14.11.2026, `plans/m5/m5-35
 
 ---
 
-## 15. Nachtrag M5-66: Tiefe je Arm, Filter vor dem Rang, Trefferzahl (Vorschlag, 27.11.2026; Fragen F1–F5 offen)
+## 15. Nachtrag M5-66: Tiefe je Arm, Filter vor dem Rang, Trefferzahl (Vorschlag, 27.11.2026; Fragen F1–F6 offen)
 
 Anlass: M5-42 F5 = 1 (Otto, 23.11.2026). Bericht, Messung und Recherche: `plans/m5/m5-66-breite-suche.md`.
 
-1. **Harte Filter des Data catalogue in jedem Arm** (ergänzt §4.4): Art des Eintrags, Kategorie und Region stehen wie Raum und Zeit in den Abfragen beider Arme, vor jedem Rang. Die Kategorie voller Einträge kommt als Liste ihrer Kennungen aus der Registry, die Region voller Einträge nach der Regel der gelisteten (Box überlappt mehr als an der Grenze).
+1. **Harte Filter des Data catalogue in jedem Arm** (ergänzt §4.4): Art des Eintrags, Kategorie und Region stehen wie Raum und Zeit in den Abfragen beider Arme, vor jedem Rang; die Plätze eines Arms gelten damit unter den Treffern des Filters (Auslegung A2, Plan F6). Die Kategorie voller Einträge kommt als Liste ihrer Kennungen aus der Registry, die Region voller Einträge nach der Regel der gelisteten (Box überlappt mehr als an der Grenze).
 2. **Tiefe 1 000 je Arm:** In die RRF gehen je Arm die Plätze bis 1 000 (`rank()`, 1, 2, 2, 4). Ein Gleichstand am letzten Platz kommt ganz mit (Auslegung A1): Im Trigramm-Arm teilen sich bei breiten Wörtern Tausende Treffer einen Wert, ein Schnitt nach Titel wäre willkürlich und änderte schon Platz 1. Gerankt wird in SQL weiter jeder Treffer, weil ein genauer `ts_rank_cd` jeden `tsvector` braucht (Plan §6 Punkt 5).
 3. **Trefferzahl:** `numberMatched` mit Text ist die Zahl der Treffer beider Arme nach allen Filtern, genau bis 10 000 und darüber weggelassen (M5-40 F4); sie hängt nicht von der Tiefe ab.
 4. **Blättern** (ergänzt §4.4 „Größe der Antwort“): Die Liste endet am Ende der Fusion; eine Seite dahinter ist leer und ohne `next` (Plan F2).
