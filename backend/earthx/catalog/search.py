@@ -737,9 +737,9 @@ async def search_datasets(
                     )
                 vector = await beside if beside is not None else await arm.run(conn) if query else []
             finally:
-                # On an error of the full text: the arm beside is stopped before its connection goes back.
+                # On an error of the full text the arm beside runs to its end, and its answer is dropped: cancelled
+                # between its BEGIN and the rest, it would hand its connection back inside a transaction.
                 if beside is not None and not beside.done():
-                    beside.cancel()
                     await asyncio.gather(beside, return_exceptions=True)
                 if query is not None and not query.done():
                     query.cancel()

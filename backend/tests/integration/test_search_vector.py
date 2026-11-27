@@ -215,8 +215,9 @@ async def test_the_arm_beside_the_full_text_answers_the_same(embedded, aconn):
             assert await _ids(aconn, text, embedded, vector_conn=beside) == await _ids(aconn, text, embedded)
 
 
-async def test_an_error_of_the_full_text_stops_the_arm_beside(embedded, aconn, monkeypatch):
-    # The connection beside goes back to its pool after the search: no statement of the arm may still run on it.
+async def test_an_error_of_the_full_text_leaves_the_connection_beside_idle(embedded, aconn, monkeypatch):
+    # The connection beside goes back to its pool after the search: no statement and no transaction of the arm may
+    # still be open on it.
     monkeypatch.setattr("earthx.catalog.search._full_text_sql", lambda *_, **__: sql.SQL("SELECT 1 / 0"))
     async with await psycopg.AsyncConnection.connect(autocommit=True) as beside:
         with pytest.raises(psycopg.errors.DivisionByZero):
