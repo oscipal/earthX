@@ -73,20 +73,25 @@ def write_regions(conn: psycopg.Connection, regions: Sequence[Region]) -> int:
     Where any changed, the outlines are cut into pieces anew and the regions of every entry that keeps a footprint are
     derived anew, in one statement each.
     """
-    changed = 0
+    # One statement for all of them, not a round trip per region (M5-66).
     with conn.cursor() as cur:
-        for region in regions:
-            cur.execute(
-                """
-                INSERT INTO public.earthx_region AS stored (code, level, name, outline)
-                VALUES (%s, %s, %s, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)))
-                ON CONFLICT (code) DO UPDATE SET level = EXCLUDED.level, name = EXCLUDED.name, outline = EXCLUDED.outline
-                WHERE (stored.level, stored.name, ST_AsBinary(stored.outline))
-                      IS DISTINCT FROM (EXCLUDED.level, EXCLUDED.name, ST_AsBinary(EXCLUDED.outline))
-                """,
-                (region.code, region.level, region.name, json.dumps(region.outline)),
-            )
-            changed += cur.rowcount
+        cur.execute(
+            """
+            INSERT INTO public.earthx_region AS stored (code, level, name, outline)
+            SELECT r.code, r.level, r.name, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(r.outline), 4326))
+            FROM unnest(%s::text[], %s::text[], %s::text[], %s::text[]) AS r(code, level, name, outline)
+            ON CONFLICT (code) DO UPDATE SET level = EXCLUDED.level, name = EXCLUDED.name, outline = EXCLUDED.outline
+            WHERE (stored.level, stored.name, ST_AsBinary(stored.outline))
+                  IS DISTINCT FROM (EXCLUDED.level, EXCLUDED.name, ST_AsBinary(EXCLUDED.outline))
+            """,
+            (
+                [region.code for region in regions],
+                [region.level for region in regions],
+                [region.name for region in regions],
+                [json.dumps(region.outline) for region in regions],
+            ),
+        )
+        changed = cur.rowcount
         cur.execute(
             "DELETE FROM public.earthx_region WHERE NOT (code = ANY(%s))", ([region.code for region in regions],)
         )
@@ -195,11 +200,16 @@ def write_hand_entries(
     blocklist: Sequence[BlockRule],
     *,
     full_ids: Collection[str],
+    outlines_changed: bool = True,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Write the hand entries, each with the SHA-256 of its file; returns the ids written and the ids left out as blocked.
 
     An id that is a full entry or a retired one (``full_ids``), or that a harvested row already holds, is an error: two
     files in Git cannot both own it, and a hand entry never takes a harvested row over.
+
+    A published row with the same document, file and key in the order is left as it is without a statement, unless
+    ``outlines_changed`` (the region outlines changed in this run): its footprint and regions come from its file and
+    those outlines only. Deriving them anew cost 1.3 s per run for an entry over the states of Europe (M5-66).
     """
     ids = [entry.dataset_id for entry, _ in entries]
     if clash := sorted(set(ids) & set(full_ids)):
@@ -214,6 +224,14 @@ def write_hand_entries(
         )
         if taken := [row[0] for row in cur.fetchall()]:
             raise ConfigError(f"listed/: a harvested entry holds the same id: {', '.join(taken)}")
+        unchanged: dict[str, tuple[str, str, str]] = {}
+        if not outlines_changed:
+            cur.execute(
+                "SELECT dataset_id, content_sha256, approval_sha256, sort_title FROM public.earthx_listed_entry"
+                " WHERE source_id = %s AND state = 'published'",
+                (HAND_SOURCE,),
+            )
+            unchanged = {row[0]: tuple(row[1:]) for row in cur.fetchall()}
         for entry, file_hash in entries:
             host = link_host(entry.source_url)
             values = {"source_id": HAND_SOURCE, "source_key": entry.dataset_id, "publisher": entry.publisher}
@@ -221,6 +239,8 @@ def write_hand_entries(
                 blocked.append(entry.dataset_id)
                 continue
             collection = to_listed_collection(entry)
+            if unchanged.get(entry.dataset_id) == (content_sha256(collection), file_hash, sort_title(entry.title)):
+                continue
             west, south, east, north = entry.spatial_extent.bbox
             footprint = _coverage_footprint(cur, entry)
             cur.execute(

@@ -29,6 +29,7 @@ from earthx.catalog.listed import (
     load_regions,
 )
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
+from earthx.catalog.municipalities import load_municipalities, write_municipalities
 from earthx.catalog.registry import AccountKind, ConfigError, SpatialExtent, TemporalExtent
 from tests.catalog.listed_entries import PUBLISHER, listed_entry, utc, with_hash
 from tests.integration.listed_rows import insert_row
@@ -926,3 +927,69 @@ def test_the_box_stays_the_footprint_without_named_states(conn: psycopg.Connecti
     write_regions(conn, load_regions())
     _put(conn, tmp_path, listed_entry("example-box", spatial_extent=_box(5.0, 45.0, 17.5, 55.5)))
     assert {"CZ", "PL"} <= set(_regions_of(conn, "example-box"))
+
+
+# --- a run without changes (M5-66) -----------------------------------------------------------------------------------
+
+
+def _no_footprint_measured(*_: object) -> None:
+    raise AssertionError("the footprint of an unchanged hand entry was measured again")
+
+
+def test_an_unchanged_hand_entry_is_left_alone_while_the_outlines_stay(
+    conn: psycopg.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_regions(conn, load_regions())
+    pair = with_hash(_covering(("AT", "CH", "DE", "LI")), tmp_path)
+    write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=False)
+    before = _row(conn, "example-dach")
+    monkeypatch.setattr("earthx.catalog.listed_store._coverage_footprint", _no_footprint_measured)
+    assert write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=False) == ((), ())
+    assert _row(conn, "example-dach") == before
+
+
+def test_a_hand_entry_is_derived_anew_where_the_outlines_changed_or_its_row_differs(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    regions = load_regions()
+    write_regions(conn, regions)
+    pair = with_hash(_covering(("AT", "CH", "DE", "LI")), tmp_path)
+    write_hand_entries(conn, [pair], [], full_ids=[])
+    # New outlines: the footprint of the named states is measured again and differs.
+    assert write_regions(conn, [region for region in regions if region.code != "LI"]) > 0
+    with pytest.raises(ConfigError, match="earthx_region lacks"):
+        write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=True)
+    write_regions(conn, regions)
+    # A row that is not published as the file says is written again, outlines or not.
+    conn.execute(
+        "UPDATE public.earthx_listed_entry SET state = 'in_review', verdict = 'ok' WHERE dataset_id = 'example-dach'"
+    )
+    assert write_hand_entries(conn, [pair], [], full_ids=[], outlines_changed=False) == (("example-dach",), ())
+    assert _state(conn, "example-dach") == "published"
+    # So is one whose file changed.
+    assert write_hand_entries(conn, [(pair[0], "c" * 64)], [], full_ids=[], outlines_changed=False) == (
+        ("example-dach",),
+        (),
+    )
+
+
+def test_regions_and_municipalities_are_written_in_one_statement_each_with_the_same_counts(
+    conn: psycopg.Connection,
+) -> None:
+    regions = load_regions()
+    conn.execute("DELETE FROM public.earthx_region_part")
+    conn.execute("DELETE FROM public.earthx_region")
+    assert write_regions(conn, regions) == len(regions)
+    assert write_regions(conn, regions) == 0
+    changed = [replace(regions[0], name=regions[0].name + " (renamed)")] + list(regions[1:])
+    assert write_regions(conn, changed) == 1
+    assert write_regions(conn, regions[1:]) == 1
+    assert write_regions(conn, []) == len(regions) - 1
+    municipalities = load_municipalities()[:50]
+    write_regions(conn, regions)
+    assert write_municipalities(conn, municipalities) == len(municipalities)
+    assert write_municipalities(conn, municipalities) == 0
+    renamed = [replace(municipalities[0], name=municipalities[0].name + " (renamed)"), *municipalities[1:]]
+    assert write_municipalities(conn, renamed) == 1
+    assert write_municipalities(conn, municipalities[1:]) == 1
+    assert write_municipalities(conn, []) == len(municipalities) - 1

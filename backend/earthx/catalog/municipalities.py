@@ -85,21 +85,26 @@ def load_municipalities() -> tuple[Municipality, ...]:
 
 def write_municipalities(conn: psycopg.Connection, municipalities: Sequence[Municipality]) -> int:
     """Bring ``earthx_municipality`` in line with ``municipalities``; returns how many rows changed."""
-    changed = 0
+    # One statement for all of them: a round trip per municipality cost a third of a second per run (M5-66).
     with conn.cursor() as cur:
-        for item in municipalities:
-            cur.execute(
-                """
-                INSERT INTO public.earthx_municipality AS stored (code, canton, name, outline)
-                VALUES (%s, %s, %s, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)))
-                ON CONFLICT (code) DO UPDATE SET canton = EXCLUDED.canton, name = EXCLUDED.name,
-                    outline = EXCLUDED.outline
-                WHERE (stored.canton, stored.name, ST_AsBinary(stored.outline))
-                      IS DISTINCT FROM (EXCLUDED.canton, EXCLUDED.name, ST_AsBinary(EXCLUDED.outline))
-                """,
-                (item.code, item.canton, item.name, json.dumps(item.outline)),
-            )
-            changed += cur.rowcount
+        cur.execute(
+            """
+            INSERT INTO public.earthx_municipality AS stored (code, canton, name, outline)
+            SELECT m.code, m.canton, m.name, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(m.outline), 4326))
+            FROM unnest(%s::text[], %s::text[], %s::text[], %s::text[]) AS m(code, canton, name, outline)
+            ON CONFLICT (code) DO UPDATE SET canton = EXCLUDED.canton, name = EXCLUDED.name,
+                outline = EXCLUDED.outline
+            WHERE (stored.canton, stored.name, ST_AsBinary(stored.outline))
+                  IS DISTINCT FROM (EXCLUDED.canton, EXCLUDED.name, ST_AsBinary(EXCLUDED.outline))
+            """,
+            (
+                [item.code for item in municipalities],
+                [item.canton for item in municipalities],
+                [item.name for item in municipalities],
+                [json.dumps(item.outline) for item in municipalities],
+            ),
+        )
+        changed = cur.rowcount
         cur.execute(
             "DELETE FROM public.earthx_municipality WHERE NOT (code = ANY(%s))", ([m.code for m in municipalities],)
         )
