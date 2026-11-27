@@ -137,4 +137,14 @@ Export), Umrechnung, Datentyp, Skalierung, Offset, nodata und Einheit.
 ## 6. Nachträge
 
 - **Klassen im Export (2026-11-20, M5-62, [#390](https://github.com/oscipal/earthX/pull/390), Plan `plans/m5/m5-62-klassenlegende.md`):** Ein Klassenband trägt im Export die Farbtabelle in der GeoTIFF, Klassennamen und Raster-Attributtabelle in einer `.aux.xml` daneben und die Klassen in `BANDS.txt`; alles aus einer Liste (`band_classes`). Farben nie von Hand: aus der Datei, aus STAC `classification:classes` oder aus der Standardpalette (tab20). Ergebnisse von Jobs tragen die Klassen ebenso (F9 = 1, mit M5-62 PR 2).
-- **QGIS-Stil bei jedem Export (Otto, 2026-11-20, Umsetzung M5-64):** Neben jeder Rasterdatei im ZIP liegt eine QGIS-Stildatei `.qml` gleichen Namens, damit die Daten in QGIS aussehen wie in der App: ein Band mit Farbskala und Min/Max, RGB mit Stretch je Band, Klassenband mit Werten, Farben und Namen.
+- **QGIS-Stil bei jedem Export (Otto, 2026-11-20, umgesetzt in M5-64, Plan `plans/m5/m5-64-qgis-stil.md`):** Neben jeder Rasterdatei im ZIP liegt eine QGIS-Stildatei mit demselben Namen und der Endung `.qml` (`B04_red_10m.tif` → `B04_red_10m.qml`). QGIS lädt sie beim Öffnen von selbst; `…tif.qml` lädt es nicht (gemessen mit QGIS 3.34). Die Daten sehen dann aus wie in der App:
+  - ein Band mit Messwerten: `singlebandpseudocolor` mit der Farbtabelle des Tilers als 256 Stützstellen, Min/Max physikalisch;
+  - drei Bänder eines Bilds bzw. eines RGB-Looks: `multibandcolor` mit Streckung je Kanal;
+  - Klassenband: `paletted` aus `band_classes`, dieselbe Liste wie Farbtabelle und `.aux.xml`;
+  - Masken: `paletted`, 1 = „Inside AOI“.
+
+  QGIS wendet `scale`/`offset` der GeoTIFF an (gemessen). Die Bereiche sind deshalb physikalisch wie die Looks; eine Umrechnung in gespeicherte Werte entfällt.
+
+  **Woher der Look kommt:** der Look im Auftrag (was der Nutzer sieht) vor dem Look der Collection, des Operators oder des Index-Presets. Er reist bei „Download crop“ im Feld `look`, beim Export-Job als Seiteneingang `look` in die `Attachments` (nicht gehasht, Worker bleibt zustandslos) und beim Ergebnis-ZIP eines Jobs als Parameter `look` des Downloads (Bündel: `looks` je Job). Gemessen wird nur, wo ein Look keine Zahlen hat: die fertige Datei einmal (2–98 % bzw. Min/Max), beim Ergebnis die Statistik der Eigenschaften.
+
+  **Bitgleich:** Zuschnitt und Job schreiben dieselben Bytes. Der Vergleichstest mit Referenzdateien, die QGIS selbst schreibt (`backend/tests/fixtures/qgis/`, Skript `scripts/write-qgis-reference-styles.py`), ersetzt das fehlende Schema.
