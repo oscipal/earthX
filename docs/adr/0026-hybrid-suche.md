@@ -635,13 +635,13 @@ Anlass: Zielgröße 10⁶ gelistete Einträge (Otto, 14.11.2026, `plans/m5/m5-35
 
 ---
 
-## 15. Nachtrag M5-66: Tiefe je Arm, Filter vor dem Rang, Trefferzahl (Vorschlag, 27.11.2026; Fragen F1–F6 offen)
+## 15. Nachtrag M5-66: Tiefe je Arm, Filter vor dem Rang, Trefferzahl (Otto, 27.11.2026: F1, F3, F5, F6 = 1, F2 = 2, F4 = 1 als Teil von M5-23)
 
 Anlass: M5-42 F5 = 1 (Otto, 23.11.2026). Bericht, Messung und Recherche: `plans/m5/m5-66-breite-suche.md`.
 
 1. **Harte Filter des Data catalogue in jedem Arm** (ergänzt §4.4): Art des Eintrags, Kategorie und Region stehen wie Raum und Zeit in den Abfragen beider Arme, vor jedem Rang; die Plätze eines Arms gelten damit unter den Treffern des Filters (Auslegung A2, Plan F6). Die Kategorie voller Einträge kommt als Liste ihrer Kennungen aus der Registry, die Region voller Einträge nach der Regel der gelisteten (Box überlappt mehr als an der Grenze).
 2. **Tiefe 1 000 je Arm:** In die RRF gehen je Arm die Plätze bis 1 000 (`rank()`, 1, 2, 2, 4). Ein Gleichstand am letzten Platz kommt ganz mit (Auslegung A1): Im Trigramm-Arm teilen sich bei breiten Wörtern Tausende Treffer einen Wert, ein Schnitt nach Titel wäre willkürlich und änderte schon Platz 1. Gerankt wird in SQL weiter jeder Treffer, weil ein genauer `ts_rank_cd` jeden `tsvector` braucht (Plan §6 Punkt 5).
 3. **Trefferzahl:** `numberMatched` mit Text ist die Zahl der Treffer beider Arme nach allen Filtern, genau bis 10 000 und darüber weggelassen (M5-40 F4); sie hängt nicht von der Tiefe ab.
-4. **Blättern** (ergänzt §4.4 „Größe der Antwort“): Die Liste endet am Ende der Fusion; eine Seite dahinter ist leer und ohne `next` (Plan F2).
+4. **Blättern** (ergänzt §4.4 „Größe der Antwort“, F2 = 2): Die Tiefe je Arm wächst mit der Seite (`max(1 000, offset + limit + 1)`); die Liste endet nie vor dem letzten Treffer (M5-56).
 5. **Reihenfolge:** Für Treffer, die in einem Arm hinter Platz 1 000 liegen, fällt dieser Beitrag weg; gemessen ändert sich die ganze Liste ab Platz 40 (drei Wörter) bzw. ab etwa 800 (ein Wort), die ersten 20 in keiner der 15 Messungen (Plan §3).
-6. **Folge für M5-23:** Der Vektorarm bekommt dieselbe Tiefe; `hnsw.ef_search` bleibt nach §14 Punkt 1 nie kleiner als sie.
+6. **Folge für M5-23:** Der Vektorarm bekommt dieselbe Tiefe; `hnsw.ef_search` bleibt nach §14 Punkt 1 nie kleiner als sie. Die Arme werden dort gleichzeitig abgefragt (F4); Ziel unter 1 s ohne Filter bei 10⁵.

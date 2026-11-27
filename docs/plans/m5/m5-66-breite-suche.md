@@ -47,7 +47,7 @@
 4. **Trefferzahl (Auftrag Punkt 1, M5-40 F4):** Jeder Arm liefert zusätzlich die Zahl seiner Treffer. Hat ein Arm höchstens 10 000, liefert er alle Kennungen, und `numberMatched` ist die Größe der Vereinigung beider Arme, genau. Hat ein Arm mehr als 10 000 oder die Vereinigung mehr, fehlt `numberMatched`. Die Zahl zählt nach allen Filtern, wie bisher.
 5. **Rang ohne `tsvector` in der Gruppierung:** Bei einem Wort wird der Rang beim Lesen der Zeile gebildet; jede Zeile trifft dann genau einmal, es gibt nichts zu gruppieren.
 6. **Zwei Schritte bei mehreren Wörtern:** Welche Wörter eine Zeile trifft, kommt aus dem GIN-Index ohne Entpacken. Nur die Zeilen, die die Regel `KNOWN` behält, werden über ihre Zeilen-ID (`ctid`, gleiche Transaktion) erneut gelesen und je getroffenem Wort gerankt, in der Reihenfolge der Wörter wie seit M5-65. Gruppiert wird nach der Zeilen-ID statt nach Kennung und Titel.
-7. **Blättern:** Die Liste endet am Ende der Fusion. Eine Seite dahinter ist leer und hat keinen Link `next`, auch wenn `numberMatched` mehr nennt (F2). Das Frontend blättert die Suche per `offset` und liest `numberMatched` bei der Suche nicht (`frontend/src/api.ts`, `fetchCatalogueSearch`).
+7. **Blättern (F2 = 2, Otto 27.11.2026):** Die Tiefe je Arm wächst mit der Seite: `max(1 000, offset + limit + 1)`. Die Liste endet nie vor dem letzten Treffer, ein Link `next` steht da, solange es weitere Treffer gibt („nie still abschneiden“, M5-56). Bis Seite 50 (je 20) bleibt die Tiefe 1 000; danach wächst sie, und die Reihenfolge früherer Seiten kann sich zwischen zwei Seiten leicht verschieben (§3). Das Frontend blättert die Suche per `offset` (`frontend/src/api.ts`, `fetchCatalogueSearch`). Zeiten je Seite: §2, Tabelle „Seiten“.
 8. **Unverändert:** Seiten ohne Text (`_catalogue_page`), Start bei Fläche oder Text (M5-65), Regeln zu Zahlen in Namen, Glossar, `ignored_filters`.
 
 **Umfang:** etwa 230 geänderte Zeilen in `search.py`, `collection_search.py` und `listed_search.py`, dazu 170 Zeilen Tests (§7).
@@ -221,7 +221,20 @@ git switch main
 
 Gleicher Hash in der Spalte `Reihenfolge` heißt: gleiche Treffer in gleicher Reihenfolge auf der ersten Seite.
 
-## 9. Fragen an Otto
+## 9. Antworten Otto (27.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| F1 | 1 | Ziel: breites Wort ohne Filter unter 1 s, mit Filter unter 0,5 s; ohne Filter auch für „Karte“ (in der Sitzung 1,26 s), erreicht mit M5-23 (F4) |
+| F2 | 2 | Tiefe wächst mit der Seite, die Liste endet nie vor dem letzten Treffer (M5-56); §2 Punkt 7, Zeiten je Seite in §2 |
+| F3 | 1 | Gleichstand bleibt ganz (A1) |
+| F4 | 1, aber keine eigene Aufgabe | beide Arme gleichzeitig abfragen wird Teil von **M5-23**, weil dort der Vektorarm dazukommt (Zeile M5-23 in `plans/m5/m5-discovery-und-suche.md` §6.2) |
+| F5 | 1 | unter 3 s im Programm; Start der Container misst Otto getrennt (§8) |
+| F6 | 1 | Plätze unter den Treffern des Filters (A2) |
+
+Otto misst am 27.11. mit `scripts/m5-66-messung.ps1` und schickt die Ausgaben. Die Fragen stehen unten unverändert als Historie.
+
+## 10. Fragen an Otto (beantwortet, §9)
 
 **F1 — Zielwerte Suche** (bei 10⁵ gelisteten Einträgen, über die Route, bei Otto nachgemessen).
 
