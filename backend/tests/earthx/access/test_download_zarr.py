@@ -22,6 +22,7 @@ import httpx
 import pytest
 import rasterio
 from rasterio.crs import CRS
+from rasterio.warp import transform as warp_transform
 from rasterio.warp import transform_bounds
 
 from earthx.access import download as dl
@@ -179,6 +180,19 @@ class TestACropOverTheSecondFormat:
                     return raster.width
 
         assert side(0.25) < side(0.9)
+
+
+class TestAPoint:
+    def test_a_point_crops_the_one_pixel_of_the_store_it_lies_on(self, served: list[httpx.Request]) -> None:
+        """M5-69: the store's own pixel under the point, placed by its transform as a COG is by its lattice."""
+        left, bottom, right, top = mini_zarr.store_bounds()
+        x, y = left + (right - left) * 0.37, bottom + (top - bottom) * 0.61
+        (lon,), (lat,) = warp_transform(CRS.from_string(mini_zarr.ITEM_CRS), CRS.from_epsg(4326), [x], [y])
+        zip_bytes = build([dl.AssetCrop(asset=ASSET_KEY, paths=(asset(),))], {"type": "Point", "coordinates": [lon, lat]})
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            with rasterio.open(BytesIO(archive.read("exports/SR_20m_b04_b02.tif"))) as raster:
+                assert (raster.width, raster.height) == (1, 1)
+                assert not raster.read(masked=True).mask.all()
 
 
 class TestWhatTheCropRefuses:

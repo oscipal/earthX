@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy
 import pytest
+from rasterio.warp import transform_geom
 
 from earthx.processing import run
 from earthx.processing.core import MAX_AREA_PIXELS, area_factor, area_statistics
@@ -50,6 +51,15 @@ def band(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> numpy.ndarray:
 
 @pytest.mark.usefixtures("band")
 class TestOnTheJobsGrid:
+    def test_a_point_is_the_statistics_of_its_one_pixel(self, band: numpy.ndarray) -> None:
+        """M5-69: one pixel counted, its value the mean, minimum and maximum, no spread."""
+        x, y = sources.ORIGIN_X + 10 * 321 + 4, sources.ORIGIN_Y - 10 * 123 - 4
+        point = transform_geom(sources.CRS, "EPSG:4326", {"type": "Point", "coordinates": [x, y]})
+        statistics = _measure(single._recipe(point)).bands[0]["statistics"]
+        value = (band[123, 321] * sources.SCALE + sources.OFFSET) * 2.0
+        assert statistics["minimum"] == pytest.approx(value) and statistics["maximum"] == pytest.approx(value)
+        assert statistics["mean"] == pytest.approx(value) and statistics["stddev"] == 0
+
     def test_the_statistics_are_those_of_the_result(self, tmp_path: Path) -> None:
         data = single._recipe(single._triangle())
         measured = _measure(data)

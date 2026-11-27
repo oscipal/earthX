@@ -35,13 +35,15 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 import earthx
+from earthx.access.crop_rules import LATTICE_SLACK
 from earthx.readers.cog import AssetPath
 
 #: The coarsest level read keeps at least this many pixels of the AOI (DS-03 plan §6.4, Otto's decision 1).
 #: At 10 000 pixels the 95th percentile of the error at mixed sky is 1.1 points, the maximum 1.9 (plan §6.2.4).
 MIN_AOI_PIXELS = 10_000
 
-_AREA_TYPES = frozenset({"Polygon", "MultiPolygon"})
+#: A point is an AOI too (M5-69): it is measured at the one pixel it lies on.
+_AOI_TYPES = frozenset({"Point", "Polygon", "MultiPolygon"})
 
 
 class ReadDeadlineExceeded(Exception):
@@ -58,8 +60,8 @@ def _check_deadline(deadline: float | None) -> None:
     if deadline is not None and time.monotonic() > deadline:
         raise ReadDeadlineExceeded
 
-# How many lists lie above the numbers: Polygon rings, positions, numbers; a MultiPolygon one more.
-_NUMBER_DEPTH = {"Polygon": 3, "MultiPolygon": 4}
+# How many lists lie above the numbers: Polygon rings, positions, numbers; a MultiPolygon one more, a Point none.
+_NUMBER_DEPTH = {"Point": 1, "Polygon": 3, "MultiPolygon": 4}
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,11 +141,13 @@ def measure_aoi_clouds(path: AssetPath, aoi: Mapping[str, Any], cloud_classes: f
     """
     if not isinstance(path, AssetPath):
         raise TypeError("the cloud share reads a path the gateway cleared, not a plain string (KLAERUNGEN B8)")
-    if not isinstance(aoi, Mapping) or aoi.get("type") not in _AREA_TYPES:
-        raise ValueError("the AOI must be a Polygon or MultiPolygon")
+    if not isinstance(aoi, Mapping) or aoi.get("type") not in _AOI_TYPES:
+        raise ValueError("the AOI must be a Point, Polygon or MultiPolygon")
     classes = frozenset(cloud_classes)
     with rasterio.open(path) as full:
         whole, on_raster = _geometry_in(full, aoi)
+        if whole.geom_type == "Point":
+            return _count_point(full, whole, classes)
         native_pixels = on_raster.area / abs(full.transform.determinant)
         factors = full.overviews(1)
         factor = overview_factor(native_pixels, factors)
@@ -209,8 +213,8 @@ def canonical_aoi(aoi: Mapping[str, Any]) -> str:
 
     Public for the callers that bind a page marker to the AOI (``api.aoi_cloud_filter``); like the cache key, what is
     built from it is never logged and never in a URL."""
-    if not isinstance(aoi, Mapping) or aoi.get("type") not in _AREA_TYPES or "coordinates" not in aoi:
-        raise ValueError("the AOI must be a Polygon or MultiPolygon")
+    if not isinstance(aoi, Mapping) or aoi.get("type") not in _AOI_TYPES or "coordinates" not in aoi:
+        raise ValueError("the AOI must be a Point, Polygon or MultiPolygon")
     try:
         coordinates = _floats(aoi["coordinates"], _NUMBER_DEPTH[aoi["type"]])
         return json.dumps(
@@ -238,15 +242,19 @@ def _floats(value: Any, depth: int) -> Any:
 def _geometry_in(dataset: rasterio.DatasetReader, aoi: Mapping[str, Any]) -> tuple[BaseGeometry, BaseGeometry]:
     """The AOI in the CRS of the file, whole and its part on the raster.
 
-    An AOI that cannot be placed there, has no area or is not valid (a ring that crosses itself, parts that
-    overlap) is a ``ValueError`` without its values: GEOS words a topology error with a position in it, so the
-    intersection stays inside the ``try`` too.
+    An AOI that cannot be placed there, is neither a point nor has an area, or is not valid (a ring that crosses
+    itself, parts that overlap) is a ``ValueError`` without its values: GEOS words a topology error with a position in
+    it, so the intersection stays inside the ``try`` too.
     """
     if dataset.crs is None:
         raise ValueError("the raster has no CRS")
     try:
         whole = shape(transform_geom("EPSG:4326", dataset.crs, dict(aoi)))
-        usable = whole.is_valid and whole.area > 0 and all(math.isfinite(value) for value in whole.bounds)
+        usable = (
+            whole.is_valid
+            and (whole.geom_type == "Point" or whole.area > 0)
+            and all(math.isfinite(value) for value in whole.bounds)
+        )
         on_raster = whole.intersection(box(*dataset.bounds)) if usable else None
     except Exception:  # GDAL, pyproj and GEOS word their errors with the coordinates in them
         usable = False
@@ -290,6 +298,37 @@ def _count(
         cloud_pixels=sum(count for value, count in per_class.items() if value in classes),
         data_pixels=data_pixels,
         aoi_pixels=on_pixels + off_raster,
+        resolution=abs(level.transform.a),
+        class_pixels=per_class,
+    )
+
+
+def _pixel_of(level: rasterio.DatasetReader, point: BaseGeometry) -> tuple[int, int] | None:
+    """``(row, col)`` of the pixel of ``level`` that holds ``point`` (in its CRS), or ``None`` past the raster's edge.
+
+    On an edge between two pixels the one right of or below it, as the crop takes it (``crop_rules.source_crop_grid``)."""
+    col, row = ~level.transform @ (point.x, point.y)
+    col, row = math.floor(col + LATTICE_SLACK), math.floor(row + LATTICE_SLACK)
+    if not (0 <= col < level.width and 0 <= row < level.height):
+        return None
+    return row, col
+
+
+def _count_point(level: rasterio.DatasetReader, point: BaseGeometry, classes: frozenset[int]) -> AoiClouds:
+    """The one pixel at ``point`` on the full-resolution grid (M5-69): one AOI pixel, valid or not, in its class."""
+    _check_deadline(READ_DEADLINE.get())
+    per_class: dict[int, int] = {}
+    data_pixels = 0
+    place = _pixel_of(level, point)
+    if place is not None:
+        values = level.read(1, window=Window(place[1], place[0], 1, 1))
+        valid = ~_is_nodata(values, level.nodata)
+        data_pixels = int(valid.sum())
+        _add_classes(per_class, values[valid])
+    return AoiClouds(
+        cloud_pixels=sum(count for value, count in per_class.items() if value in classes),
+        data_pixels=data_pixels,
+        aoi_pixels=1,
         resolution=abs(level.transform.a),
         class_pixels=per_class,
     )
@@ -371,8 +410,8 @@ def measure_aoi_pass(
     """
     if not paths or not all(isinstance(path, AssetPath) for path in paths):
         raise TypeError("the pass share reads paths the gateway cleared, not plain strings (KLAERUNGEN B8)")
-    if not isinstance(aoi, Mapping) or aoi.get("type") not in _AREA_TYPES:
-        raise ValueError("the AOI must be a Polygon or MultiPolygon")
+    if not isinstance(aoi, Mapping) or aoi.get("type") not in _AOI_TYPES:
+        raise ValueError("the AOI must be a Point, Polygon or MultiPolygon")
     deadline = READ_DEADLINE.get()
     around = enter or (lambda path: nullcontext())
 
@@ -392,7 +431,10 @@ def measure_aoi_pass(
         base = abs(target.transform.a)
         factor = 1 if on_scenes.is_empty else overview_factor(on_scenes.area / base**2, target.overviews(1))
         cell = base * factor
-        off_scenes_pixels = round((whole.area - on_scenes.area) / cell**2)
+        if whole.geom_type == "Point":  # one pixel of the AOI, on the scenes or past them (M5-69)
+            off_scenes_pixels = 1 if on_scenes.is_empty else 0
+        else:
+            off_scenes_pixels = round((whole.area - on_scenes.area) / cell**2)
         if on_scenes.is_empty:
             return AoiClouds(0, 0, off_scenes_pixels, cell, {})
         levels = _open_all(
@@ -463,10 +505,11 @@ def _merge(
     Within a chunk the scenes are read at once; the first valid value of the scenes, in the order given, owns a cell."""
     origin_x, origin_y = target.transform.c, target.transform.f
     minx, miny, maxx, maxy = on_scenes.bounds
-    col0 = math.floor((minx - origin_x) / cell)
-    row0 = math.floor((origin_y - maxy) / cell)
-    width = math.ceil((maxx - origin_x) / cell) - col0
-    height = math.ceil((origin_y - miny) / cell) - row0
+    col0 = math.floor((minx - origin_x) / cell + LATTICE_SLACK)
+    row0 = math.floor((origin_y - maxy) / cell + LATTICE_SLACK)
+    # A point has no extent and still one cell (M5-69).
+    width = max(1, math.ceil((maxx - origin_x) / cell - LATTICE_SLACK) - col0)
+    height = max(1, math.ceil((origin_y - miny) / cell - LATTICE_SLACK) - row0)
     geometry = mapping(on_scenes)
     prepared = prep(on_scenes)
     data_pixels = on_pixels = 0

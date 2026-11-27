@@ -66,6 +66,7 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.features import rasterize
 from rasterio.transform import Affine
+from rasterio.warp import transform as transform_coordinates
 from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from rasterio.windows import bounds as window_bounds
@@ -75,7 +76,7 @@ from rio_cogeo.profiles import cog_profiles
 from rio_tiler.models import ImageData
 
 from earthx.access.band_export import PALETTE_TYPES, class_colour_table
-from earthx.access.crop_rules import AoiOutsideItems
+from earthx.access.crop_rules import LATTICE_SLACK, AoiOutsideItems
 from earthx.access.radar import RadarGrid, copy_to_cog
 from earthx.access.resolve import open_asset_ref
 from earthx.catalog.registry import ClassRow, class_key
@@ -498,6 +499,19 @@ def _transform_meta(meta: RasterMeta, steps: tuple[PlannedStep, ...]) -> RasterM
     return meta
 
 
+def _point_pixel(meta: RasterMeta, point: dict) -> RasterMeta:
+    """The one pixel of ``meta``'s grid that holds ``point`` (GeoJSON, EPSG:4326; M5-69).
+
+    A grid step on the one pixel of a point AOI gives one pixel again: the one of its target grid the point lies on, on an
+    edge the one right of or below it. The grid of the step reaches past the source pixel, so the point always lies on it;
+    the clamp only guards against rounding at its edge."""
+    (x,), (y,) = transform_coordinates("EPSG:4326", meta.crs, [point["coordinates"][0]], [point["coordinates"][1]])
+    col, row = ~meta.transform @ (x, y)
+    col = min(max(math.floor(col + LATTICE_SLACK), 0), meta.width - 1)
+    row = min(max(math.floor(row + LATTICE_SLACK), 0), meta.height - 1)
+    return replace(meta, transform=meta.transform @ Affine.translation(col, row), width=1, height=1)
+
+
 def _source_meta(sources: list[Source], finest: Source, window: Window, transform: Affine) -> RasterMeta:
     """The bands the sources give, on the grid of the finest.
 
@@ -749,8 +763,10 @@ def run(
             state.slice_tags = _slice_tags(finest, window)
             metas = [_source_meta(sources, finest, window, transform)]
             passes = segments(stock_steps(metas[0], planned, output.bands))
+            point = aoi["type"] == "Point"
             for segment in passes:
-                metas.append(_transform_meta(metas[-1], segment.steps))
+                meta = _transform_meta(metas[-1], segment.steps)
+                metas.append(_point_pixel(meta, aoi) if point and segment.kind == "grid" else meta)
             metas[-1] = _keep_classes(metas[-1], live_steps(planned, output.bands))
             source_values = _source_values(metas[0], live_steps(planned, output.bands))
             nodata = _nodata_for(output.dtype, metas[-1], live_steps(planned, output.bands))
@@ -779,6 +795,7 @@ def run(
                     nodata if last else math.nan,
                     last,
                     measure,
+                    point,
                 )
                 if previous is not None:
                     state.drop(previous)  # the pass that read it is done
@@ -1000,10 +1017,13 @@ def _run_pass(
     nodata: float,
     last: bool,
     measure: _Measure | None = None,
+    point: bool = False,
 ) -> str:
     """One pass into a new file in the work directory; returns its name.
 
-    ``measure`` counts the bands of the step that follows while the pass writes them (NM4-71)."""
+    ``measure`` counts the bands of the step that follows while the pass writes them (NM4-71). On the one pixel of a
+    ``point`` AOI (M5-69) a grid step has nothing between pixels to interpolate: its one target pixel takes the value of
+    the one source pixel, whatever the method (plan M5-69 §3.4)."""
     state.passes += 1
     name = f"pass-{state.passes}.tif"
     dtype = output.dtype if last else _INTERMEDIATE_DTYPE
@@ -1015,7 +1035,7 @@ def _run_pass(
                 target_meta,
                 dtype,
                 nodata,
-                lambda w: step.operator.run(src, target_meta, w, step.params),
+                (lambda w: src.read(masked=True)) if point else (lambda w: step.operator.run(src, target_meta, w, step.params)),
                 last,
                 measure,
             )

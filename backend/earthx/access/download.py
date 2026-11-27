@@ -133,6 +133,7 @@ from rasterio.enums import Resampling
 from rasterio.errors import RasterioError
 from rasterio.io import MemoryFile
 from rasterio.vrt import WarpedVRT
+from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from rasterio.windows import transform as window_transform
 from rio_cogeo.cogeo import cog_translate
@@ -144,6 +145,7 @@ from rio_tiler.mosaic import mosaic_reader
 from rioxarray.exceptions import NoDataInBounds
 from shapely.errors import ShapelyError
 from shapely.geometry import box
+from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
@@ -174,6 +176,7 @@ from earthx.access.crop_rules import (
     CITATION_FILENAME,
     COG_PROFILE,
     FALLBACK_BYTES_PER_PIXEL,
+    LATTICE_SLACK,
     MAX_OUTPUT_SIDE_PX,
     NOTICE_FILENAME,
     RECIPE_FILENAME,
@@ -189,6 +192,7 @@ from earthx.access.crop_rules import (
     mask_filename,
     mask_profile,
     native_crop_grid,
+    point_pixel_bounds,
     rasterize_aoi,
     source_crop_grid,
 )
@@ -303,12 +307,13 @@ class CorruptOutput(RuntimeError):
 
 
 def parse_aoi_geometry(geometry: Mapping[str, Any]) -> BaseGeometry:
-    """A GeoJSON mapping as a validated Polygon/MultiPolygon, or the reason it is not one.
+    """A GeoJSON mapping as a validated Point/Polygon/MultiPolygon, or the reason it is not one.
 
     Validated with shapely rather than assumed: a self-intersecting ring or a
-    point/line sent as an "AOI" is a malformed request (M2-06's "fehlerhafte
+    line sent as an "AOI" is a malformed request (M2-06's "fehlerhafte
     Geometrie" acceptance case), not something a reader should be left to fail on
-    in whatever way it happens to fail.
+    in whatever way it happens to fail. A point is an AOI of its own (M5-69): its crop is the one pixel it lies
+    on, so it has to lie inside longitude/latitude bounds and carry no height.
     """
     try:
         geom = shapely_shape(geometry)
@@ -316,8 +321,10 @@ def parse_aoi_geometry(geometry: Mapping[str, Any]) -> BaseGeometry:
         raise InvalidAoi(f"the AOI is not a usable GeoJSON geometry: {error}") from None
     if geom.is_empty:
         raise InvalidAoi("the AOI geometry is empty")
-    if geom.geom_type not in ("Polygon", "MultiPolygon"):
-        raise InvalidAoi(f"the AOI must be a Polygon or MultiPolygon, not {geom.geom_type}")
+    if geom.geom_type not in ("Point", "Polygon", "MultiPolygon"):
+        raise InvalidAoi(f"the AOI must be a Point, Polygon or MultiPolygon, not {geom.geom_type}")
+    if geom.geom_type == "Point" and (geom.has_z or not (-180 <= geom.x <= 180 and -90 <= geom.y <= 90)):
+        raise InvalidAoi("the AOI point lies outside longitude/latitude bounds or carries a height")
     if not geom.is_valid:
         raise InvalidAoi("the AOI geometry is not valid (e.g. a self-intersecting ring)")
     return geom
@@ -442,6 +449,52 @@ def check_output_size_cap(planned: Sequence[PlannedOutput], *, max_bytes: int = 
     )
 
 
+def footprint_holds(item: Mapping[str, Any], point: BaseGeometry) -> bool:
+    """Whether the footprint of ``item`` holds ``point``, an edge included; its bbox where it has no footprint (M5-69)."""
+    try:
+        geometry = item.get("geometry")
+        if geometry:
+            return bool(shapely_shape(geometry).covers(point))
+        bbox = item.get("bbox")
+        return isinstance(bbox, (list, tuple)) and len(bbox) == 4 and bool(box(*bbox).covers(point))
+    except (ShapelyError, ValueError, TypeError, KeyError, AttributeError):
+        return False
+
+
+def point_pixel_outline(
+    open_reader: Callable[..., BaseReader],
+    path: AssetPath | ZarrAsset,
+    point: BaseGeometry,
+    *,
+    radar: bool = False,
+    gdal_env: Mapping[str, str] | None = None,
+) -> BaseGeometry:
+    """The outline (EPSG:4326) of the one pixel of ``path`` a point lies on, the pixel its crop gives (M5-69).
+
+    A COG on its own lattice (:func:`~earthx.access.crop_rules.source_crop_grid`), a radar scene in its pixels and lines
+    placed by its GCPs, a store without a raster dataset of its own by its transform (:func:`point_pixel_bounds`).
+    :class:`AoiOutsideItems` where the point lies past the raster. ``gdal_env`` as for :func:`build_download_zip`.
+    """
+    try:
+        with rasterio.Env(**(gdal_env or {})), open_reader(path) as reader:
+            dataset = getattr(reader, "dataset", None)
+            if dataset is None:
+                return box(*point_pixel_bounds(reader, point))
+            if radar:
+                grid = RadarGrid.of(dataset)
+                return grid.outline(grid.window(point))
+            crs, transform, _, _ = source_crop_grid(dataset, point)
+            column, row = ~dataset.transform @ (transform.c, transform.f)
+            if not (-LATTICE_SLACK < column < dataset.width - 1 + LATTICE_SLACK):
+                raise AoiOutsideItems("the point lies past the raster")
+            if not (-LATTICE_SLACK < row < dataset.height - 1 + LATTICE_SLACK):
+                raise AoiOutsideItems("the point lies past the raster")
+            pixel = box(transform.c, transform.f + transform.e, transform.c + transform.a, transform.f)
+            return shapely_shape(transform_geom(crs, WGS84_CRS, shapely_mapping(pixel)))
+    except _AOI_MISSES_THE_DATA as error:
+        raise AoiOutsideItems(str(error)) from None
+
+
 def crop_asset(
     open_reader: Callable[..., BaseReader],
     asset_paths: Sequence[AssetPath | ZarrAsset],
@@ -482,7 +535,8 @@ def crop_asset(
     polygon itself is rasterised separately, only for the companion mask file
     (:func:`crop_asset_to_cog_bytes`).
     """
-    bbox = shapely_shape(region_geometry).bounds
+    region = shapely_shape(region_geometry)
+    bbox = region.bounds
     # `mosaic_reader` (below) does not carry a merged image's `nodata` through
     # at all (checked against its source, bug B, PR #86 review) — captured here
     # from whichever item's read happens to run first, so the merged image
@@ -493,7 +547,10 @@ def crop_asset(
 
     def _read(path: AssetPath | ZarrAsset) -> ImageData:
         with open_reader(path) as reader:
-            image = reader.part(bbox, width=width, height=height)
+            if region.geom_type == "Point":  # the one pixel it lies on (M5-69)
+                image = reader.part(point_pixel_bounds(reader, region), width=1, height=1)
+            else:
+                image = reader.part(bbox, width=width, height=height)
         if not first_nodata:
             first_nodata.append(image.nodata)
         return image
@@ -719,7 +776,10 @@ def crop_asset_to_cog_bytes(
                 dataset = getattr(reader, "dataset", None)
                 if dataset is not None:
                     return _write_native_windowed_cog(dataset, region, mask_shape, meta=meta)
-                image = reader.part(region.bounds, width=None, height=None)
+                if region.geom_type == "Point":
+                    image = reader.part(point_pixel_bounds(reader, region), width=1, height=1)
+                else:
+                    image = reader.part(region.bounds, width=None, height=None)
         except _AOI_MISSES_THE_DATA as error:
             raise AoiOutsideItems(str(error)) from None
         return _image_to_asset_crop_bytes(image, mask_shape, meta)
