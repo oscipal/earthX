@@ -81,6 +81,7 @@ def valid_config() -> DatasetConfig:
             ml_processing=False,
             quad_pol=False,
             terrain=False,
+            sar_backscatter=False,
             single_coverage_product=False,
         ),
         license=LicenseInfo(

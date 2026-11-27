@@ -58,6 +58,7 @@ class TestCapabilitiesAreExplicit:
             "ml_processing",
             "quad_pol",
             "terrain",
+            "sar_backscatter",
             "single_coverage_product",
         ],
     )
@@ -74,6 +75,7 @@ class TestCapabilitiesAreExplicit:
             "ml_processing": False,
             "quad_pol": False,
             "terrain": False,
+            "sar_backscatter": False,
             "single_coverage_product": False,
         }
         del flags[omitted]

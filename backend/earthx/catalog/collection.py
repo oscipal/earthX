@@ -65,6 +65,7 @@ def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
         "ml_processing": caps.ml_processing,
         "quad_pol": caps.quad_pol,
         "terrain": caps.terrain,
+        "sar_backscatter": caps.sar_backscatter,
         "single_coverage_product": caps.single_coverage_product,
     }
 
@@ -167,6 +168,7 @@ def _earthx_step_presets(config: DatasetConfig) -> list[dict[str, object]]:
             "op_version": preset.op_version,
             "params": {**preset.params, "name": preset.name},
             "adjustable": list(preset.adjustable),
+            "tooltip": preset.tooltip,
         }
         for preset in config.step_presets
     ]

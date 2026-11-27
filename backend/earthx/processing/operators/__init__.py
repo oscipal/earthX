@@ -22,6 +22,7 @@ from earthx.processing.operators.reproject import (
     ReprojectParams,
     ReprojectParamsV2,
 )
+from earthx.processing.operators.sar_db import SAR_DB, SarDbParams
 from earthx.processing.operators.terrain import TERRAIN, TerrainParams
 
 __all__ = [
@@ -53,6 +54,8 @@ __all__ = [
     "Operator",
     "OperatorRegistry",
     "RasterMeta",
+    "SAR_DB",
+    "SarDbParams",
     "ReprojectParams",
     "ReprojectParamsV2",
     "Requirement",
