@@ -14,23 +14,17 @@ rio-tiler's own and in neither; they are "other".
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from functools import cache
-from pathlib import Path
 from typing import Any
 
 from rio_tiler.colormap import cmap as RIO_TILER_COLORMAPS
 from titiler.core.dependencies import create_colormap_dependency
 
+from earthx.access.colormap_tables import REVERSED, ramp_tables
 from earthx.catalog.datasets import registry
 
 __all__ = ["CLASS_TABLES", "COLORMAPS", "COLORMAP_PARAMS", "GROUPS", "PREVIEW_STOPS", "REVERSED", "catalog"]
-
-_DATA = Path(__file__).with_name("colormap_data")
-
-#: The colormaps added to rio-tiler's, each a file of 256 RGB triples in ``colormap_data/`` (origin and licence in it).
-_ADDED = ("rocket", "mako")
 
 
 def _class_tables() -> dict[str, dict[int, tuple[int, int, int, int]]]:
@@ -64,8 +58,6 @@ _CLASSES = _class_tables()
 #: The names of the tables of classes (:func:`_class_tables`).
 CLASS_TABLES = tuple(_CLASSES)
 
-REVERSED = "_r"
-
 GROUPS: dict[str, tuple[str, ...]] = {
     "sequential": (
         "viridis", "plasma", "inferno", "magma", "cividis", "rocket", "mako",
@@ -94,25 +86,8 @@ PREVIEW_STOPS = 16
 
 
 def _added() -> dict[str, dict[int, tuple[int, int, int, int]]]:
-    """The added colormaps and their reversed ones, as rio-tiler registers a colormap: 256 entries of RGBA."""
-    added: dict[str, dict[int, tuple[int, int, int, int]]] = {}
-    for name in _ADDED:
-        rgb = json.loads((_DATA / f"{name}.json").read_text(encoding="utf-8"))["rgb"]
-        if len(rgb) != 256:
-            raise ValueError(f"the colormap {name} has {len(rgb)} colours, not 256")
-        table = [(int(r), int(g), int(b), 255) for r, g, b in rgb]
-        added[name] = dict(enumerate(table))
-        added[f"{name}{REVERSED}"] = dict(enumerate(reversed(table)))
-    added.update(_CLASSES)
-    # rio-tiler's own ones without a reversed one get it here, so that "Reverse" holds for every colormap.
-    names = set(RIO_TILER_COLORMAPS.list())
-    for name in sorted(names):
-        if name.endswith(REVERSED) or f"{name}{REVERSED}" in names:
-            continue
-        own = RIO_TILER_COLORMAPS.get(name)
-        values = [own[key] for key in sorted(own)]
-        added[f"{name}{REVERSED}"] = dict(zip(sorted(own), reversed(values), strict=True))
-    return added
+    """The ramps rio-tiler lacks (:mod:`earthx.access.colormap_tables`) and the tables of classes."""
+    return {**ramp_tables(), **_CLASSES}
 
 
 COLORMAPS = RIO_TILER_COLORMAPS.register(_added())
