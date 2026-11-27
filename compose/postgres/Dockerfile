@@ -5,8 +5,8 @@ FROM postgis/postgis:16-3.7
 
 # pgvector from PGDG at a fixed package version (G4 = 1). PGDG lists only its
 # newest build, so once this version is replaced the install fails: raise it here
-# on purpose. The policy line in the build log shows what PGDG offers.
-ARG PGVECTOR_VERSION=0.8.6-1.pgdg13+2
+# on purpose. The policy lines in the build log show what PGDG offers.
+ARG PGVECTOR_VERSION=0.8.7-2.pgdg13+1
 
 RUN apt-get update \
     && apt-cache policy "postgresql-$PG_MAJOR-pgvector" \
