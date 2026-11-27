@@ -1,6 +1,6 @@
 # M5-43 — Postgres-Image mit pgvector für Compose, CI und Cloud-Umgebung
 
-**Status (27.11.2026):** Plan, **Stufe B**. Auftrag Otto vom 27.11.2026 (`plans/m5/m5-discovery-und-suche.md` §6.2), Erlaubnis für `.github/` im Auftrag; das Setup der Cloud-Umgebung trägt Otto selbst ein (Text in §6). Fragen F1–F4 in §9.
+**Status (27.11.2026):** Plan, **Stufe B**. Auftrag Otto vom 27.11.2026 (`plans/m5/m5-discovery-und-suche.md` §6.2), Erlaubnis für `.github/` im Auftrag; das Setup der Cloud-Umgebung trägt Otto selbst ein (Text in §6). Fragen F1–F4 in §9, von Otto am 27.11.2026 beantwortet (§9a).
 
 Belegstufen wie in `plans/m5/m5-41-pgvector.md`: **M** in dieser Sitzung gemessen, **P** Primärquelle selbst gelesen, **P\*** Primärseite über das Abrufwerkzeug eines Hilfsagenten gelesen, **S** Suchtreffer, Seite nicht gelesen, **A** eigene Ableitung.
 
@@ -31,10 +31,13 @@ Beide Images legen die Daten unter `PGDATA=/var/lib/postgresql/data` ab und setz
 
 Neben `compose/objectstore/`, wo die übrigen Dateien der Compose-Dienste liegen.
 
-1. `FROM postgis/postgis:16-3.7`.
-2. pgvector aus PGDG mit fester Paketfassung (`postgresql-16-pgvector=0.8.7-2.pgdg13+1`, als `ARG`), wie das Dockerfile von `postgis/postgis` PostGIS festschreibt (G4 = 1). Vorher `apt-cache policy` ins Bau-Log, damit eine abgelöste Fassung sofort sichtbar ist.
+Mehrstufig (F1 = 3, §9a); die erste Fassung dieses PR installierte pgvector aus PGDG.
+
+1. **Stufe `build`** auf `postgis/postgis:16-3.7`: `build-essential`, `git` und `postgresql-server-dev-16` (aus PGDG, das im Basis-Image eingetragen ist); `git clone --branch v0.8.7` von GitHub, Prüfung, dass der Tag auf den Commit `f37c13f68b57…` zeigt; `make OPTFLAGS=""` (ohne `-march=native`, läuft auf jedem x86-64-Rechner) und `make install DESTDIR=/out`, ohne die Header von pgvector.
+2. **Endstufe** auf `postgis/postgis:16-3.7`: nur `COPY --from=build /out/usr/ /usr/`. Compiler, Header und `git` bleiben in der Bau-Stufe.
 3. Prüfung im Bau: `default_version` in `vector.control` ≥ 0.8.4, sonst bricht der Bau ab.
-4. Nichts weiter: kein eigenes Init-Skript, keine Einstellungen. Die Erweiterung legt später die Migration von M5-23 an.
+4. **Anheben** ist eine bewusste Änderung: `PGVECTOR_TAG` und `PGVECTOR_COMMIT` zusammen, eigener PR.
+5. Nichts weiter: kein eigenes Init-Skript, keine Einstellungen. Die Erweiterung legt später die Migration von M5-23 an.
 
 ## 4. Compose
 
@@ -92,6 +95,17 @@ Aus den Zeitstempeln der CI-Logs vom 27.11.2026 (Läufe 46021794240 ohne Cache, 
 2. Liegen lassen
 
 
+### 9a. Antworten Otto (27.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| F1 | 3 | pgvector aus dem GitHub-Tag `v0.8.7`, wie im Cloud-Setup, mehrstufig (Compiler und Header nicht im Image); Mindestfassung 0.8.4 bleibt als Prüfung; Anheben bleibt bewusste Änderung; Bauzeit ohne und mit Cache neu gemessen (§8) |
+| F2 | 1 | Otto trägt den Setup-Text (§6) vor dem Merge ein; der T-C-Test gilt überall |
+| F3 | 1 | Basis-Image per Tag `16-3.7`, ohne Digest |
+| F4 | 1 | `DROP EXTENSION postgis_tiger_geocoder` als Teil von Schritt 5 der Anleitung (§11) |
+
+Dazu: Die Anleitung in §11 nennt in Schritt 3 die Form nach dem Merge (`git pull origin main`); Otto wechselt erst nach dem Merge.
+
 ## 10. Ottos lokaler Bestand: Vorgehen und Simulation
 
 Wechsel im **selben Volume**, ohne `docker compose down -v`: Die Hauptversion bleibt 16, das neue Image liest das Datenverzeichnis. Zwei Dinge sind danach nötig:
@@ -101,18 +115,18 @@ Wechsel im **selben Volume**, ohne `docker compose down -v`: Die Hauptversion bl
 
 Beides steht in `scripts/m5-43-postgres-switch/` und läuft im Container. Die Sicherung davor ist doppelt: logisch (`pg_dumpall --globals-only` und `pg_dump -Fc`) und physisch (Archiv des Datenverzeichnisses bei gestopptem Postgres, für den schnellen Rückweg auf das alte Image).
 
-**Simulation in der Sitzung [M]:** Mini-Compose-Projekt mit demselben Dienst `postgres`. Altes Image `16-3.4` mit pgstac 0.9.12, allen 37 Migrationen, `catalog-load` und einer Texttabelle mit 10⁵ Zeilen und B-Baum. Dann Sicherung, Wechsel auf `16-3.7` mit pgvector (in der Sitzung aus dem Quelltext statt aus PGDG, das gesperrt ist), `upgrade-all.sh`, Prüfung. Ergebnis: Zeilenzahlen aller Tabellen gleich; PostGIS und Topologie 3.7.0; Collation 2.41 in allen Datenbanken; nach Neustart keine Warnung mehr; `pypgstac migrate` und `catalog-load` laufen danach durch; `vector` 0.8.7 angeboten. Die Rücksicherung des Dumps in ein frisches neues Image ging vollständig bis auf den Tiger-Geocoder (F4) und die Meldung, dass die Rolle schon existiert. Den physischen Rückweg habe ich nicht simuliert; er braucht Löschen im Volume und gehört Otto.
+**Simulation in der Sitzung [M]:** Mini-Compose-Projekt mit demselben Dienst `postgres`. Altes Image `16-3.4` mit pgstac 0.9.12, allen 37 Migrationen, `catalog-load` und einer Texttabelle mit 10⁵ Zeilen und B-Baum. Dann Sicherung, Wechsel auf `16-3.7` mit pgvector (in der Sitzung aus dem Quelltext statt aus PGDG, das gesperrt ist), `upgrade-all.sh`, Prüfung. Ergebnis: Zeilenzahlen aller Tabellen gleich; PostGIS und Topologie 3.7.0; Collation 2.41 in allen Datenbanken; nach Neustart keine Warnung mehr; `pypgstac migrate` und `catalog-load` laufen danach durch; `vector` 0.8.7 angeboten. Die Rücksicherung des Dumps in ein frisches neues Image ging vollständig bis auf den Tiger-Geocoder (F4, wird in Schritt 5 entfernt) und die Meldung, dass die Rolle schon existiert. Den physischen Rückweg habe ich nicht simuliert; er braucht Löschen im Volume und gehört Otto.
 
 ## 11. PowerShell-Befehle für Otto (Windows, PowerShell 5.1)
 
-Im Wurzelverzeichnis des Repos. Ausgaben nach `..\earthx-ausgaben\m5-43`, nie ins Repo. Schritte 0 bis 2 **vor** dem Holen des neuen Stands: Bis dahin ist der Dienst `postgres` noch das alte Image.
+Im Wurzelverzeichnis des Repos, **nach dem Merge** von #431. Ausgaben nach `..\earthx-ausgaben\m5-43`, nie ins Repo. Schritte 0 bis 2 **vor** `git pull` (Schritt 3): Bis dahin ist der Dienst `postgres` noch das alte Image.
 
-**0. Ablage und Skripte holen (ohne das Repo zu ändern)**
+**0. Ablage und Skripte holen (ohne den Arbeitsstand zu ändern)**
 
 ```powershell
 $out = '..\earthx-ausgaben\m5-43'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
-git fetch origin pull/431/head
+git fetch origin main
 git archive -o "$out\switch.zip" FETCH_HEAD scripts/m5-43-postgres-switch
 Expand-Archive -Force "$out\switch.zip" -DestinationPath $out
 $s = "$out\scripts\m5-43-postgres-switch"
@@ -148,12 +162,12 @@ Get-ChildItem $out
 **3. Wechsel**
 
 ```powershell
-git pull origin pull/431/head
+git pull origin main
 docker compose build postgres
 docker compose up -d --wait postgres
 ```
 
-Nach dem Merge statt der ersten Zeile `git pull origin main`. Der neue Container hat ein leeres `/tmp`; deshalb kopiert Schritt 4 die Skripte noch einmal.
+Der Bau übersetzt pgvector einmal (rund 1 min, §8). Der neue Container hat ein leeres `/tmp`; deshalb kopiert Schritt 4 die Skripte noch einmal.
 
 **4. Erweiterungen, Indizes und Collation**
 
@@ -178,13 +192,14 @@ Compare-Object (Get-Content "$out\zeilen-vorher.txt") (Get-Content "$out\zeilen-
 docker compose logs --since 2m postgres | Select-String 'collation version mismatch'
 ```
 
-Erwartet: `server|PostgreSQL 16.16 …`, jede Datenbank `|2.41`, `postgis|3.7.0`, `postgis_topology|3.7.0`, `vector offered|0.8.7`; `Compare-Object` und `Select-String` geben **nichts** aus (gleiche Zeilenzahlen, keine Warnung). `postgis_tiger_geocoder|3.4.3` bleibt stehen (F4).
-
-Nur bei F4 = 1, danach:
+Erwartet: `server|PostgreSQL 16.16 …`, jede Datenbank `|2.41`, `postgis|3.7.0`, `postgis_topology|3.7.0`, `vector offered|0.8.7`; `Compare-Object` und `Select-String` geben **nichts** aus (gleiche Zeilenzahlen, keine Warnung). `postgis_tiger_geocoder|3.4.3` steht noch da; ihn entfernt der nächste Befehl (F4 = 1), in deiner Datenbank und in `template_postgis`:
 
 ```powershell
 docker compose exec -T postgres sh -c 'for db in $POSTGRES_DB template_postgis; do psql -U $POSTGRES_USER -d $db -c ''DROP EXTENSION IF EXISTS postgis_tiger_geocoder''; done'
+docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -At -f /tmp/versions.sql' | Select-String 'tiger'
 ```
+
+Erwartet: zweimal `DROP EXTENSION`, danach gibt `Select-String` nichts aus. Die leeren Schemas `tiger` und `tiger_data` bleiben stehen; `fuzzystrmatch` bleibt.
 
 **6. Alles starten**
 
