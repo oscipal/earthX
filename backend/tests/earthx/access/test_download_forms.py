@@ -398,6 +398,15 @@ class TestQgisStyle:
             qml = archive.read("exports/bands_10m.qml").decode()
             assert 'type="multibandcolor"' in qml and 'redBand="2"' in qml and 'greenBand="3"' in qml and 'blueBand="1"' in qml
 
+    def test_sld_lies_beside_each_file_and_none_leaves_them_out(self) -> None:
+        with _zip(["blue", "scl"], style_format="sld") as archive:
+            names = archive.namelist()
+            assert {"exports/B02_blue_10m.sld", "exports/SCL_20m.sld"} <= set(names)
+            assert not [n for n in names if n.endswith(".qml")]
+            assert 'label="' in archive.read("exports/SCL_20m.sld").decode(), "the classes by name"
+        with _zip(["blue", "scl"], style_format="none") as archive:
+            assert not [n for n in archive.namelist() if n.endswith((".qml", ".sld"))]
+
     def test_a_file_of_one_channel_of_the_drawn_picture_is_grey_in_its_stretch(self) -> None:
         style = ExportStyle(rgb=("red", "rededge1", "blue"), ranges=((0.0, 0.3), (0.0, 0.25), (0.0, 0.2)))
         with _zip(["blue", "red"], style=style) as archive:

@@ -1,6 +1,6 @@
 # M5-64 — QGIS-Stil bei jedem Export
 
-**Stand:** 27.11.2026, Plan **angenommen** (Otto, 27.11.2026: F1–F7 je Option 1, A1–A8; F5 als offener Punkt, §8.2); Umsetzung nach den Empfehlungen in zwei Draft-PRs: PR 1 (Plan, Backend) §10, PR 2 (Frontend) §11.
+**Stand:** 27.11.2026, Nachtrag §12 (Teile aus #428, Form des Stils wählbar, Fragen F8–F10); Plan **angenommen** (Otto, 27.11.2026: F1–F7 je Option 1, A1–A8; F5 als offener Punkt, §8.2); Umsetzung nach den Empfehlungen in zwei Draft-PRs: PR 1 (Plan, Backend) §10, PR 2 (Frontend) §11.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 20.11.2026; Auftrag 27.11.2026):**
 
@@ -232,3 +232,90 @@ Je Fall: Export starten, ZIP entpacken, die `.tif` in QGIS per Ziehen öffnen (d
 **Gemessen [M]:** QGIS 3.34.4 liest jede erzeugte `.qml` und schreibt dieselben Elemente, Attribute und Zahlen zurück (Referenzdateien `backend/tests/fixtures/qgis/`, Skript `make_reference.py`). Die Farben, die QGIS mit einer erzeugten Farbskala zeichnet (`viridis`, `terrain`, `rdbu_r`, `magma`, je 97 Werte von 10 % unter Min bis 10 % über Max), weichen höchstens 4/255 je Kanal von denen des Tilers ab (`terrain` 4, sonst 2); außerhalb des Bereichs die Endfarben wie beim Tiler.
 
 **Tests:** `tests/earthx/access/test_qgis_style.py` (neu: Referenzdateien, Farbtabelle des Tilers, `_r`, Maskierung der Namen, Regel §4 Zeile für Zeile, Stil und Fehlerfälle, Messung mit Skalierung, ohne Werte, konstant, verkleinertes Lesen, Ergebnis mit und ohne Stil, Look im JSON); erweitert: `test_download_forms.py`, `test_download.py`, `test_download_route.py` (Stil, 422), `test_export_layouts.py` (Job schreibt dieselben `.qml` wie der Zuschnitt, mit und ohne Stil, keine für Masken), `test_export_layout_intake.py`, `test_processing_route.py` (`exportStyle`, 400), `test_result_zip_route.py` (`result.qml`, Stil, ETag, Range, 400), `test_processing_docs.py`; Prozess-Fixtures neu geschrieben.
+
+## 11. Umsetzung PR 2: Frontend (27.11.2026)
+
+| Teil | Stelle |
+|---|---|
+| Stil aus dem angewandten Look (§3): Band, Standardbild aus einem Band, Komposit aus unveränderten Bändern als Farbbild; nichts für Index, Hilfsbild-Echtfarbe, Klassen, `stored` oder unfertige Bereiche. Ergebnis-Ebene: aus der Kachel-URL (`bidx`, `rescale`, `colormap_name`) und den Bandnamen | `frontend/src/exportStyle.ts` (neu) |
+| Zuschnitt: `style` im Body; zu großer Zuschnitt als Export-Job und ganze Szene als Job: `exportStyle` im Auftrag (nur bei Exporten) | `store.ts::confirmDownload`, `startWholeScenes`, `api.ts`, `processing.ts`, `components/ExportJobOffer.tsx`, `processingStore.ts::placeOrder`, `downloadJob.ts` |
+| Index-Download: `?style=` an `result.zip` bzw. das Bündel; Ergebnis-Ebene: an „Download (ZIP)“ der Zeile. Der Processing-Manager kennt keine Ebene und schickt keinen Stil (F6) | `indexDownload.ts`, `components/LayerDownload.tsx` |
+
+**Befund:** Komposit-Vorgaben rechnen ihre Kanäle als eigene Bänder (`false_colour_ir_r` …); ein Farbbild in der `.qml` gibt es deshalb nur, wenn jeder Kanal ein Band der Daten unverändert ist (bei den heutigen Vorgaben `false_colour_ir` und `swir` der Fall).
+
+**Tests:** `exportStyle.test.ts` (neu), erweitert `api.test.ts`, `processing.test.ts`, `store.confirmDownload.test.ts`, `indexDownload.test.ts`, `IndexLayer.test.tsx`, `ResultControls.test.tsx`; Browser-Check `e2e/band-download.cjs` (Body des Zuschnitts trägt `style`, der Auftrag der ganzen Szene `exportStyle`; hell, dunkel, breit, schmal: alle grün).
+
+## 12. Nachtrag (Otto, 27.11.2026): Teile aus #428 und Format des Stils wählbar
+
+**Auftrag:** A. Aus der parallelen Fassung #428 übernehmen: (1) den nodata-Befund als bekannte Grenze, (2) RGB-Stil für ein Asset mit drei Bändern, (3) Farbtabellen in ein Modul ohne titiler und Registry, dazu den Routentest für Bündel mit Stil. B. Format des Stils wählbar: „Style file“ mit `QGIS (.qml)` (Vorgabe), `SLD`, `None` in jedem Export-Dialog mit Rasterdateien; SLD 1.0 mit `RasterSymbolizer`; die Wahl reist mit dem Auftrag wie der Look, nie im Rezept.
+
+### 12.1 Befunde [M, P]
+
+1. **nodata bei skalierten Bändern (aus #428, nachgemessen mit QGIS 3.34.4):** QGIS vergleicht den nodata-Wert der Datei (roh 0) mit dem schon skalierten Wert. Ein Pixel mit dem physikalischen Wert genau 0 wird deshalb durchsichtig: bei Sentinel-2 (0.0001/−0.1) der Rohwert 1000. Gemessen an einer Zeile 0, 1000, 1500, 999: nodata, nodata, 0,05, −0,0001. Die App zeigt diese Pixel; ein Stil kann es nicht ändern, weil nodata zur Datei gehört, nicht zur Symbologie. **Bekannte Grenze, keine Änderung an den Daten** (Otto, 27.11.2026).
+2. **Asset mit drei Bändern (`visual`):** Die Regel §4 sah eine Datei mit einem Band der Bandliste und zeichnete ihr erstes Band grau. Neu: Eine Datei aus einem Asset, das drei Bänder hat, ist ein Farbbild aus den Bändern 1, 2, 3, bei `uint8` mit 0–255 je Kanal (wie das Standardbild), sonst je Kanal 2.–98. Perzentil.
+3. **Farbtabellen:** `access/colormaps.py` lädt titiler und liest die Registry (Klassentabellen der Standardbilder). Der Stil braucht nur die Rampen; sie liegen jetzt in `access/colormap_tables.py` (nur rio-tiler und `colormap_data/`), `colormaps.py` baut darauf auf. Ein Test hält fest, dass der Tiler für jeden Namen dieselben 256 Farben liefert wie das neue Modul.
+4. **SLD in QGIS:** QGIS 3.34 lädt eine SLD für eine Rasterebene **nicht** („Layer type 1 not supported“, gemessen mit `loadSldStyle`, auch mit `type="values"`). Eine SLD ist damit für Server und andere Werkzeuge (GeoServer, MapServer, deegree), nicht für QGIS. Die Prüfung in QGIS ist für SLD nicht möglich; geprüft wird gegen das OGC-Schema.
+5. **SLD 1.0 kennt** kein `type` an `ColorMap` (`ramp`/`values` ist eine Erweiterung von GeoServer) und **keine Zahlen für die Streckung** eines RGB-Kanals (`Normalize` ist ein leeres Element). QGIS selbst schreibt beim Export einer Raster-SLD beides als Erweiterung (`ColorMap type="values"`, `VendorOption minValue/maxValue` in `Normalize`); das ist gegen das OGC-Schema nicht gültig. → F8.
+
+### 12.2 Form der SLD (nach Empfehlung F8 = 1, gültig gegen SLD 1.0)
+
+`StyledLayerDescriptor version="1.0.0"` → `NamedLayer` (Name = Dateiname ohne Endung) → `UserStyle` → `FeatureTypeStyle` → `Rule` → `RasterSymbolizer`:
+
+| Stil (§4) | SLD |
+|---|---|
+| Farbskala | `ChannelSelection/GrayChannel` mit der Bandnummer, `ColorMap` mit denselben 256 Farben als `ColorMapEntry` von Min bis Max (Rampe, die Vorgabe der Leser) |
+| Grau | `GrayChannel`, `ColorMap` von Schwarz bei Min nach Weiß bei Max: genau die Streckung |
+| Klassen | `GrayChannel`, `ColorMap` mit je Klasse einem Eintrag (Wert, Farbe, Name als `label`) und dem nodata-Wert durchsichtig (`opacity="0"`). Ohne `type` interpoliert ein Leser zwischen zwei Klassen; Klassenbänder haben dort keine Werte |
+| RGB | `ChannelSelection` mit `Red`/`Green`/`BlueChannel` und je `ContrastEnhancement/Normalize`: **gestreckt auf die Werte der Datei je Kanal, nicht auf den Bereich der App** (SLD 1.0 hat keine Zahlen dafür). Die Bereiche der App stehen als XML-Kommentar dabei. In der Oberfläche nur der Tooltip an „SLD“ |
+
+Name `<name>.sld` neben `<name>.tif` (`result.sld` bei Ergebnissen). `None`: keine Stildatei.
+
+### 12.3 Wie die Wahl reist
+
+| Weg | wo |
+|---|---|
+| „Download crop“ | Feld `style_format` im Body (`qml`, `sld`, `none`; fehlt es: `qml`) |
+| Export-Job | Eingabe `styleFormat` im Umschlag neben `exportStyle`, nur bei Exporten; in `Attachments.style_format`; nie im Rezept |
+| Ergebnis, Bündel | Query `style_format` an `result.zip` bzw. `bundles/{id}` |
+
+Im Frontend: Feld „Style file“ im Download-Dialog (Zuschnitt, ganze Szene als Job, zu großer Zuschnitt als Export-Job, Index-Download). Ergebnis-Ebene und Processing-Manager laden das ZIP über einen Link ohne Dialog; sie nehmen die zuletzt im Dialog gewählte Form (F9).
+
+### 12.4 Fragen an Otto
+
+**F8 — SLD: streng nach OGC-Schema oder mit den Erweiterungen, die QGIS und GeoServer schreiben?**
+1. Streng SLD 1.0, gültig gegen das Schema: Klassen als einfache Einträge, RGB auf die Werte der Datei gestreckt, Bereiche als Kommentar (§12.2). **(Empfehlung, gebaut)**
+2. SLD 1.0 mit `ColorMap type="ramp|values"` und `VendorOption minValue/maxValue` je Kanal, wie QGIS sie exportiert: RGB genau wie in der App, Klassen als echte Werte; der Schema-Test entfernt diese zwei bekannten Erweiterungen vor der Prüfung.
+
+**F9 — Wahl bei Downloads ohne Dialog** (⇩ an der Ergebnis-Ebene, „Download (ZIP)“ im Processing-Manager)
+1. Sie nehmen die zuletzt im Download-Dialog gewählte Form, im Browser gemerkt (Vorgabe `QGIS (.qml)`). **(Empfehlung, gebaut)**
+2. Der ⇩ öffnet einen kleinen Dialog mit „Style file“.
+
+**F10 — SLD, obwohl QGIS sie für Raster nicht lädt** (§12.1 Punkt 4)
+1. Bleibt, wie beauftragt (für Server und andere Werkzeuge). **(Empfehlung)**
+2. Entfällt; nur `QGIS (.qml)` und `None`.
+
+### 12.5 Auslegungen
+
+- **A9 — Testabhängigkeit:** Die Prüfung gegen das Schema braucht einen Validator; neu in `requirements-dev.txt` ist `xmlschema` (MIT, rein Python, bringt `elementpath` und die Schemas von XLink und XML mit), nur für Tests, nicht im Image.
+- **A10 — Schemadateien:** Die OGC-Schemas SLD 1.0.0, Filter 1.0.0 und GML 2.1.2 liegen unverändert unter `backend/tests/fixtures/ogc-schemas/` (Spiegel `highsource/ogc-schemas`; `schemas.opengis.net` ist aus der Session nicht erreichbar). Lizenz: OGC, Weitergabe der Schemas erlaubt (Kopfvermerk der Dateien, <http://www.opengeospatial.org/legal/>); nur in Tests, nicht im Image.
+- **A11 — Asset mit drei Bändern ohne `uint8`:** je Kanal 2.–98. Perzentil, wie das Echtfarbbild aus Bändern.
+- **A12 — Asset mit drei Bändern vor dem Look der Ebene:** `visual` wird immer als sein eigenes Farbbild gezeichnet, auch wenn die Ebene einen Look für ein Band trägt (Zeile 0 der Regel §4).
+- **A13 — Feld nur, wo der Export Stildateien schreibt:** im Zuschnitt (auch Index-Download und zu großer Zuschnitt als Export-Job) und bei der ganzen Szene als Job; nicht bei der ganzen Szene „per band“ aus dem Browser (offener Punkt F5).
+
+### 12.6 Umsetzung (27.11.2026, in #430)
+
+| Teil | Stelle |
+|---|---|
+| Rampen ohne titiler und Registry | `backend/earthx/access/colormap_tables.py` (aus #428), `colormaps.py` baut darauf auf |
+| Asset mit drei Bändern als Farbbild (Zeile 0 der Regel) | `access/qgis_style.py::file_renderer` (`band_count`, `byte`) |
+| SLD 1.0 | `backend/earthx/access/sld_style.py` |
+| Wahl der Form: `style_format` (Zuschnitt, Query an Ergebnis und Bündel), `styleFormat` (Auftrag eines Exports, `Attachments.style_format`); `file_style`, `result_style`, `style_file` | `access/qgis_style.py`, `access/download.py`, `api/tiler.py`, `api/processing_route.py`, `api/processing_docs.py`, `api/intake.py`, `processing/export.py` |
+| Feld „Style file“, im Browser gemerkt (`earthx.stylefile`); Zuschnitt, Export-Auftrag, Index-Download, ⇩ der Ergebnis-Ebene und „Download (ZIP)“ der Jobs | `frontend/src/components/StyleFileChoice.tsx`, `preferences.ts`, `store.ts`, `exportStyle.ts::styleQuery`, `api.ts`, `processing.ts`, `indexDownload.ts`, `downloadJob.ts`, `components/LayerDownload.tsx`, `JobRow.tsx`, `ExportJobOffer.tsx` |
+
+**Tests:** `test_sld_style.py` (neu: jede SLD gültig gegen SLD 1.0.0, Gegenprobe mit `type="values"`, Rampe des Tilers, Grau, Klassen mit Namen und durchsichtigem nodata, RGB mit Kommentar, Name der Ebene, `none`, Fehlerfälle der Form), `test_qgis_style.py` (Asset mit drei Bändern, Rampen gleich denen des Tilers für jeden Namen, Stil lädt weder titiler noch Registry), `test_export_layouts.py` (Job schreibt dieselben Stildateien wie der Zuschnitt für `qml`, `sld`, `none`), `test_download_forms.py`, `test_download_route.py`, `test_processing_route.py`, `test_result_zip_route.py`, `test_bundle_route.py` (aus #428 übernommen und auf `style`/`style_format` angepasst), `test_processing_docs.py`; Frontend `StyleFileChoice.test.tsx` (neu), `exportStyle.test.ts`, `api.test.ts`, `processing.test.ts`; Browser-Checks `band-download.cjs` und `m5-64-qgis-style.cjs` (neu).
+
+### 12.7 Was Otto prüft (qml und sld)
+
+**QGIS (.qml)** wie §9; dazu: Sentinel-2 `visual` (Bänder ohne Tabelle, z. B. eine Ebene mit dem Echtfarbbild) zeigt „Multiband color“ 1/2/3 mit 0–255. In einem Sentinel-2-Zuschnitt erscheinen Pixel mit dem physikalischen Wert genau 0 (Rohwert 1000) in QGIS durchsichtig: bekannte Grenze (§12.1).
+
+**SLD:** Im Dialog „Style file“ auf „SLD“ stellen und exportieren; neben jeder `.tif` liegt eine `.sld` gleichen Namens, keine `.qml`. QGIS 3.34 lädt sie für Raster nicht („Layer type 1 not supported“, §12.1); prüfen lässt sie sich in einem Server (GeoServer: Stil hochladen, Ebene damit zeigen) oder mit einem Validator gegen <http://schemas.opengis.net/sld/1.0.0/StyledLayerDescriptor.xsd>. Ein RGB-Export (z. B. „False colour (IR)“, „One multi-band file“) streckt jeden Kanal auf die Werte der Datei, die Bereiche der App stehen als Kommentar darin. **None:** keine Stildatei im ZIP. Die Wahl bleibt für den nächsten Dialog und gilt auch für ⇩ an einer Ergebnis-Ebene.

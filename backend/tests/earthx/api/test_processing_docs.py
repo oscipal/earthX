@@ -151,7 +151,8 @@ class TestProcesses:
         self, docs_client: httpx.AsyncClient
     ) -> None:
         body = (await docs_client.get("/processing/processes/recipe")).json()
-        assert list(body["inputs"]) == ["recipe", "aoiProvenance", "exportStyle"]
+        assert list(body["inputs"]) == ["recipe", "aoiProvenance", "exportStyle", "styleFormat"]
+        assert body["inputs"]["styleFormat"]["schema"]["enum"] == ["qml", "sld", "none"]
         style = body["inputs"]["exportStyle"]
         assert (style["minOccurs"], style["maxOccurs"]) == (0, 1) and "export only" in style["description"]
         assert body["inputs"]["recipe"]["minOccurs"] == body["inputs"]["recipe"]["maxOccurs"] == 1

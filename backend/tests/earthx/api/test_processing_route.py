@@ -1486,10 +1486,21 @@ class TestAnExport:
     async def test_a_style_goes_with_an_export_only(self, rig: Rig) -> None:
         style = {"band": "red", "colormap": "magma", "range": [0, 0.3]}
         response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": order(), "exportStyle": style}})
-        assert "goes with an export" in problem(response, 400)["detail"]
+        assert "go with an export" in problem(response, 400)["detail"]
         untouched(rig)
         response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "exportStyle": style}})
         assert response.status_code == 201, response.text
+
+    @pytest.mark.parametrize("style_format", ["QML", "", None, 1, ["sld"]])
+    async def test_a_style_file_that_is_none_is_a_400(self, rig: Rig, style_format: Any) -> None:
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "styleFormat": style_format}})
+        assert "styleFormat" in problem(response, 400)["detail"]
+        untouched(rig)
+
+    async def test_the_style_file_goes_with_an_export_only(self, rig: Rig) -> None:
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": order(), "styleFormat": "sld"}})
+        assert "go with an export" in problem(response, 400)["detail"]
+        untouched(rig)
 
     async def test_a_lone_surrogate_in_the_origin_is_a_400(self, rig: Rig) -> None:
         """Valid JSON text, no UTF-8 form: it may not reach ATTRIBUTION.txt (review of M4-11a)."""

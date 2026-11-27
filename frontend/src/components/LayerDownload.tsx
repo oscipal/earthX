@@ -1,6 +1,7 @@
 // The download of a layer: the ZIP of a result, or the dialog of the AOI crop and the original files for a layer of scenes. One block for the
 // row of the layer manager and for the settings bar, so that they look and answer alike (UI-03a, Otto, 2.11.2026).
 
+import { resultLayerStyle, styleQuery } from '../exportStyle';
 import type { ReactNode } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer, layerDownloadKind } from '../download';
@@ -27,6 +28,7 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
   const kind = layerDownloadKind(layer);
+  const styleFormat = useAppStore((s) => s.downloadStyleFormat);
   const text = label ? (<><DownloadIcon lead />{label}</>) : <DownloadIcon size={14} />;
   // The ZIP of a deleted job can come back with it: it stays in its place, locked with the reason of the row. That of an expired result is
   // gone for good and is not shown (Otto, 26.10.2026).
@@ -39,7 +41,7 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
   }
   if (kind === 'zip' && layer.result) {
     return (
-      <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP)} download rel="noopener noreferrer" data-tip-level="advanced" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
+      <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP) + styleQuery(resultLayerStyle(layer), styleFormat)} download rel="noopener noreferrer" data-tip-level="advanced" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
         {text}
       </a>
     );

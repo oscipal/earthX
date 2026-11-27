@@ -676,6 +676,10 @@ donfig==0.8.1.post1 \
     # via
     #   -c backend/requirements.lock
     #   zarr
+elementpath==5.1.4 \
+    --hash=sha256:3c912a9c41311ac5244c038867670d7c0b0fec0e444813608e5b846dbb3428ac \
+    --hash=sha256:5ec8d7bb44b16c98414a6a95e20cb150f3cbfc3cac65edc14773288c7a937376
+    # via xmlschema
 execnet==2.1.2 \
     --hash=sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd \
     --hash=sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec
@@ -2945,6 +2949,10 @@ xarray==2026.9.0 \
     #   -c backend/requirements.lock
     #   -r backend/requirements.txt
     #   rioxarray
+xmlschema==4.3.2 \
+    --hash=sha256:cf5c970a30f6ebcb3da35260e694704cc0b6794d8ace46125bb2a95e38ed9307 \
+    --hash=sha256:f3b33a21a2b2cdc404ddc3fb599d8bc1dee90b155d547370672e6e684746b8d6
+    # via -r backend/requirements-dev.txt
 xmltodict==1.0.4 \
     --hash=sha256:6d94c9f834dd9e44514162799d344d815a3a4faec913717a9ecbfa5be1bb8e61 \
     --hash=sha256:a4a00d300b0e1c59fc2bfccb53d7b2e88c32f200df138a0dd2229f842497026a

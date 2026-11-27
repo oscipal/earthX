@@ -1878,6 +1878,11 @@ class DownloadRequest(BaseModel):
         ),
     )
 
+    style_format: Literal["qml", "sld", "none"] = Field(
+        default="qml",
+        description="The style file beside each file (M5-64): `qml` (QGIS, the default), `sld` (OGC SLD 1.0) or `none`.",
+    )
+
     @model_validator(mode="after")
     def _form_and_resolution_agree(self) -> DownloadRequest:
         if (self.form == "multi_band") != (self.common_resolution is not None):
@@ -2185,6 +2190,7 @@ async def download_crop(
             bands_notes=bands_notes,
             style=None if body.style is None else ExportStyle.from_json(body.style),
             true_color=config.true_color,
+            style_format=body.style_format,
             line_times=(
                 None
                 if config.line_times is None

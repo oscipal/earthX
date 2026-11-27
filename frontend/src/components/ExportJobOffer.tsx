@@ -81,6 +81,8 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
     const answer = await placeOrder(buildExportOrder(offer.request), {
       aoiProvenance: aoiProvenanceOf(offer.request.aoi),
       title: titleOfExport(offer),
+      ...(offer.request.style ? { exportStyle: offer.request.style } : {}),
+      ...(offer.request.styleFormat ? { styleFormat: offer.request.styleFormat } : {}),
     });
     setStarted('jobID' in answer ? { state: 'placed', jobID: answer.jobID } : { state: 'refused', message: answer.message });
   };

@@ -27,6 +27,7 @@ __all__ = [
     "AOI_PROVENANCE_FIELDS",
     "AOI_PROVENANCE_MAX_CHARS",
     "EXPORT_STYLE",
+    "STYLE_FORMAT",
     "EXPORT_OUTPUTS",
     "FORM_NOTE",
     "INLINE_ONLY",
@@ -102,6 +103,8 @@ AOI_PROVENANCE_FIELDS = ("attribution", "license", "source")
 AOI_PROVENANCE_MAX_CHARS = 200
 #: The input beside the order of an export: how the layer is drawn, for the QGIS style of each file (M5-64).
 EXPORT_STYLE = "exportStyle"
+#: Beside it, the form of that style file: `qml` (the default), `sld` or `none` (M5-64 plan §12).
+STYLE_FORMAT = "styleFormat"
 
 
 def _link(root: str, path: str, rel: str, type_: str | None = _JSON, title: str | None = None) -> dict[str, str]:
@@ -198,6 +201,16 @@ def process_description(root: str, operators: OperatorRegistry, config: DatasetC
                 "minOccurs": 0,
                 "maxOccurs": 1,
                 "schema": {"type": "object"},
+            },
+            STYLE_FORMAT: {
+                "title": "Style file",
+                "description": (
+                    "For an export only: the form of the style file beside each file, `qml` (QGIS, the default), `sld` "
+                    "(OGC SLD 1.0) or `none`. Not part of the recipe, its hash or the cache."
+                ),
+                "minOccurs": 0,
+                "maxOccurs": 1,
+                "schema": {"type": "string", "enum": ["qml", "sld", "none"], "default": "qml"},
             },
         },
         "outputs": {

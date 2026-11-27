@@ -23,3 +23,6 @@ pyyaml>=6
 # `boto3` into the dev environment only; the image never has it
 # (test_objectstore_boundary.py checks backend/requirements.lock).
 moto[s3]>=5.1
+# Validates the SLD a styled export writes against the OGC schema SLD 1.0 (M5-64 part B), offline: the schemas lie in
+# tests/fixtures/ogc-schemas, the one of XLink comes with the package.
+xmlschema>=3.4

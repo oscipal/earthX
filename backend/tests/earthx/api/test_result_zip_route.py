@@ -118,6 +118,20 @@ class TestTheQgisStyle:
         response = await rig.client.get(url, params={"style": style})
         assert response.status_code == 400 and "style" in problem(response)["detail"]
 
+    async def test_the_style_file_is_the_one_asked_for(self, mocked: Store, rig: Rig) -> None:
+        _, _, url = await zipped(rig, properties=BANDS)
+        sld = opened((await rig.client.get(url, params={"style": STYLE, "style_format": "sld"})).content)
+        assert f"{FOLDER}/result.sld" in sld.namelist() and f"{FOLDER}/result.qml" not in sld.namelist()
+        assert "<Name>result</Name>" in sld.read(f"{FOLDER}/result.sld").decode()
+        none = opened((await rig.client.get(url, params={"style_format": "none"})).content)
+        assert not [name for name in none.namelist() if name.endswith((".qml", ".sld"))]
+
+    @pytest.mark.parametrize("style_format", ["QML", "", "xml"])
+    async def test_a_style_file_that_is_none_is_a_400(self, mocked: Store, rig: Rig, style_format: str) -> None:
+        _, _, url = await zipped(rig, properties=BANDS)
+        response = await rig.client.get(url, params={"style_format": style_format})
+        assert response.status_code == 400 and "style_format" in problem(response)["detail"]
+
     async def test_a_result_whose_item_names_no_bands_has_no_style(self, mocked: Store, rig: Rig) -> None:
         _, _, url = await zipped(rig)
         names = opened((await rig.client.get(url, params={"style": STYLE})).content).namelist()

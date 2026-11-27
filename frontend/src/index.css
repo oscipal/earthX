@@ -3513,12 +3513,14 @@ button.pm-open:hover {
   flex-wrap: wrap;
   gap: var(--space-1);
 }
-.dialog-common {
+.dialog-common,
+.dialog-style-file {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-.dialog-common select {
+.dialog-common select,
+.dialog-style-file select {
   min-height: var(--control-height);
   padding: var(--space-1) var(--space-2);
   background: var(--input-bg);

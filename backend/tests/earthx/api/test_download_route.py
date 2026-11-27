@@ -198,11 +198,23 @@ class TestTheFormOfTheFiles:
     def test_a_style_this_platform_does_not_draw_is_422(self, client: TestClient, style: Any) -> None:
         assert _download(client, style=style).status_code == 422
 
-    def test_the_style_of_the_layer_draws_the_file_in_qgis(self, client: TestClient) -> None:
+    @pytest.mark.parametrize("style_format", ["QML", "xml", "", None, 1])
+    def test_a_style_file_this_platform_does_not_write_is_422(self, client: TestClient, style_format: Any) -> None:
+        assert _download(client, style_format=style_format).status_code == 422
+
+    def test_the_style_file_is_the_one_asked_for(self, client: TestClient) -> None:
+        with _zip_of(_download(client, style_format="sld")) as archive:
+            assert "exports/visual_10m.sld" in archive.namelist() and "exports/visual_10m.qml" not in archive.namelist()
+        with _zip_of(_download(client, style_format="none")) as archive:
+            assert not [n for n in archive.namelist() if n.endswith((".qml", ".sld"))]
+
+    def test_an_asset_of_three_bands_is_a_colour_picture_of_0_to_255_in_qgis(self, client: TestClient) -> None:
+        """M5-64 §12.1 point 2: `visual` is drawn as its own picture, whatever style of one band the layer had."""
         style = {"band": "visual", "colormap": None, "range": [10, 200]}
         with _zip_of(_download(client, style=style)) as archive:
             qml = archive.read("exports/visual_10m.qml").decode()
-        assert 'type="singlebandgray"' in qml and "<minValue>10.0</minValue>" in qml and "<maxValue>200.0</maxValue>" in qml
+        assert 'type="multibandcolor"' in qml and 'redBand="1"' in qml and 'blueBand="3"' in qml
+        assert qml.count("<maxValue>255.0</maxValue>") == 3
 
     def test_a_source_that_offers_no_raster_to_stack_is_422(self, client: TestClient) -> None:
         response = _download(client, form="per_resolution")

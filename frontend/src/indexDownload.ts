@@ -7,6 +7,8 @@
 // result are those of a job started by hand. The job is placed, waited for and downloaded here and never enters the store of the
 // panel (`processingStore.jobs`, the shelf in the browser). Several groups are several jobs and one bundle.
 
+import { DEFAULT_STYLE_FORMAT, type StyleFormat } from './preferences';
+import { resultStyleOf, styleQuery, type ExportStyle } from './exportStyle';
 import type { DatasetOption } from './datasets';
 import type { MapLayer } from './layers';
 import { HttpError } from './api';
@@ -193,13 +195,16 @@ export async function placeAndFollow(args: {
   onStatus: (text: string) => void;
   save: (url: string) => void;
   pollMs: number;
+  // How the layer is drawn (M5-64): an export carries it in its order, a result's ZIP in its address.
+  style?: ExportStyle | null;
+  styleFormat?: StyleFormat;
 }): Promise<{ text: string; tip: string } | null> {
-  const { orders, aoi, working, failed, signal, running, onStatus, save, pollMs } = args;
+  const { orders, aoi, working, failed, signal, running, onStatus, save, pollMs, style = null, styleFormat = DEFAULT_STYLE_FORMAT } = args;
   const say = (reason: string) => ({ text: reason.split(': ')[0].split('. ')[0], tip: reason });
   const placed: string[] = [];
   for (const order of orders) {
     const provenance: AoiProvenance | undefined = aoiProvenanceFor(order, aoi);
-    const status = await placeJob(order, { aoiProvenance: provenance });
+    const status = await placeJob(order, { aoiProvenance: provenance, ...(style ? { exportStyle: style } : {}), styleFormat });
     placed.push(status.jobID);
     running.add(status.jobID);
   }
@@ -217,7 +222,7 @@ export async function placeAndFollow(args: {
     if (running.size > 0) await sleep(pollMs, signal);
   }
   if (signal.aborted) return say('Cancelled.');
-  save(placed.length === 1 ? resultUrl(placed[0], RESULT_ZIP) : (await createBundle(placed)).href);
+  save((placed.length === 1 ? resultUrl(placed[0], RESULT_ZIP) : (await createBundle(placed)).href) + styleQuery(style, styleFormat));
   return null;
 }
 
@@ -231,8 +236,9 @@ export async function downloadIndexCrop(args: {
   onStatus?: (text: string) => void;
   save?: (url: string) => void;
   pollMs?: number;
+  styleFormat?: StyleFormat;
 }): Promise<{ text: string; tip: string } | null> {
-  const { layer, datasets, signal, onStatus = () => undefined, save = saveFrom, pollMs = POLL_MS } = args;
+  const { layer, datasets, signal, onStatus = () => undefined, save = saveFrom, pollMs = POLL_MS, styleFormat = DEFAULT_STYLE_FORMAT } = args;
   const preset = presetOfLayer(layer, datasets);
   const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
   const say = (reason: string) => ({ text: reason.split(': ')[0].split('. ')[0], tip: reason });
@@ -247,6 +253,9 @@ export async function downloadIndexCrop(args: {
     if ('problem' in made) return say(made.problem);
     return await placeAndFollow({
       orders: made.orders,
+      // The index is the one band of each result, drawn as the layer draws it.
+      style: resultStyleOf({ ...layer.restore.appliedRender, index: undefined, bidx: undefined }, []),
+      styleFormat,
       aoi: layer.restore.aoi,
       working: `Computing ${preset.label}`,
       failed: `${preset.label} could not be computed.`,

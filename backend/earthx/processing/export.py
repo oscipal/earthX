@@ -87,7 +87,7 @@ from earthx.access.crop_rules import (
     rasterize_aoi,
     source_crop_grid,
 )
-from earthx.access.qgis_style import ExportStyle, file_qml, qml_name
+from earthx.access.qgis_style import DEFAULT_STYLE_FORMAT, ExportStyle, check_style_format, file_style
 from earthx.access.radar import (
     JoinedPass,
     RadarGrid,
@@ -180,7 +180,7 @@ def attachment_limits(scenes: int) -> dict[str, int]:
 
 _ATTRIBUTION_ENTRIES = 8
 _ATTACHMENT_KEYS = frozenset(
-    {"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices", "scenes", "style", "true_color"}
+    {"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices", "scenes", "style", "true_color", "style_format"}
 )
 
 _ATTRIBUTION_CHARS = 1024
@@ -223,6 +223,8 @@ class Attachments:
     style: ExportStyle | None = None
     #: The bands of the dataset's true-colour picture, drawn as one where a file holds all three (M5-64 plan §4).
     true_color: tuple[str, ...] = ()
+    #: The form of the style file beside each data file: ``qml``, ``sld`` or ``none`` (M5-64 plan §12).
+    style_format: str = DEFAULT_STYLE_FORMAT
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
@@ -260,6 +262,8 @@ class Attachments:
             data["style"] = self.style.to_json()
         if self.true_color:
             data["true_color"] = list(self.true_color)
+        if self.style_format != DEFAULT_STYLE_FORMAT:
+            data["style_format"] = self.style_format
         return data
 
     @classmethod
@@ -277,6 +281,7 @@ class Attachments:
             notices = tuple(RecipeNotice.model_validate(notice) for notice in data.get("notices", ()))
             style = ExportStyle.from_json(data["style"]) if "style" in data else None
             true_color = tuple(data.get("true_color", ()))
+            style_format = check_style_format(data.get("style_format", DEFAULT_STYLE_FORMAT))
         except (ValueError, TypeError, KeyError):
             raise AttachmentsInvalid("the attachments hold files and attribution") from None
         if not all(isinstance(note, str) and len(note) <= _ATTRIBUTION_CHARS for note in notes):
@@ -285,7 +290,7 @@ class Attachments:
             raise AttachmentsInvalid("the true-colour picture is three band names")
         return cls(
             dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices, data.get("scenes", 0),
-            style, true_color,
+            style, true_color, style_format,
         )  # fmt: skip
 
 
@@ -707,11 +712,15 @@ class _Export:
             dtype = written.dtypes[0]
         return data_name, mask_name, dtype
 
-    def style(self, data_name: str, members: Sequence[BandMeta], attachments: Attachments) -> bytes:
-        """The QGIS style of a written data file (M5-64): the look the order carries, else that of the collection."""
+    def style(self, member: str, data_name: str, members: Sequence[BandMeta], attachments: Attachments) -> list[tuple[str, bytes]]:
+        """The style file of a written data file (M5-64): the look the order carries, else that of the collection, in the
+        form the order asks for; none for ``none``."""
         try:
             with open_workfile(self.workdir, data_name) as dataset:
-                return file_qml(dataset, members, attachments.style, attachments.true_color).encode("utf-8")
+                styled = file_style(
+                    dataset, member, members, attachments.style, attachments.true_color, attachments.style_format
+                )
+            return [] if styled is None else [(styled[0], styled[1].encode("utf-8"))]
         except RasterioError as error:
             raise OutputUnreadable(f"a file of the export does not read back: {type(error).__name__}") from None
 
@@ -800,7 +809,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     folder = EXPORTS_DIR + group_dirname(output.group, group_count)
                     files.append((folder + output.plan.name, data_name))
                     files.append((folder + output.plan.mask_name, mask_name))
-                    styles.append((folder + qml_name(output.plan.name), state.style(data_name, output.members, attachments)))
+                    styles += state.style(folder + output.plan.name, data_name, output.members, attachments)
                     listed.append(
                         BandsFile(
                             folder + output.plan.name,
@@ -826,7 +835,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     folder = EXPORTS_DIR + group_dirname(output.group, group_count)
                     files.append((folder + output.plan.name, data_name))
                     files.append((folder + output.plan.mask_name, mask_name))
-                    styles.append((folder + qml_name(output.plan.name), state.style(data_name, output.members, attachments)))
+                    styles += state.style(folder + output.plan.name, data_name, output.members, attachments)
                     target = output.plan.resolution_m if layout.form == "multi_band" else None
                     listed.append(
                         BandsFile(

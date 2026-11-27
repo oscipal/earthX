@@ -5,6 +5,8 @@
 // text shown before either one starts (adr/0003 §11.2: the notice belongs on
 // the download, not only in a footer).
 
+import type { StyleFormat } from './preferences';
+import type { ExportStyle } from './exportStyle';
 import type { ExportJobHint } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
@@ -24,6 +26,10 @@ export interface DownloadRequestInfo {
   aoi: GeoJSON.Geometry;
   // How the chosen bands are laid out in files (NM4-75); left out for a dataset whose items list no bands to choose from.
   layout?: ExportLayout;
+  // How the layer is drawn, for the QGIS style beside each file (M5-64); left out where it shows nothing the files hold.
+  style?: ExportStyle;
+  // The form of the style file where it is not the default (`qml`).
+  styleFormat?: StyleFormat;
 }
 
 // Which of the three P19 outcomes a download follows (M3-17 plan §4): the AOI

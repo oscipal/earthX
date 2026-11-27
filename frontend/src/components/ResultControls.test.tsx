@@ -117,14 +117,17 @@ describe('"Download (ZIP)" in the row of a result layer', () => {
     await showOnMap();
     act(() => root.render(<LayerManager />));
     const link = container.querySelector<HTMLAnchorElement>('.layer-row a[data-col="download"]')!;
-    expect(link.getAttribute('href')).toBe(resultUrl(JOB, 'result.zip'));
+    // The same archive, with the look of the layer for its QGIS style (M5-64); the details know no layer and send none.
+    const [path, query] = link.getAttribute('href')!.split('?');
+    expect(path).toBe(resultUrl(JOB, 'result.zip'));
+    expect(JSON.parse(new URLSearchParams(query).get('style')!)).toMatchObject({ band: 'band' });
     expect(link.hasAttribute('download')).toBe(true);
     expect(link.getAttribute('aria-label')).toBe('Download (ZIP)');
 
     useProcessingStore.setState({ open: true, detailJobID: JOB });
     act(() => root.render(<JobDetails />));
     const inDetails = [...container.querySelectorAll('a')].find((a) => a.textContent?.trim() === 'Download (ZIP)');
-    expect(inDetails?.getAttribute('href')).toBe(link.getAttribute('href'));
+    expect(inDetails?.getAttribute('href')).toBe(path);
   });
 
   // Otto, 26.10.2026: what cannot be done at all is not shown; the reason is the ⚠ of the row.

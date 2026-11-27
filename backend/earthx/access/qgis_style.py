@@ -26,11 +26,16 @@ import numpy
 from rasterio.enums import Resampling
 
 from earthx.access.band_export import BandMeta
-from earthx.access.colormaps import CLASS_TABLES, COLORMAPS
+from earthx.access.colormap_tables import ramp_colours
+from earthx.access.sld_style import sld_text
 from earthx.catalog.registry import ClassRow, DatasetConfig, Look
 
 __all__ = [
+    "DEFAULT_STYLE_FORMAT",
+    "NO_STYLE",
     "QML_SUFFIX",
+    "SLD_SUFFIX",
+    "STYLE_FORMATS",
     "ExportStyle",
     "Gray",
     "Paletted",
@@ -38,16 +43,23 @@ __all__ = [
     "Renderer",
     "Rgb",
     "StyleInvalid",
+    "check_style_format",
     "collection_look",
-    "file_qml",
     "file_renderer",
+    "file_style",
     "measured_range",
-    "qml_name",
     "qml_text",
-    "result_qml",
+    "result_renderer",
+    "result_style",
+    "style_file",
 ]
 
 QML_SUFFIX = ".qml"
+SLD_SUFFIX = ".sld"
+#: The forms of the style file a person chooses ("Style file", Otto 27.11.2026): QGIS, OGC SLD 1.0, or none.
+STYLE_FORMATS = ("qml", "sld", "none")
+DEFAULT_STYLE_FORMAT = "qml"
+NO_STYLE = "none"
 
 #: The usual scale of a measure (adr/0035): the 2nd to the 98th percentile.
 MEASURED = (2.0, 98.0)
@@ -96,7 +108,7 @@ class ExportStyle:
         if isinstance(data, Mapping) and set(data) == {"band", "colormap", "range"}:
             colormap = data["colormap"]
             if colormap is not None and (
-                not isinstance(colormap, str) or colormap in CLASS_TABLES or colormap not in COLORMAPS.list()
+                not isinstance(colormap, str) or ramp_colours(colormap) is None
             ):
                 raise StyleInvalid("colormap is null or one of GET /colormaps")
             return cls(band=_band_name(data["band"]), colormap=colormap, range=_finite_range(data["range"]))
@@ -145,6 +157,8 @@ class Rgb:
 class Paletted:
     band: int
     classes: tuple[ClassRow, ...]
+    #: The value of no data, see-through (the QGIS style leaves it out of the palette; the SLD names it).
+    nodata: float | None = None
 
 
 Renderer = Pseudocolor | Gray | Rgb | Paletted
@@ -166,11 +180,22 @@ def _usable(low: float, high: float) -> Range:
 
 
 def file_renderer(
-    bands: Sequence[BandMeta], style: ExportStyle | None, true_color: Sequence[str], measure: Measure
+    bands: Sequence[BandMeta],
+    style: ExportStyle | None,
+    true_color: Sequence[str],
+    measure: Measure,
+    *,
+    band_count: int | None = None,
+    byte: bool = False,
 ) -> Renderer:
     """The renderer of a file of ``bands`` (in the order of the file), by the rule of the plan (§4), the first that holds:
-    the drawn colour picture in this file; the drawn band in this file; a file of one channel of the drawn picture, grey
-    in its stretch; the collection's true-colour bands in this file, measured; the first band with its own look."""
+    one asset of three bands (``band_count``, such as ``visual``) is its own colour picture, 0 to 255 where it is ``byte``
+    (§12.1); the drawn colour picture in this file; the drawn band in this file; a file of one channel of the drawn picture,
+    grey in its stretch; the collection's true-colour bands in this file, measured; the first band with its own look."""
+    if len(bands) == 1 and band_count == 3 and bands[0].classes is None:
+        if byte:
+            return Rgb((1, 2, 3), ((0.0, 255.0), (0.0, 255.0), (0.0, 255.0)))
+        return Rgb((1, 2, 3), (_measured(measure, 1), _measured(measure, 2), _measured(measure, 3)))
     index = {meta.asset: number for number, meta in enumerate(bands, start=1)}
     if style is not None and style.rgb is not None:
         if all(band in index for band in style.rgb):
@@ -185,7 +210,7 @@ def file_renderer(
         number = index[style.band]
         meta = bands[number - 1]
         if meta.classes is not None:
-            return Paletted(number, meta.classes)
+            return Paletted(number, meta.classes, meta.nodata)
         assert style.range is not None
         if style.colormap is None:
             return Gray(number, *style.range)
@@ -195,7 +220,7 @@ def file_renderer(
         return Rgb(numbers, (_measured(measure, numbers[0]), _measured(measure, numbers[1]), _measured(measure, numbers[2])))
     first = bands[0]
     if first.classes is not None:
-        return Paletted(1, first.classes)
+        return Paletted(1, first.classes, first.nodata)
     look = first.look
     if look is None:
         return Gray(1, *_measured(measure, 1))
@@ -227,11 +252,40 @@ def measured_range(dataset: Any, band: int, low: float, high: float) -> Range:
     return _usable(float(ends.min()), float(ends.max()))
 
 
-def file_qml(dataset: Any, bands: Sequence[BandMeta], style: ExportStyle | None, true_color: Sequence[str]) -> str:
-    """The ``.qml`` of a written file, open as ``dataset``, of ``bands`` in its order (:func:`file_renderer`)."""
-    return qml_text(
-        file_renderer(bands, style, true_color, lambda band, low, high: measured_range(dataset, band, low, high))
-    )
+def file_style(
+    dataset: Any,
+    path: str,
+    bands: Sequence[BandMeta],
+    style: ExportStyle | None,
+    true_color: Sequence[str],
+    style_format: str = DEFAULT_STYLE_FORMAT,
+) -> tuple[str, str] | None:
+    """The style file of a written file ``path``, open as ``dataset``, of ``bands`` in its order (:func:`file_renderer`):
+    its path and text in the form ``style_format`` asks for, ``None`` for no style file."""
+    if style_format == NO_STYLE:
+        return None
+    renderer = file_renderer(
+        bands, style, true_color, lambda band, low, high: measured_range(dataset, band, low, high),
+        band_count=dataset.count, byte=dataset.dtypes[0] == "uint8",
+    )  # fmt: skip
+    return style_file(style_format, path, renderer)
+
+
+def check_style_format(value: Any) -> str:
+    """``value`` where it names a form of the style file (:data:`STYLE_FORMATS`), else :class:`StyleInvalid`."""
+    if value not in STYLE_FORMATS:
+        raise StyleInvalid(f"the style file is one of {', '.join(STYLE_FORMATS)}")
+    return str(value)
+
+
+def style_file(style_format: str, path: str, renderer: Renderer) -> tuple[str, str] | None:
+    """The path beside ``path`` and the text of the style file of ``renderer`` in ``style_format`` (``None``: none)."""
+    stem = path.rpartition(".")[0] or path
+    if style_format == "qml":
+        return stem + QML_SUFFIX, qml_text(renderer)
+    if style_format == "sld":
+        return stem + SLD_SUFFIX, sld_text(renderer, stem.rpartition("/")[2])
+    return None
 
 
 def _result_band(band: Mapping[str, Any], look_of: Callable[[str], Look | None]) -> BandMeta:
@@ -245,9 +299,15 @@ def _result_band(band: Mapping[str, Any], look_of: Callable[[str], Look | None])
         )
     return BandMeta(
         asset=name, name=name, common_name=None, wavelength_um=None, resolution_m=None, data_type=None, scale=None,
-        offset=None, nodata=None, unit=None, categorical=classes is not None, classes=classes,
+        offset=None, nodata=_nodata(band.get("nodata")), unit=None, categorical=classes is not None, classes=classes,
         look=look_of(name) if band.get("earthx:source_values") is True else None,
     )  # fmt: skip
+
+
+def _nodata(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
 
 
 def _statistics_range(statistics: Any, low: float, high: float) -> Range:
@@ -261,10 +321,11 @@ def _statistics_range(statistics: Any, low: float, high: float) -> Range:
     return _usable(float(ends[0]), float(ends[1]))  # type: ignore[arg-type]
 
 
-def result_qml(properties: Any, style: ExportStyle | None, look_of: Callable[[str], Look | None]) -> str | None:
-    """``result.qml`` of a job's result from its STAC ``properties`` (F6): the layer's ``style`` where it names bands of
-    the result (a style of one band always applies to a result of one band); else classes in their colours, a band with the source's values in its look (``look_of``), any other grey
-    from the 2nd to the 98th percentile of its statistics. ``None`` for a result whose properties list no bands."""
+def result_renderer(properties: Any, style: ExportStyle | None, look_of: Callable[[str], Look | None]) -> Renderer | None:
+    """The renderer of a job's result from its STAC ``properties`` (F6): the layer's ``style`` where it names bands of
+    the result (a style of one band always applies to a result of one band); else classes in their colours, a band with
+    the source's values in its look (``look_of``), any other grey from the 2nd to the 98th percentile of its statistics.
+    ``None`` for a result whose properties list no bands."""
     bands = properties.get("bands") if isinstance(properties, Mapping) else None
     if not isinstance(bands, list) or not bands or not all(isinstance(band, Mapping) for band in bands):
         return None
@@ -280,13 +341,15 @@ def result_qml(properties: Any, style: ExportStyle | None, look_of: Callable[[st
         # A layer of a result of one band draws that band, whatever the layer calls it.
         style = replace(style, band=metas[0].asset)
 
-    return qml_text(file_renderer(metas, style, (), measure))
+    return file_renderer(metas, style, (), measure)
 
 
-def qml_name(path: str) -> str:
-    """``<name>.qml`` beside ``<name>.tif``: the name QGIS looks for when it opens the file."""
-    stem, dot, _ = path.rpartition(".")
-    return (stem if dot else path) + QML_SUFFIX
+def result_style(
+    path: str, properties: Any, style: ExportStyle | None, look_of: Callable[[str], Look | None], style_format: str
+) -> tuple[str, str] | None:
+    """The style file beside a job's ``result.tif`` (:func:`result_renderer`) in ``style_format``; ``None`` for none."""
+    renderer = result_renderer(properties, style, look_of) if style_format != NO_STYLE else None
+    return None if renderer is None else style_file(style_format, path, renderer)
 
 
 # --- the file ---------------------------------------------------------------------------------------------------------
@@ -359,8 +422,10 @@ def _stretch(parent: ET.Element, tag: str, low: float, high: float) -> None:
 
 
 def _colormap_colours(name: str) -> list[tuple[int, ...]]:
-    table = COLORMAPS.get(name)
-    return [tuple(table[key]) for key in sorted(table)]
+    colours = ramp_colours(name)
+    if colours is None:
+        raise StyleInvalid("colormap is one of GET /colormaps")
+    return list(colours)
 
 
 def _pseudocolor(pipe: ET.Element, spec: Pseudocolor) -> None:

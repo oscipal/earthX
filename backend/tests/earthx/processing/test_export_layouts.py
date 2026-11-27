@@ -106,7 +106,9 @@ def _metas() -> dict[str, BandMeta]:
     }
 
 
-def _crop(assets: list[str], form: str, common: float | None, style: ExportStyle | None = None) -> zipfile.ZipFile:
+def _crop(
+    assets: list[str], form: str, common: float | None, style: ExportStyle | None = None, style_format: str = "qml"
+) -> zipfile.ZipFile:
     from shapely.geometry import mapping, shape
 
     region = compute_crop_region([{"geometry": FOOTPRINT}], shape(AOI))
@@ -116,7 +118,7 @@ def _crop(assets: list[str], form: str, common: float | None, style: ExportStyle
         crops=[download.AssetCrop(asset=a, paths=(paths[a],)) for a in assets],
         aoi_geometry=AOI, region_geometry=mapping(region), item_ids=["ITEM_A"],
         form=form, common_resolution=common, band_metas=_metas(),
-        recipe_json=b"{}", citation_bib=b"@misc{x}\n", style=style,
+        recipe_json=b"{}", citation_bib=b"@misc{x}\n", style=style, style_format=style_format,
     )  # fmt: skip
     return zipfile.ZipFile(io.BytesIO(data))
 
@@ -152,7 +154,12 @@ def _recipe(assets: list[str], layout: dict[str, Any], *, aoi: Any = AOI) -> Any
 
 
 def _job(
-    assets: list[str], layout: dict[str, Any], crop: zipfile.ZipFile, workdir: Path, style: ExportStyle | None = None
+    assets: list[str],
+    layout: dict[str, Any],
+    crop: zipfile.ZipFile,
+    workdir: Path,
+    style: ExportStyle | None = None,
+    style_format: str = "qml",
 ) -> zipfile.ZipFile:
     metas = _metas()
     attachments = Attachments(
@@ -161,6 +168,7 @@ def _job(
         dataset=DatasetFacts(SENTINEL_2_L2A.title, None),
         bands=tuple(metas[a] for a in assets),
         style=style,
+        style_format=style_format,
     )
     result = run(_recipe(assets, layout), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS, attachments=attachments)
     return zipfile.ZipFile(result.path)
@@ -196,23 +204,25 @@ def test_the_job_writes_the_crops_files_bit_for_bit(form: str, common: float | N
 
 
 @pytest.mark.usefixtures("served")
+@pytest.mark.parametrize("style_format", ["qml", "sld", "none"])
 @pytest.mark.parametrize("style", [STYLE, None], ids=["drawn", "collection"])
 @pytest.mark.parametrize(("form", "common"), list(CASES.values()), ids=list(CASES))
-def test_the_job_writes_the_crops_qgis_styles_byte_for_byte(
-    form: str, common: float | None, style: ExportStyle | None, tmp_path: Path
+def test_the_job_writes_the_crops_style_files_byte_for_byte(
+    form: str, common: float | None, style: ExportStyle | None, style_format: str, tmp_path: Path
 ) -> None:
     assets = list(ASSETS)
     layout = {"form": form, **({"resolution_m": common} if common else {})}
-    crop = _crop(assets, form, common, style)
-    with _job(assets, layout, crop, tmp_path, style) as job:
+    crop = _crop(assets, form, common, style, style_format)
+    with _job(assets, layout, crop, tmp_path, style, style_format) as job:
         data = [n for n in crop.namelist() if n.endswith(".tif") and not n.endswith("_mask.tif")]
-        styles = sorted(n for n in crop.namelist() if n.endswith(".qml"))
-        # One beside each data file, none beside a mask (plan A1).
-        assert styles == sorted(n[: -len(".tif")] + ".qml" for n in data)
-        assert sorted(n for n in job.namelist() if n.endswith(".qml")) == styles
+        styles = sorted(n for n in crop.namelist() if n.endswith((".qml", ".sld")))
+        # One beside each data file in the form asked for, none beside a mask (plan A1), none at all for `none`.
+        suffix = {"qml": ".qml", "sld": ".sld", "none": None}[style_format]
+        assert styles == ([] if suffix is None else sorted(n[: -len(".tif")] + suffix for n in data))
+        assert sorted(n for n in job.namelist() if n.endswith((".qml", ".sld"))) == styles
         for name in styles:
             assert job.read(name) == crop.read(name), name
-        if style is not None:
+        if style is not None and style_format == "qml":
             drawn = next(n for n in styles if b'colorramp name="[source]"' in crop.read(n) and b"#000004" in crop.read(n))
             assert b'classificationMin="0.0"' in crop.read(drawn) and b'classificationMax="0.3"' in crop.read(drawn)
 
