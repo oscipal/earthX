@@ -72,6 +72,19 @@
 | data, nur gelistete | 102 138 | 1 553 ms | 837 ms |
 | data, ab Platz 200 | 102 144 | 1 553 ms | 850 ms |
 
+**Seiten (nach F2 = 2)** [M], gleicher Bestand (neu aufgebaut), je 20 Treffer, bester von 3 nach einem Lauf zum Aufwärmen; Seite 1 = `offset` 0, Seite 10 = 180, Seite 50 = 980 (Tiefe noch 1 000), Seite 100 = 1 980 (Tiefe 2 001):
+
+| Anfrage | Seite 1 | Seite 10 | Seite 50 | Seite 100 |
+|---|---|---|---|---|
+| data | 878 ms | 830 ms | 829 ms | 867 ms |
+| map | 582 ms | 586 ms | 640 ms | 635 ms |
+| water | 737 ms | 711 ms | 742 ms | 717 ms |
+| Karte | 1 146 ms | 1 195 ms | 1 187 ms | 1 180 ms |
+| Wasser Pegel Messstelle | 755 ms | 776 ms | 822 ms | 799 ms |
+| map + Region DE-RP | 298 ms | 286 ms | 278 ms | 273 ms |
+
+Jede Seite hat 20 Treffer und einen Link `next`. Die Zeit hängt kaum von der Seite ab, weil ohnehin jeder Treffer gerankt wird; nur Übertragung und Fusion wachsen mit der Tiefe. Der erste Aufruf nach dem Aufbau („data“, Seite 1) brauchte kalt 2,1 s.
+
 `numberMatched` ist in allen Fällen bis 10 000 gleich wie auf `main` und fehlt darüber. **Was bleibt [M]:** Bei einem breiten Wort ohne Filter kostet das Ranken aller Treffer im Volltext etwa 0,5 s je 5·10⁴ Treffer, der Trigramm-Arm 0,2–0,4 s, Übertragung und Fusion großer Gleichstände bis 0,3 s („Karte“: 19 384 Einträge in der Fusion). Beide Arme laufen nacheinander (F4).
 
 ## 3. Reihenfolge der ersten Treffer [M]
