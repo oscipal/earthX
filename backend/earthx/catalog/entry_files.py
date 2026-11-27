@@ -112,10 +112,12 @@ def _anchored(text: str) -> bool:
 def _load(text: str) -> Any:
     """The plain data of ``text`` by :class:`_StrictLoader`, through libyaml where it can.
 
-    Whatever libyaml finds wrong, and any anchor or alias, goes to the loader in Python, so that a file is refused with
-    the very message it had before; libyaml only reads the files that load.
+    Whatever libyaml finds wrong, any anchor or alias and any tab go to the loader in Python, so that a file is refused
+    with the very message it had before; libyaml only reads the files that load.
     """
-    if _FastStrictLoader is not None:
+    # libyaml takes a tab after a value or in a flow, which the loader in Python refuses (M5-66 review): a text with
+    # a tab is left to the latter.
+    if _FastStrictLoader is not None and "\t" not in text:
         try:
             yaml.reader.Reader(text)  # the check of characters the loader in Python makes; libyaml makes its own
             if not _anchored(text):

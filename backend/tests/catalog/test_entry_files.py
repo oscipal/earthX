@@ -365,6 +365,12 @@ _TEXTS = [
     "d: 2026-11-27\nn: 0o17\nh: 0x1f\nb: yes\nt: true\nf: 1_000\ns: 1:20\ne:\n",
     "\x07a: 1\n",
     "a:\tb\n  c: 1\n",
+    "a:\t1\n",
+    'x: "a"\t\n',
+    "- a\t\n",
+    "a: [1,\t2]\n",
+    "a: 1 \t# c\n",
+    "a: x\n  \tb\n",
     "- a\n- [b, {c: d}]\n",
     "",
 ]
