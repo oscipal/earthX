@@ -118,11 +118,13 @@ def test_the_tile_is_the_job_on_the_native_level_to_the_bit(client: TestClient, 
     assert from_tile.data[valid].tobytes() == from_job.data[valid].tobytes()
 
 
-def test_the_statistics_of_the_tile_are_in_db(client: TestClient) -> None:
+def test_the_statistics_of_the_tile_are_in_db_and_leave_the_zeros_out(client: TestClient) -> None:
+    """DN 0 is no data (Otto, 27.11.2026): not −∞, NaN or a number in the statistics of the whole scene."""
     response = client.get(_url(VV, route="statistics"))
     assert response.status_code == 200, response.text
     (band,) = response.json().values()
     assert 0 <= band["min"] < band["max"] < 96.33  # 20·log10(65535) = 96.3294…
+    assert band["count"] == WIDTH * HEIGHT - int((_numbers() == 0).sum())
 
 
 def test_a_dataset_without_the_capability_is_a_422(client: TestClient) -> None:

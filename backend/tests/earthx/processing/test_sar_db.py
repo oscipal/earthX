@@ -159,7 +159,9 @@ class TestTransform:
 
 class TestRegistry:
     def test_sentinel_1_offers_it_for_its_radar_bands_and_no_other_dataset_does(self) -> None:
-        assert applicable(SAR_DB, S1, _params()) == []
+        # HH and HV too (Otto, 27.11.2026): a scene of them has no preset, but the step runs on them.
+        for band in ("vv", "vh", "hh", "hv"):
+            assert applicable(SAR_DB, S1, _params(bands=[band], name=f"{band}_db")) == []
         others = [config for config in registry() if config.dataset_id != S1.dataset_id]
         assert others and all("does not allow sar_backscatter" in " ".join(applicable(SAR_DB, c)) for c in others)
 
@@ -208,6 +210,9 @@ class TestRegistry:
         assert SAR_DB.looks is not None
         assert {SAR_DB.looks.of(_params(quantity=q)) for q in ("amplitude", "intensity")} == {Look("greys_r")}
 
+    def test_its_description_says_the_values_are_uncalibrated_digital_numbers(self) -> None:
+        assert "uncalibrated digital numbers (DN)" in SAR_DB.description and "not calibrated backscatter (σ⁰)" in SAR_DB.description
+
     def test_the_result_names_what_was_computed(self) -> None:
         assert SAR_DB.lineage(_params()) == "sar_db: vv_db = 20·log10(vv) (amplitude)"
         assert "10·log10(vv), the intensity in vv in decibels" in SAR_DB.method(_params(quantity="intensity"))
@@ -224,7 +229,7 @@ def _numbers() -> numpy.ndarray:
     return numbers
 
 
-def _recipe(steps: list, bands: list[str]) -> dict:
+def _recipe(steps: list, bands: list[str], nodata: int | None = 0) -> dict:
     entry = {
         "asset": {
             "dataset_id": "synthetic",
@@ -236,7 +241,7 @@ def _recipe(steps: list, bands: list[str]) -> dict:
             "crs": sources.CRS,
         },
         "version": {"kind": "file:checksum", "value": "1220ITEM_Avv"},
-        "bands": [{"data_type": "uint16", "nodata": 0, "scale": None, "offset": None, "unit": "DN"}],
+        "bands": [{"data_type": "uint16", "nodata": nodata, "scale": None, "offset": None, "unit": "DN"}],
         "scaling": "none",
         "gsd": 10.0,
     }
@@ -253,6 +258,13 @@ def _recipe(steps: list, bands: list[str]) -> dict:
 def scene(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("sar") / "vv.tif"
     return sources.build_band_cog(path, _numbers(), scale=None, offset=None, nodata=0)
+
+
+@pytest.fixture(scope="module")
+def undeclared(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The same scene, but its file does not say that 0 is no data."""
+    path = tmp_path_factory.mktemp("sar-undeclared") / "vv.tif"
+    return sources.build_band_cog(path, _numbers(), scale=None, offset=None, nodata=None)
 
 
 @pytest.mark.usefixtures("scene")
@@ -285,3 +297,33 @@ class TestJob:
         ]
         with pytest.raises(RecipeInvalid, match="third holds others"):
             self._run(_recipe(steps, ["vv_db"]), tmp_path)
+
+
+class TestZeroIsNoData:
+    """DN 0 is no data at Sentinel-1 GRD (Otto, 27.11.2026): masked in the result and left out of its statistics, never −∞,
+    NaN or a number, whether the file declares it or not."""
+
+    def _run(self, data: dict, workdir: Path):
+        workdir.mkdir(parents=True, exist_ok=True)
+        return run(recipe_of_data(data, REGISTRY), workdir=workdir, progress=lambda done, total: None, operators=REGISTRY)
+
+    @pytest.mark.parametrize("declared", [True, False], ids=["declared", "undeclared"])
+    def test_the_job_masks_every_zero_and_its_statistics_count_only_the_others(
+        self, scene: Path, undeclared: Path, declared: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sources.serve({sources.url("vv"): scene if declared else undeclared}, monkeypatch)
+        step = {"op": "sar_db", "op_version": 1, "params": VV}
+        data = _recipe([step], ["vv_db"], nodata=0 if declared else None)
+        result = self._run(data, tmp_path)
+        with rasterio.open(result.path) as dataset:
+            band = dataset.read(1, masked=True)
+        source = _numbers()
+        assert band.shape == source.shape
+        assert numpy.ma.getmaskarray(band)[source == 0].all()
+        assert numpy.isfinite(band.compressed()).all()
+        (stats,) = [b["statistics"] for b in result.properties["bands"]]
+        assert 0 <= stats["minimum"] < stats["maximum"] < 96.33
+        assert stats["count"] == int((~numpy.ma.getmaskarray(band)).sum())
+        area = core_module.area_statistics(recipe_of_data(data, REGISTRY), operators=REGISTRY)
+        assert area.bands[0]["statistics"]["minimum"] == stats["minimum"]
+        assert area.bands[0]["statistics"]["count"] == stats["count"]
