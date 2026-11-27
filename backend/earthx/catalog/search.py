@@ -494,15 +494,22 @@ def _cut(hits: sql.Composable) -> sql.Composed:
 _VECTOR_ROWS = """
     SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, f.embedding <=> %(vector)s::halfvec AS distance
     FROM {source}
-    WHERE {condition} AND f.embedding_model = %(model)s AND {carries}{order}"""
+    WHERE {where}{order}"""
 
 
-def _vector_count_sql(source: str, condition: str) -> sql.Composed:
+def _vector_where(condition: str, named_numbers: bool) -> str:
+    """The filters of one kind of row, a vector of the model, and with a number of a name in the query only the rows
+    with that name and number (plan A6): "Sentinel 3" is near Sentinel-2 for any model, and "Nr. 3" is no Sentinel.
+    The name comes through the trigram index (``LIKE``), so these rows are few and compared exactly."""
+    named = f" AND f.trigram_text LIKE ANY(%(name_patterns)s) AND {_carries('named_numbers')}" if named_numbers else ""
+    return f"{condition} AND f.embedding_model = %(model)s{named}"
+
+
+def _vector_count_sql(source: str, condition: str, *, named_numbers: bool) -> sql.Composed:
     """How many rows of one kind pass the filters and have a vector of the model, up to ``limit``."""
-    return sql.SQL(
-        "SELECT count(*) FROM (SELECT 1 FROM {source} WHERE {condition} AND f.embedding_model = %(model)s"
-        " LIMIT %(limit)s) c"
-    ).format(source=sql.SQL(source), condition=sql.SQL(condition))
+    return sql.SQL("SELECT count(*) FROM (SELECT 1 FROM {source} WHERE {where} LIMIT %(limit)s) c").format(
+        source=sql.SQL(source), where=sql.SQL(_vector_where(condition, named_numbers))
+    )
 
 
 def _vector_sql(source: str, condition: str, *, exact: bool, named_numbers: bool) -> sql.Composed:
@@ -512,10 +519,9 @@ def _vector_sql(source: str, condition: str, *, exact: bool, named_numbers: bool
     the HNSW index gives the nearest ``depth`` in a ``MATERIALIZED`` CTE, and the least cosine is applied outside it
     (pgvector README, "Iterative Index Scans"); the number of all hits is then unknown where all ``depth`` pass.
     """
-    carries = _carries("named_numbers" if named_numbers else None)
     order = "" if exact else " ORDER BY distance LIMIT %(depth)s"
     rows = sql.SQL(_VECTOR_ROWS).format(
-        source=sql.SQL(source), condition=sql.SQL(condition), carries=sql.SQL(carries), order=sql.SQL(order)
+        source=sql.SQL(source), where=sql.SQL(_vector_where(condition, named_numbers)), order=sql.SQL(order)
     )
     hits = sql.SQL(
         "SELECT v.dataset_id, v.title, v.has_time_axis, v.entry, 1 - v.distance AS score FROM ({rows}) v"
@@ -601,9 +607,9 @@ async def _start(
 class _VectorArm:
     """The vector arm of one query: per kind of row the exact or the index way, merged by cosine.
 
-    ``query`` is the vector, computed in a thread from the start of the search. Each kind of row (listed,
-    full) is counted first, up to ``exact_up_to`` + 1: up to there every row is compared, above it the HNSW index is
-    read with an iterative scan (adr/0026 §14 point 2). The hits of both kinds are ranked together; the number of all
+    ``query`` is the vector, computed in a thread from the start of the search. Full rows are few and always compared
+    exactly. Listed rows under a hard filter are counted first, up to ``exact_up_to`` + 1: up to there every row is
+    compared, above it, and without any filter, the HNSW index is read with an iterative scan (adr/0026 §14 point 2). The hits of both kinds are ranked together; the number of all
     is unknown (above ``count_up_to``) where the index way gave its whole depth.
     """
 
@@ -631,13 +637,20 @@ class _VectorArm:
             "limit": self._exact_up_to + 1,
             "unknown": self._args["count_up_to"] + 1,
         }
+        named = bool(args["named_numbers"])
+        # Without a hard filter the listed rows go to the index at once: counting them first cost 0.1 s at 10^5.
+        filtered = args["area"] is not None or args["timed"] or self._kept != ALL_KEPT or named
+        kinds = [kind for kind in ("listed", "full") if self._kept.entry in (None, kind)]
         found: list[tuple[str, float]] = []
         total = 0
         async with conn.transaction(), conn.cursor() as cur:
             await cur.execute("SET LOCAL client_min_messages = warning")
-            for source, condition in _sources(self._start, self._kept):
-                await cur.execute(_vector_count_sql(source, condition), args, prepare=False)
-                exact = (await cur.fetchone())[0] <= self._exact_up_to
+            for kind, (source, condition) in zip(kinds, _sources(self._start, self._kept), strict=True):
+                # Full entries are few: always compared exactly.
+                exact = kind == "full"
+                if not exact and filtered:
+                    await cur.execute(_vector_count_sql(source, condition, named_numbers=named), args, prepare=False)
+                    exact = (await cur.fetchone())[0] <= self._exact_up_to
                 if not exact:
                     ef_search = min(_EF_SEARCH_MAX, max(EF_SEARCH, args["depth"]))
                     await cur.execute(
@@ -645,7 +658,7 @@ class _VectorArm:
                         " set_config('hnsw.ef_search', %s, true)",
                         (str(ef_search),),
                     )
-                statement = _vector_sql(source, condition, exact=exact, named_numbers=bool(args["named_numbers"]))
+                statement = _vector_sql(source, condition, exact=exact, named_numbers=named)
                 await cur.execute(statement, args, prepare=False)
                 hits = await cur.fetchall()
                 # Every row of one kind carries the number of all its hits.
@@ -725,7 +738,12 @@ async def search_datasets(
                     await cur.execute(_NAMES_SQL, (names_before_numbers(text),))
                     names = numbered_names([row[0] for row in await cur.fetchall()])
                 named_numbers = numbers_after_names(text, names)
-            vector_args = {**params, **extra, "named_numbers": list(named_numbers)}
+            vector_args = {
+                **params,
+                **extra,
+                "named_numbers": list(named_numbers),
+                "name_patterns": names_before_numbers(text),
+            }
             arm = _VectorArm(query, start, kept, vector_args, exact_up_to=exact_up_to, rows=rows)
             beside = asyncio.create_task(arm.run(vector_conn)) if query and vector_conn is not None else None
             try:
