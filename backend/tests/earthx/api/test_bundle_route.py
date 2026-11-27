@@ -476,3 +476,24 @@ class TestNothingPersonalInTheLogs:
         assert made.headers["cache-control"] == "no-store"
         assert (await rig.client.get(made.json()["href"])).headers["cache-control"] == "no-store"
         assert (await rig.client.post(PATH, json={"jobs": []})).headers["cache-control"] == "no-store"
+
+
+class TestTheStylesOfABundle:
+    """M5-64: each part of a bundle has the style file of its result, drawn as the query says, in the form it asks for."""
+
+    async def test_every_part_takes_the_style_and_its_form(self, mocked: Store, rig: Rig) -> None:
+        from tests.earthx.api.test_result_zip_route import BANDS, STYLE
+
+        one, two = await part(rig, 1, properties=BANDS), await part(rig, 2, properties=BANDS)
+        href = await make(rig, one, two)
+        archive = opened((await rig.client.get(href, params={"style": STYLE, "style_format": "sld"})).content)
+        styles = sorted(name for name in archive.namelist() if name.endswith(".sld"))
+        assert len(styles) == 2 and all(name.endswith("/result.sld") for name in styles)
+        assert all('quantity="-0.2"' in archive.read(name).decode() for name in styles), "the layer's range"
+        plain = opened((await rig.client.get(href)).content)
+        assert len([name for name in plain.namelist() if name.endswith("/result.qml")]) == 2, "qml by default"
+
+    @pytest.mark.parametrize("params", [{"style": "{"}, {"style": "[]"}, {"style_format": "QML"}])
+    async def test_a_style_that_is_none_is_a_400(self, mocked: Store, rig: Rig, params: dict[str, str]) -> None:
+        href = await make(rig, await part(rig, 1, properties={}))
+        assert (await rig.client.get(href, params=params)).status_code == 400

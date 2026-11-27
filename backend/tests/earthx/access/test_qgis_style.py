@@ -29,14 +29,26 @@ from earthx.access.qgis_style import (
     Pseudocolor,
     Rgb,
     StyleInvalid,
-    file_qml,
     file_renderer,
+    file_style,
     measured_range,
-    qml_name,
     qml_text,
-    result_qml,
+    result_style,
+    style_file,
 )
 from earthx.catalog.registry import ClassRow, Look
+
+
+def file_qml(dataset: Any, bands: list[BandMeta], style: ExportStyle | None, true_color: tuple[str, ...]) -> str:
+    styled = file_style(dataset, "exports/x.tif", bands, style, true_color)
+    assert styled is not None and styled[0] == "exports/x.qml"
+    return styled[1]
+
+
+def result_qml(properties: Any, style: ExportStyle | None, look_of: Any) -> str | None:
+    styled = result_style("folder/result.tif", properties, style, look_of, "qml")
+    return None if styled is None else styled[1]
+
 
 REFERENCE = Path(__file__).resolve().parents[2] / "fixtures" / "qgis"
 
@@ -128,6 +140,34 @@ def test_a_colormap_is_the_table_of_the_tiler_from_min_to_max(name: str) -> None
     assert shader.find("colorramp").attrib["name"] == "[source]"  # type: ignore[union-attr]
 
 
+def test_the_tables_of_the_ramps_are_the_ones_the_tiler_draws() -> None:
+    """The style reads the ramps without titiler and the registry (``colormap_tables``, plan §12.1); the tiles take
+    exactly the same 256 colours for every name of ``GET /colormaps``."""
+    from earthx.access.colormap_tables import ramp_colours
+    from earthx.access.colormaps import CLASS_TABLES
+
+    names = [name for name in COLORMAPS.list() if name not in CLASS_TABLES]
+    assert len(names) > 100
+    for name in names:
+        table = COLORMAPS.get(name)
+        assert ramp_colours(name) == [tuple(int(c) for c in table[key]) for key in sorted(table)], name
+    for name in CLASS_TABLES:
+        assert ramp_colours(name) is None, "a table of classes is no ramp"
+    assert ramp_colours("no_such_map") is None
+
+
+def test_the_style_loads_neither_titiler_nor_the_registry() -> None:
+    import subprocess
+
+    code = (
+        "import sys, earthx.access.qgis_style;"
+        "bad = [m for m in ('titiler', 'earthx.access.colormaps', 'earthx.catalog.datasets') if m in sys.modules];"
+        "print(','.join(bad))"
+    )
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, cwd=REFERENCE.parents[2])
+    assert done.stdout.strip() == ""
+
+
 def test_a_reversed_colormap_runs_the_other_way() -> None:
     def colours(name: str) -> list[str]:
         shader = _pipe(qml_text(Pseudocolor(1, name, 0.0, 1.0))).find("rasterrenderer/rastershader/colorrampshader")
@@ -152,7 +192,8 @@ def test_names_of_classes_are_escaped_and_read_back_as_written() -> None:
     ],
 )
 def test_the_style_is_named_as_qgis_looks_for_it(path: str, name: str) -> None:
-    assert qml_name(path) == name
+    styled = style_file("qml", path, CASES["gray"])
+    assert styled is not None and styled[0] == name
 
 
 # --- the style of an order --------------------------------------------------------------------------------------------
@@ -248,7 +289,7 @@ def test_2_the_drawn_band_without_a_colormap_is_grey() -> None:
 def test_2_a_drawn_band_of_classes_keeps_its_classes() -> None:
     scl = _meta("scl", classes=WORLDCOVER_LIKE)
     style = ExportStyle(band="scl", colormap="viridis", range=(0, 11))
-    assert file_renderer([RED, scl], style, (), Measures()) == Paletted(2, WORLDCOVER_LIKE)
+    assert file_renderer([RED, scl], style, (), Measures()) == Paletted(2, WORLDCOVER_LIKE, 0.0)
 
 
 def test_3_a_file_of_one_channel_of_the_drawn_picture_is_grey_in_its_stretch() -> None:
@@ -292,8 +333,35 @@ def test_5_a_look_in_percentiles_is_measured_at_its_own() -> None:
 
 
 def test_5_a_band_of_classes_is_paletted_and_one_without_look_grey() -> None:
-    assert file_renderer([_meta("map", classes=WORLDCOVER_LIKE)], None, (), Measures()) == Paletted(1, WORLDCOVER_LIKE)
+    assert file_renderer([_meta("map", classes=WORLDCOVER_LIKE)], None, (), Measures()) == Paletted(1, WORLDCOVER_LIKE, 0.0)
     assert file_renderer([RED], None, (), Measures()) == Gray(1, 1.0, 2.0)
+
+
+def test_0_an_asset_of_three_bands_is_its_own_colour_picture() -> None:
+    visual = _meta("visual")
+    measures = Measures()
+    assert file_renderer([visual], None, TRUE_COLOR, measures, band_count=3, byte=True) == Rgb(
+        (1, 2, 3), ((0.0, 255.0), (0.0, 255.0), (0.0, 255.0))
+    )
+    assert measures.asked == []
+    renderer = file_renderer([visual], None, (), measures, band_count=3)
+    assert renderer == Rgb((1, 2, 3), ((1.0, 2.0), (2.0, 3.0), (3.0, 4.0))), "not bytes: each channel measured"
+    assert file_renderer([visual], None, (), Measures(), band_count=1) == Gray(1, 1.0, 2.0), "one band: the rule as before"
+
+
+def test_the_style_of_a_written_visual_file_is_rgb_0_to_255() -> None:
+    memory = MemoryFile()
+    with memory.open(
+        driver="GTiff", dtype="uint8", count=3, width=4, height=4, crs="EPSG:32632",
+        transform=from_origin(500000, 5200000, 10, 10), nodata=0,
+    ) as dataset:  # fmt: skip
+        dataset.write(numpy.full((3, 4, 4), 7, dtype="uint8"))
+    with memory, memory.open() as dataset:
+        text = file_qml(dataset, [_meta("visual")], None, TRUE_COLOR)
+    renderer = _pipe(text).find("rasterrenderer")
+    assert renderer is not None and renderer.attrib["type"] == "multibandcolor"
+    assert [renderer.attrib[f"{c}Band"] for c in ("red", "green", "blue")] == ["1", "2", "3"]
+    assert [e.text for e in renderer.iter("maxValue")] == ["255.0"] * 3
 
 
 def test_a_drawn_band_in_no_file_leaves_the_files_their_own_looks() -> None:

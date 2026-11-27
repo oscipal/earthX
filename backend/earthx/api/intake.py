@@ -87,7 +87,7 @@ from earthx.access.download import (
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
 )
-from earthx.access.qgis_style import ExportStyle, collection_look
+from earthx.access.qgis_style import DEFAULT_STYLE_FORMAT, ExportStyle, collection_look
 from earthx.access.radar import RADAR_GRID_LINE, item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
@@ -259,16 +259,18 @@ async def accept_order(
     gateway: Gateway,
     aoi_provenance: Mapping[str, str] | None = None,
     style: ExportStyle | None = None,
+    style_format: str = DEFAULT_STYLE_FORMAT,
 ) -> AcceptedOrder:
     """The order as a recipe with a ``recipe_id`` — or an :class:`OrderRefused` (module docstring).
 
     ``aoi_provenance`` (M4-11 F4, M4-30) is where a place-search AOI came from (``attribution``,
     ``license``, ``source``), checked by the caller; it only goes into the side files of an export
     or of a raster job's ZIP, never into the recipe or its hash. ``style`` (M5-64) is how the layer of an
-    export is drawn, for the QGIS style of its files; it goes into the attachments, never into the recipe.
+    export is drawn, for the style file of its files, and ``style_format`` its form; both go into the attachments, never
+    into the recipe.
     """
     try:
-        accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance, style)
+        accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance, style, style_format)
     except OrderRefused as refused:
         _log_refused(refused)
         raise
@@ -399,6 +401,7 @@ async def _accept(
     gateway: Gateway,
     aoi_provenance: Mapping[str, str] | None = None,
     style: ExportStyle | None = None,
+    style_format: str = DEFAULT_STYLE_FORMAT,
 ) -> AcceptedOrder:
     prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
     versions = await _gather(_version_of(target, gateway) for target in prepared.targets)
@@ -440,6 +443,7 @@ async def _accept(
             acquired_on=acquired_on,
             years=prepared.years,
             style=style,
+            style_format=style_format,
         )
     except AttachmentsInvalid:
         # The limit of the notice grows with the scenes (F4 = 2, plan M5-30b §6): up to MAX_ORDER_ITEMS scenes with ids
@@ -645,6 +649,7 @@ def export_attachments(
     bands: Sequence[BandMeta] = (),
     scene_aoi: bool = False,
     style: ExportStyle | None = None,
+    style_format: str = DEFAULT_STYLE_FORMAT,
 ) -> Attachments:
     """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
 
@@ -689,6 +694,7 @@ def export_attachments(
         scenes=sum(len(group) for group in entry.groups) + len(dropped),
         style=style if bands else None,
         true_color=tuple(config.true_color) if bands else (),
+        style_format=style_format if bands else DEFAULT_STYLE_FORMAT,
     )
 
 

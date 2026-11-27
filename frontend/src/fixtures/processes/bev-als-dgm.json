@@ -861,6 +861,21 @@
         "type": "object"
       },
       "title": "Order"
+    },
+    "styleFormat": {
+      "description": "For an export only: the form of the style file beside each file, `qml` (QGIS, the default), `sld` (OGC SLD 1.0) or `none`. Not part of the recipe, its hash or the cache.",
+      "maxOccurs": 1,
+      "minOccurs": 0,
+      "schema": {
+        "default": "qml",
+        "enum": [
+          "qml",
+          "sld",
+          "none"
+        ],
+        "type": "string"
+      },
+      "title": "Style file"
     }
   },
   "jobControlOptions": [
