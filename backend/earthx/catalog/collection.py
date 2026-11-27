@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from earthx.catalog.registry import DatasetConfig, FilterKind, LicenseInfo, class_key, doi_name
+from earthx.catalog.registry import UNSCALED, DatasetConfig, FilterKind, LicenseInfo, class_key, doi_name
 
 # STAC 1.0 for now, because that is what pgstac and Earth Search speak. The licence
 # value below is tied to it: STAC 1.1 dropped "proprietary" in favour of "other",
@@ -99,7 +99,8 @@ def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
 def _earthx_bands(config: DatasetConfig) -> list[dict[str, Any]]:
     """The bands as STAC names them, ``name`` and ``description``, in the order of the entry (M5-59), and a band of
     classes with its classes as the classification extension writes them (M5-62). Every other band with the look it starts
-    with and where that came from (M5-60): the form of ``x-earthx-looks`` (adr/0035), its numbers in the unit of the band.
+    with and where that came from (M5-60): the form of ``x-earthx-looks`` (adr/0035), its numbers in the unit of the band;
+a scaled band its ``band_scaling`` as ``earthx:scaling``, for a picture drawn without an item (M5-68).
 
     A list, because the collection travels through JSONB, which does not keep the order of the keys of an object, and
     the Data catalogue shows the bands in the order the entry lists them.
@@ -115,6 +116,8 @@ def _earthx_bands(config: DatasetConfig) -> list[dict[str, Any]]:
         if (look := config.look_of(key)) is not None:
             band["earthx:look"] = look.look.annotation()
             band["earthx:look_origin"] = look.origin.value
+        if (scaling := config.scaling_of(key)) != UNSCALED:
+            band["earthx:scaling"] = {"scale": scaling.scale, "offset": scaling.offset}
         bands.append(band)
     return bands
 

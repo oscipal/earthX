@@ -10,6 +10,7 @@ import type { DatasetOption } from './datasets';
 import { attributionText } from './download';
 import type { PlannedRaster } from './mosaic';
 import { firstZoomOf } from './tileSize';
+import { scalingOfBand } from './viewBand';
 import type { Bbox, Collection } from './types';
 
 // The latitudes a Web Mercator map reaches; a source with a bound beyond them would not load.
@@ -54,6 +55,9 @@ export function overviewRasterOf(
   const attribution = attributionText(flags, null);
   if (flags?.attribution_required && !attribution) return null;
   const tileUrl = chain ? buildOverviewTileTemplate(dataset.id, chain.steps, chain.band) : buildOverviewTileTemplate(dataset.id);
+  // Without steps the overview draws the stored numbers of the band of the standard picture; no item is at hand, so the registry's
+  // scaling turns the physical range of the view into them (M5-68). With steps the values are physical already.
+  const scaling = chain ? null : scalingOfBand(drawn.collection, drawn.collection['earthx:default_render']?.assets[0]);
   return {
     tileUrl,
     bounds,
@@ -63,6 +67,7 @@ export function overviewRasterOf(
     maxZoom: firstLevel - 1,
     hideFrom: firstZoomOf(firstLevel, tileUrl),
     ...(attribution ? { attribution } : {}),
+    ...(scaling ? { scaling } : {}),
   };
 }
 

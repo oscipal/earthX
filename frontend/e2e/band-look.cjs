@@ -1,8 +1,10 @@
-// Browser check of the look of a band (M5-60 PR 2, Otto 21.11.2026), with the collections as the registry writes them
-// (`band-look-collections.json`: Sentinel-2, Sentinel-1, MeteoSwiss, swissALTI3D, ESA WorldCover, trimmed to what the view reads) and
-// made-up scenes and measures. In the light and the dark theme, at 1280×800, 1280×360 and 360×740, it fails when
-//   - a band chosen in the view does not start with the colormap and range of its look (a fixed range at once, in stored values where the
-//     band is scaled; a measured one from the measure), or what is typed by hand does not hold until the next band;
+// Browser check of the look of a band (M5-60 PR 2, Otto 21.11.2026) in physical values (M5-68, Otto 25.11.2026), with the collections as
+// the registry writes them (`band-look-collections.json`: Sentinel-2, Sentinel-1, MeteoSwiss, swissALTI3D, ESA WorldCover, trimmed to what
+// the view reads) and made-up scenes and measures. In the light and the dark theme, at 1280×800, 1280×360 and 360×740, it fails when
+//   - a band chosen in the view does not start with the colormap and range of its look (a fixed range at once, a measured one from the
+//     measure), or what is typed by hand does not hold until the next band;
+//   - the histogram, the fields and the legend of a scaled band (Sentinel-2 red: stored · 0.0001 − 0.1) do not show the same physical
+//     numbers, or its tiles are not asked in the stored ones (the scene's measure 1200…3400 is 0.02…0.24 in the fields and the legend);
 //   - a bar of the histogram is not in the colour of its value (the end colours outside the range), or does not follow a change of the
 //     colormap or the range at once, or that change asks for a measure;
 //   - the bar of the legend over the map is not in the colours of the colormap, or its ends are not physical values with the unit;
@@ -11,7 +13,9 @@
 //   - a slider dragged with the mouse past an end of its histogram does not reach it, or its line does not stand exactly on the outer edge
 //     of the outermost bar; or a slider at the edge of a bar stands off it (one band, each channel of RGB, in values and percentiles);
 //   - a class layer (WorldCover) has no histogram in the colours of its classes, one with sliders, or no class legend;
-//   - a result band of the source whose values no step changed does not keep its look, or one Band math made takes one;
+//   - a result band the result item calls the source's values (`earthx:source_values`) does not keep its look, or one Band math made
+//     takes one;
+//   - an old permalink (its range physical, as every one was) does not open with that range in the fields and in the preview's tiles;
 //   - the legend scrolls, or the settings scroll at 1280×800 (below that they do on main already, with or without a histogram: UI-12).
 // It writes a screenshot per dataset.
 //
@@ -48,7 +52,8 @@ const ends = (name) => {
   return name.endsWith('_r') ? [colors.at(-1), colors[0]] : [colors[0], colors.at(-1)];
 };
 
-// The measure of a band in the values its tiles draw: a histogram reaching beyond the range on both sides.
+// The measure of a band as the scene route answers it, in the stored numbers of the file: a histogram reaching beyond the range on both
+// sides.
 function histogram(low, high, bins = 12) {
   const edges = Array.from({ length: bins + 1 }, (_, i) => low + ((high - low) * i) / bins);
   return [Array.from({ length: bins }, (_, i) => 10 + 30 * Math.sin((Math.PI * (i + 0.5)) / bins)), edges];
@@ -70,6 +75,9 @@ const CODES = (() => {
 })();
 MEASURES.map = CODES;
 const measureOf = (asset) => ({ count: 900, unit: null, ...(MEASURES[asset] ?? MEASURES.red) });
+// The scaling of a band whose file stores whole numbers (Sentinel-2 reflectance), and its numbers in physical values as the page shows them.
+const SCALED = { red: { scale: 0.0001, offset: -0.1 } };
+const physicalOf = (band, stored) => (SCALED[band] ? Number((stored * SCALED[band].scale + SCALED[band].offset).toPrecision(12)) : stored);
 
 // The scenes, by dataset: the assets of one band each the view offers, the scaling of Sentinel-2 reflectance (adr/0017 §3.4).
 const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
@@ -85,8 +93,9 @@ const ASSETS = {
 };
 
 // What each dataset is checked with: the band chosen, its colormap and fields, the ends of the legend and its unit.
+// `tiles`: the range the tiles of the band are asked with, in stored numbers.
 const CASES = [
-  { dataset: 'sentinel-2-c1-l2a', band: 'red', colormap: 'viridis', fields: ['1200', '3400'], legend: [0.02, 0.24], unit: null },
+  { dataset: 'sentinel-2-c1-l2a', band: 'red', colormap: 'viridis', fields: ['0.02', '0.24'], legend: [0.02, 0.24], unit: null, tiles: '1200,3400' },
   { dataset: 'sentinel-2-c1-l2a', band: 'cloud', colormap: 'viridis', fields: ['0', '100'], legend: [0, 100], unit: '%' },
   { dataset: 'sentinel-1-grd', band: 'vh', colormap: 'greys_r', fields: ['60', '500'], legend: [60, 500], unit: null },
   { dataset: 'meteoswiss-daily-1km', band: 'TminD', colormap: 'rdbu_r', fields: ['-20', '30'], legend: [-20, 30], unit: '°C' },
@@ -96,21 +105,50 @@ const CASES = [
 
 const RESULT = 'ZyXwVuTsRqPoNmLkJiHg_-';
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
+const LINK = 'LiNkOfBeFoReM5x68aBcD_';
+// A permalink made before M5-68: a preview of "Mask by value" on Sentinel-2 red, its range set by hand. Its numbers were physical then
+// too: a preview is drawn by the steps, which compute in physical values.
+const PERMALINK_ITEM = 'S2A_PERMALINK';
+// The licence the panel needs to process the dataset of the link (made up; the trimmed collections carry none).
+const PROCESSING = { spdx_id: null, name: 'Made-up notice', url: 'https://example.org/legal', commercial_use: true, distribution: true, derivatives: true, share_alike: false, attribution_required: false, tier: 'processing' };
+const PERMALINK = {
+  order: {
+    recipe_version: 2,
+    inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [[PERMALINK_ITEM]] }],
+    aoi: { type: 'Polygon', coordinates: [[[10.2, 46.2], [10.8, 46.2], [10.8, 46.8], [10.2, 46.8], [10.2, 46.2]]] },
+    steps: [{ op: 'mask_values', op_version: 1, params: { band: 'red', condition: 'gt', values: [0.3] } }],
+    output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red'] },
+  },
+  view: { center: [10.5, 46.5], zoom: 9, range: { vmin: 0.02, vmax: 0.24, colormap: 'viridis' }, basemap: null, projection: null },
+  expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+};
 
 const rgb = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
 
-async function open(browser, theme, viewport, problems) {
+async function open(browser, theme, viewport, problems, address = '/') {
   const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
   await context.addInitScript((t) => localStorage.setItem('earthx.theme', t), THEMES[theme]);
   const page = await context.newPage();
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
   const asked = [];
+  const tiles = [];
   await page.route('**/*', async (r) => {
     const url = new URL(r.request().url());
     const json = (body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.origin !== BASE) return r.fulfill({ status: 404, body: '' });
     if (/^\/(src|@|node_modules|assets|e2e)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return r.continue();
     if (url.pathname === '/colormaps') return json(COLORMAPS);
+    if (url.pathname.includes('/tiles/')) {
+      tiles.push(url.href);
+      return r.fulfill({ status: 404, body: '' });
+    }
+    // Only a link loads the datasets itself; every other check puts them into the store.
+    if (url.pathname === '/stac/collections' && address !== '/') return json({ collections: [{ ...COLLECTIONS['sentinel-2-c1-l2a'], 'earthx:license_flags': PROCESSING }], links: [] });
+    if (url.pathname === `/stac/collections/sentinel-2-c1-l2a/items/${PERMALINK_ITEM}`) {
+      const bbox = [10, 46, 11, 47];
+      return json({ type: 'Feature', id: PERMALINK_ITEM, collection: 'sentinel-2-c1-l2a', bbox, geometry: { type: 'Polygon', coordinates: [[[10, 46], [11, 46], [11, 47], [10, 47], [10, 46]]] }, properties: { datetime: '2026-07-01T10:00:00Z', 's2:datatake_id': 'GS2A_20260701T100000_000000_N05.11' }, assets: ASSETS['sentinel-2-c1-l2a'], links: [] });
+    }
+    if (url.pathname === `/processing/permalinks/${LINK}`) return json(PERMALINK);
     if (url.pathname.endsWith('/statistics')) {
       asked.push(url.pathname);
       const asset = url.searchParams.get('asset');
@@ -123,10 +161,11 @@ async function open(browser, theme, viewport, problems) {
     if (url.pathname === `/processing/jobs/${JOB}/results`) {
       const band = (name, unit, measure) => ({ name, ...(unit ? { unit } : {}), statistics: { count: 900, minimum: measure.min, maximum: measure.max, percentile_2: measure.p2, percentile_98: measure.p98, histogram: histogram(measure.min, measure.max) } });
       return json({
+        // The worker says which bands hold the values of the source (M5-68): red and cloud, not NDVI.
         result: { href: `/processing/jobs/${JOB}/results/result.tif`, type: COG, width: 100, length: 4e5, properties: { bands: [
           band('NDVI', null, { min: -0.2, max: 0.9, p2: -0.1, p98: 0.8 }),
-          band('red', null, { min: 0, max: 0.5, p2: 0.02, p98: 0.3 }),
-          band('cloud', '%', { min: 0, max: 100, p2: 3, p98: 80 }),
+          { ...band('red', null, { min: 0, max: 0.5, p2: 0.02, p98: 0.3 }), 'earthx:source_values': true },
+          { ...band('cloud', '%', { min: 0, max: 100, p2: 3, p98: 80 }), 'earthx:source_values': true },
         ] } },
         tiles: { href: `/results/${RESULT}/WebMercatorQuad/tilejson.json` },
       });
@@ -134,7 +173,7 @@ async function open(browser, theme, viewport, problems) {
     if (url.pathname === `/results/${RESULT}/WebMercatorQuad/tilejson.json`) return json({ bounds: [10, 50, 11, 51], minzoom: 0, maxzoom: 19, data_type: 'float32', tiles: [] });
     return r.fulfill({ status: 404, body: '' });
   });
-  await page.goto(BASE);
+  await page.goto(`${BASE}${address}`);
   await page.locator('.app-rail').waitFor();
   // The stores, for the waits: a wait reads them at once.
   await page.evaluate(async () => {
@@ -143,7 +182,7 @@ async function open(browser, theme, viewport, problems) {
   });
   // The page restores the jobs of its tab at the start; what is set before that is lost.
   await page.waitForTimeout(1200);
-  return { context, page, asked };
+  return { context, page, asked, tiles };
 }
 
 // The view of one scene of `dataset`, opened as "View full selection" does.
@@ -166,8 +205,22 @@ async function openView(page, dataset) {
 
 const field = (page, name) => page.locator('.viewer-controls .vc-render label').filter({ has: page.locator(`span:text-is("${name}")`) }).first();
 const fills = (page) => page.locator('.inspector .range-hist-bars rect').evaluateAll((rects) => rects.map((rect) => rect.style.fill || rect.getAttribute('class')));
-const legendNumbers = async (page) => (await page.locator('.map-legend .legend-ends span').allTextContents()).map((text) => text);
-const legendBar = (page) => page.locator('.map-legend .legend-bar').evaluate((el) => getComputedStyle(el).backgroundImage).catch(() => '');
+// Where the legend stands folded or docked (a low or narrow window, UI-12), it is opened by its title first, as a person would.
+async function unfold(page) {
+  const title = page.locator('.map-legend .legend-title[aria-expanded="false"]');
+  if ((await title.count()) > 0) {
+    await title.first().click();
+    await page.waitForTimeout(150);
+  }
+}
+const legendNumbers = async (page) => {
+  await unfold(page);
+  return page.locator('.map-legend .legend-ends span').allTextContents();
+};
+const legendBar = async (page) => {
+  await unfold(page);
+  return page.locator('.map-legend .legend-bar').evaluate((el) => getComputedStyle(el).backgroundImage).catch(() => '');
+};
 const scrolls = (page, selector) => page.locator(selector).first().evaluate((el) => el.scrollHeight - el.clientHeight > 1).catch(() => false);
 const settle = (page) => page.waitForFunction(() => !window.appStore.getState().focusLoading).then(() => page.waitForTimeout(250));
 
@@ -175,7 +228,7 @@ const settle = (page) => page.waitForFunction(() => !window.appStore.getState().
 // the sliders have the end colours (Otto, 24.11.2026).
 async function checkSliders(page, band, colormap, say) {
   const [low, high] = await page.evaluate(() => [Number(window.appStore.getState().pendingVmin), Number(window.appStore.getState().pendingVmax)]);
-  const edges = measureOf(band).histogram[1];
+  const edges = measureOf(band).histogram[1].map((edge) => physicalOf(band, edge));
   const middles = edges.slice(0, -1).map((edge, i) => (edge + edges[i + 1]) / 2);
   const first = middles.findIndex((m) => m >= low);
   const last = middles.findLastIndex((m) => m <= high);
@@ -191,7 +244,7 @@ async function checkSliders(page, band, colormap, say) {
   if (wrong.length > 0) say(`${band}: bars outside the sliders not in the end colours: ${wrong}`);
 }
 
-async function checkBand(page, asked, { dataset, band, colormap, fields, legend, unit }, say, theme) {
+async function checkBand(page, asked, tiles, { band, colormap, fields, legend, unit, tiles: stored = fields.join(',') }, say, theme) {
   await field(page, 'Band').locator('select').selectOption(`band:${band}`);
   await settle(page);
   const state = await page.evaluate(async () => {
@@ -234,8 +287,8 @@ async function checkBand(page, asked, { dataset, band, colormap, fields, legend,
   if (!bar.includes(rgb(STOPS.magma[0])) || !bar.includes(rgb(STOPS.magma.at(-1)))) say(`${band}: the bar of the legend is not in ${other}`);
   const texts = await legendNumbers(page);
   const at = (text) => Number(text.split(' ')[0]);
-  const physical = (stored) => (dataset === 'sentinel-2-c1-l2a' && band !== 'cloud' ? stored * 0.0001 - 0.1 : stored);
-  const expected = [physical(Number(middle)), legend[1]];
+  // The legend says what the fields say (M5-68).
+  const expected = [Number(middle), legend[1]];
   if (texts.length !== 2 || texts.some((text, i) => Math.abs(at(text) - expected[i]) > 1e-6 * Math.max(1, Math.abs(expected[i])))) say(`${band}: the legend says ${JSON.stringify(texts)}, not ${expected}`);
   if (texts.some((text) => (unit ? !text.endsWith(` ${unit}`) : text.includes(' ')))) say(`${band}: the unit of the legend is wrong: ${JSON.stringify(texts)}`);
 
@@ -248,10 +301,20 @@ async function checkBand(page, asked, { dataset, band, colormap, fields, legend,
   });
   if (JSON.stringify(back) !== JSON.stringify([other, ...fields])) say(`${band}: "Auto-scale" gives ${JSON.stringify(back)}`);
   if (legend[0] !== undefined && texts.length === 2) {
+    const before = tiles.length;
     await page.locator('.viewer-controls .vc-apply').click();
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(300);
     const applied = (await legendNumbers(page)).map(at);
-    if (Math.abs(applied[0] - legend[0]) > 1e-6 * Math.max(1, Math.abs(legend[0]))) say(`${band}: the legend starts at ${applied[0]}, not ${legend[0]}`);
+    if (applied.some((value, i) => Math.abs(value - legend[i]) > 1e-6 * Math.max(1, Math.abs(legend[i])))) say(`${band}: the legend says ${applied}, not ${legend}`);
+    // Histogram, fields and legend in the same physical numbers; the tiles asked in the stored ones of the file.
+    const histEnds = await page.locator('.inspector .range-hist input[type=range]').first().evaluate((input) => [Number(input.min), Number(input.max)]).catch(() => []);
+    const edges = measureOf(band).histogram[1].map((edge) => physicalOf(band, edge));
+    const range = [Math.min(edges[0], Number(fields[0])), Math.max(edges.at(-1), Number(fields[1]))];
+    if (histEnds.length !== 2 || histEnds.some((value, i) => Math.abs(value - range[i]) > 1e-9 * Math.max(1, Math.abs(range[i])))) say(`${band}: the histogram spans ${histEnds}, not ${range}`);
+    const asked = tiles.slice(before).map((tile) => new URL(tile).searchParams).filter((query) => query.get('asset') === band && !query.has('op'));
+    // A scaled band must be asked; another may be drawn by its overview at this zoom (swissALTI3D).
+    if (asked.length === 0 && stored !== fields.join(',')) say(`${band}: no tile of the band was asked after "Apply"`);
+    else if (asked.some((query) => query.getAll('rescale').join(';') !== stored)) say(`${band}: the tiles are asked with ${asked.map((q) => q.getAll('rescale')).join(' ')}, not ${stored}`);
   }
 }
 
@@ -312,7 +375,8 @@ async function checkDragging(page, say) {
   await dragOut(page, band, 'low', 'red', say);
   await dragOut(page, band, 'high', 'red', say);
   const [low, high] = await page.evaluate(() => [window.appStore.getState().pendingVmin, window.appStore.getState().pendingVmax]);
-  if (low !== '0' || high !== '6000') say(`red: dragged to both ends, the fields say ${low}–${high}, not 0–6000`);
+  // The ends of the histogram, 0 and 6000 stored, physical.
+  if (low !== '-0.1' || high !== '0.5') say(`red: dragged to both ends, the fields say ${low}–${high}, not -0.1–0.5`);
   const bars = await fills(page);
   if (bars[0] === rgb(ends('viridis')[0]) && bars.length > 0) say('red: dragged to the left end, the first bar is not in the range');
   await page.locator('.viewer-controls select.vc-unit').selectOption('percent');
@@ -333,6 +397,7 @@ async function checkWorldCover(page, say) {
   const classes = COLLECTIONS['esa-worldcover-2021']['earthx:bands'][0]['classification:classes'].map((c) => rgb(`#${c.color_hint}`));
   const coloured = (await fills(page)).filter((fill) => fill.startsWith('rgb'));
   if (JSON.stringify(coloured) !== JSON.stringify(classes)) say(`WorldCover: the bars are ${JSON.stringify(coloured)}, not the colours of the classes`);
+  await unfold(page);
   if ((await page.locator('.map-legend .legend-classes li').count()) !== 11) say('WorldCover: the legend does not list the eleven classes');
 }
 
@@ -375,14 +440,37 @@ async function checkResult(page, say) {
   if (JSON.stringify(texts) !== JSON.stringify(['0 %', '100 %'])) say(`result: the legend says ${JSON.stringify(texts)}`);
 }
 
+// An old permalink opens with its range in the fields of the preview and in the tiles of the steps, unchanged (M5-68).
+async function checkPermalink(browser, theme, viewport, say) {
+  const problems = [];
+  const { context, page, tiles } = await open(browser, theme, viewport, problems, `/?permalink=${LINK}`);
+  try {
+    await page.waitForFunction(() => window.processingStore.getState().open && window.processingStore.getState().preview !== null, null, { timeout: 15000 });
+  } catch {
+    say(`the link did not open a preview (${await page.evaluate(() => window.appStore.getState().error)})`);
+  }
+  await page.waitForTimeout(500);
+  const state = await page.evaluate(() => {
+    const p = window.processingStore.getState();
+    return { range: p.range, urls: p.preview?.scenes?.map((scene) => scene.url) ?? [] };
+  });
+  if (state.range.vmin !== '0.02' || state.range.vmax !== '0.24' || state.range.colormap !== 'viridis') say(`the range of the link is ${JSON.stringify(state.range)}`);
+  const ranges = [...state.urls, ...tiles.filter((tile) => tile.includes('op='))].map((url) => new URL(url, BASE).searchParams.getAll('rescale').join(';'));
+  if (ranges.length === 0) say('the preview asks for no tile of the steps');
+  else if (ranges.some((range) => range !== '0.02,0.24')) say(`the preview's tiles are asked with ${[...new Set(ranges)]}, not 0.02,0.24`);
+  await page.screenshot({ path: path.join(OUT, `band-look-permalink-${theme}-${viewport}.png`) });
+  problems.forEach(say);
+  await context.close();
+}
+
 async function check(browser, theme, viewport) {
   const problems = [];
-  const { context, page, asked } = await open(browser, theme, viewport, problems);
+  const { context, page, asked, tiles } = await open(browser, theme, viewport, problems);
   const name = `${theme} ${viewport}`;
   for (const one of CASES) {
     const say = (text) => problems.push(`${name}: ${one.dataset}: ${text}`);
     await openView(page, one.dataset);
-    await checkBand(page, asked, one, say, theme);
+    await checkBand(page, asked, tiles, one, say, theme);
     // The settings scroll below a certain height on main already (1280×360, 360×740); the histogram adds nothing to them.
     if (viewport === 'wide' && (await scrolls(page, '.inspector .insp-body'))) say(`${one.band}: the settings scroll`);
     if (await scrolls(page, '.map-legend .legend')) say(`${one.band}: the legend scrolls`);
@@ -394,6 +482,7 @@ async function check(browser, theme, viewport) {
   await checkResult(page, (text) => problems.push(`${name}: ${text}`));
   await page.screenshot({ path: path.join(OUT, `band-look-result-${theme}-${viewport}.png`) });
   await context.close();
+  await checkPermalink(browser, theme, viewport, (text) => problems.push(`${name}: permalink: ${text}`));
   return problems;
 }
 
@@ -403,6 +492,6 @@ async function check(browser, theme, viewport) {
   const all = [];
   for (const theme of Object.keys(THEMES)) for (const viewport of Object.keys(VIEWPORTS)) all.push(...(await check(browser, theme, viewport)));
   await browser.close();
-  console.log(all.length === 0 ? `ok: the looks of the bands, the histogram and the legend in their colours (light and dark, 1280×800, 1280×360, 360×740); screenshots in ${OUT}` : `FAIL\n${all.join('\n')}`);
+  console.log(all.length === 0 ? `ok: the looks of the bands, the histogram and the legend in their colours and the same physical numbers, an old permalink (light and dark, 1280×800, 1280×360, 360×740); screenshots in ${OUT}` : `FAIL\n${all.join('\n')}`);
   process.exit(all.length === 0 ? 0 : 1);
 })();
