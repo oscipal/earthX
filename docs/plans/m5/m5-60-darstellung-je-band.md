@@ -1,6 +1,6 @@
 # M5-60 — Darstellung je Band
 
-**Stand:** 25.11.2026 (Nachtrag M5-68, §15, Fragen F11–F14 offen); 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend, #396) gemergt (§13, §14); PR 2 (Frontend) umgesetzt am 24.11.2026 (§13.4, §13.6); F10 als Folgeaufgabe M5-68 (§13.7).
+**Stand:** 27.11.2026 (Nachtrag M5-68, §15, angenommen: F11–F14 je Option 1, A12–A15, §15.7); 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend, #396) gemergt (§13, §14); PR 2 (Frontend) umgesetzt am 24.11.2026 (§13.4, §13.6); F10 als Folgeaufgabe M5-68 (§13.7).
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 21.11.2026; M5-Plan §6.2):**
 
@@ -449,7 +449,7 @@ Nicht Teil: die Einheit in den Feldern (keine neuen Texte), Klassenbänder (Code
 - Frontend: Umrechnung in `buildTileUrl` (ein Paar, drei Paare, Route mit `op`/`expression` unberührt, `stored` unberührt, ohne Skalierung unberührt, Rundung); Messung der Szene physikalisch, AOI unverändert; Band-Look fest ohne Umrechnung; Standardbild gehoben; Ergebnisband erbt nur mit Feld.
 - Browser (`frontend/e2e/band-look.cjs`): Sentinel-2 `red` – Histogramm, Felder und Legende 0,02–0,24, Kachel-URL 1200–3400; Sentinel-1, MeteoSwiss, swissALTI3D, Ergebnis-Ebene, alter Permalink; hell und dunkel; 1280×800, 1280×360, 360×740.
 
-### 15.6 Umsetzung (25.11.2026, nach den Empfehlungen F11–F14 = 1)
+### 15.6 Umsetzung (25.11.2026, nach den Empfehlungen F11–F14 = 1, von Otto am 27.11.2026 bestätigt)
 
 Ein PR (F14 = 1): rund 280 geänderte Zeilen ohne Tests und Doku.
 
@@ -465,3 +465,9 @@ Ein PR (F14 = 1): rund 280 geänderte Zeilen ohne Tests und Doku.
 | Leitfaden §9 und Prüfungen, `adr/0035` §6 | `docs/` |
 
 **Befund aus dem Browser-Check:** Bei 360×740 steht die Legende seit UI-12 eingeklappt in der Statuszeile; der Check öffnet sie über ihren Titel (auf `main` scheiterte der alte Check dort ebenso). swissALTI3D zeigt beim Zoom des Checks die Übersicht; Kacheln des Bands verlangt der Check nur für ein skaliertes Band.
+
+### 15.7 Antworten Otto (27.11.2026)
+
+> F11 = 1, F12 = 1, F13 = 1, F14 = 1. A12–A15 angenommen.
+
+Folgen: keine Änderung an der Umsetzung (§15.6), sie folgte den Empfehlungen. Umrechnung bleibt im Frontend an `buildTileUrl` und `measureView`; `stored` nur am Standardbild der Registry; Look-Erbe nur über `earthx:source_values`, ältere Ergebnisse erben nichts; ein PR.
