@@ -168,6 +168,21 @@ async def test_a_glossary_group_no_row_has_is_an_unknown_unit(catalogue, aconn):
     assert await _ids(aconn, "Gewässer savanna") == await _ids(aconn, "savanna") == (KENYA.dataset_id,)
 
 
+async def test_a_rank_with_the_words_of_a_unit_alone_is_its_rank_with_every_alternative(catalogue, aconn):
+    # M5-23 plan §5a: for a row without a phrase of the unit, ts_rank_cd gives the same with the words alone.
+    async with aconn.cursor() as cur:
+        await cur.execute(
+            """SELECT ts_rank_cd(document, q.query) = ts_rank_cd(document, q.single), count(*)
+               FROM public.earthx_dataset_search, (SELECT
+                   phraseto_tsquery('english', 'terrain') || phraseto_tsquery('english', 'digital surface model')
+                       || phraseto_tsquery('simple', 'alpine') AS query,
+                   phraseto_tsquery('english', 'terrain') || phraseto_tsquery('simple', 'alpine') AS single) q
+               WHERE document @@ q.query AND NOT document @@ phraseto_tsquery('english', 'digital surface model')
+               GROUP BY 1"""
+        )
+        assert await cur.fetchall() == [(True, 4)]
+
+
 async def test_a_surface_model_is_no_terrain_model(catalogue, aconn):
     # Every entry made from swissALTI3D carries its band `dtm`; only one names a surface model.
     assert await _ids(aconn, "Oberflächenmodell") == ("test-surface",)
@@ -556,7 +571,8 @@ async def test_the_ranks_of_the_units_of_a_hit_are_summed_in_the_order_of_the_un
     # M5-66: with more than one unit the ranks are summed when the rows the joining keeps are read again; with one
     # there is nothing to sum.
     statement, _ = _full_text_statement(Start.NO_AREA, text="Neophyten Kanton")
-    assert "sum(ts_rank_cd(s.document, u.query) ORDER BY u.ord)" in statement.as_string(aconn)
+    # M5-23: the rank of a unit is ts_rank_cd with its query, or with its words alone where the row has no phrase.
+    assert "ts_rank_cd(s.document, u.single) END ORDER BY u.ord)" in statement.as_string(aconn)
     statement, _ = _full_text_statement(Start.NO_AREA)
     assert "sum(" not in statement.as_string(aconn)
 
