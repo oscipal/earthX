@@ -3,6 +3,7 @@ per band (Otto, 24.11.2026): a step that changes other bands leaves them.
 
 Synthetic ``uint8`` class bands, served like the other core tests. A kept band carries ``classification:classes`` in the
 result's ``bands`` and, in a type that holds one, the colour table in the COG; a step that changes values leaves neither.
+By the same rule each band says whether it holds the values of the source (M5-68, ``earthx:source_values``).
 """
 
 from __future__ import annotations
@@ -223,3 +224,66 @@ def test_a_step_that_acts_on_some_bands_takes_the_classes_of_those_only() -> Non
     operator = SimpleNamespace(hides=None, passes_values=lambda params: False, bands_used=lambda params: BandUse(acts_on=frozenset({"scl"})))
     kept = _keep_classes(meta, [SimpleNamespace(operator=operator, params=None)])
     assert [band.classes for band in kept.bands] == [rows, None]
+
+
+def _source_values(result) -> list[bool]:
+    return [band.get("earthx:source_values") is True for band in result.properties["bands"]]
+
+
+class TestSourceValues:
+    """M5-68 (plan M5-60 §15.2): each band of the result says whether its values are those of the source band of its name,
+    unchanged, by the rule the classes follow; the panel gives it the look of that band. A band without classes says it too."""
+
+    def test_a_result_without_steps_holds_the_values_of_the_source(self, tmp_path: Path) -> None:
+        result = _run(_recipe([], classes=None), tmp_path)
+        assert _source_values(result) == [True]
+
+    @pytest.mark.parametrize("step", [MASK_EQ_20, _mask("map", [10]), _reproject("nearest")], ids=["values", "classes", "nearest"])
+    def test_a_step_that_passes_the_values_on_keeps_them(self, tmp_path: Path, step: dict) -> None:
+        assert _source_values(_run(_recipe([step], classes=None), tmp_path)) == [True]
+
+    def test_band_math_beside_a_band_leaves_it_its_values(self, tmp_path: Path) -> None:
+        result = _run(_recipe([BAND_MATH], bands=["map", "doubled"], classes=None), tmp_path)
+        assert _source_values(result) == [True, False]
+        assert "earthx:source_values" not in result.properties["bands"][1]
+
+    @pytest.mark.parametrize("step", [SCALE_2, _reproject("bilinear")], ids=["names-no-band", "bilinear"])
+    def test_a_step_that_changes_every_band_leaves_none(self, tmp_path: Path, step: dict) -> None:
+        result = _run(_recipe([step], assets=("map", "other"), classes=None), tmp_path)
+        assert _source_values(result) == [False, False]
+        assert all("earthx:source_values" not in band for band in result.properties["bands"])
+
+    def test_a_scaled_band_holds_its_physical_values_and_keeps_the_look(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stored = (numpy.indices((HEIGHT, WIDTH))[1] % 50 + 1000).astype("uint16")
+        path = sources.build_band_cog(tmp_path / "red.tif", stored, scale=0.0001, offset=-0.1)
+        sources.serve({sources.url("red"): path}, monkeypatch)
+        data = _recipe([], assets=("red",), classes=None, dtype="float32")
+        data["inputs"][0]["resolved"] = [resolved("ITEM_A", "red", href=sources.url("red"), scale=0.0001, offset=-0.1)]
+        work = tmp_path / "work"
+        work.mkdir()
+        result = _run(data, work)
+        band = result.properties["bands"][0]
+        assert band["data_type"] == "float32" and band["earthx:source_values"] is True
+        assert band["statistics"]["minimum"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_a_step_that_acts_on_some_bands_changes_the_values_of_those_only() -> None:
+    """Normalize names the bands it acts on; Band math that writes a band of the source's name changes that band."""
+    from types import SimpleNamespace
+
+    from rasterio.transform import Affine
+
+    from earthx.processing.core import _source_values as source_values
+    from earthx.processing.operators import BandMeta, BandUse, RasterMeta
+
+    meta = RasterMeta(None, Affine.identity(), 1, 1, (BandMeta("red", "float32", None), BandMeta("nir", "float32", None)))
+
+    def step(use: BandUse, passes: bool = False) -> SimpleNamespace:
+        return SimpleNamespace(operator=SimpleNamespace(passes_values=lambda params: passes, bands_used=lambda params: use), params=None)
+
+    assert source_values(meta, [step(BandUse(acts_on=frozenset({"nir"})))]) == {"red"}
+    assert source_values(meta, [step(BandUse(adds="red"))]) == {"nir"}
+    assert source_values(meta, [step(BandUse(), passes=True), step(BandUse(adds="ndvi"))]) == {"red", "nir"}
+    assert source_values(meta, [step(BandUse())]) == frozenset()

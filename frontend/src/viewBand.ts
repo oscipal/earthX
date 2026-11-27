@@ -11,7 +11,7 @@ import { lookOf, type DisplayLook } from './displayLook';
 import { fieldNumber } from './numberFormat';
 import { auxiliaryAssetsOf, bandSources, maskLayerOf, selectableAssets, trueColorOf } from './processingOrder';
 import type { AppliedRender, Collection, DownloadedInfo, StacItem } from './types';
-import { rawOf, type BandScaling } from './viewMeasure';
+import type { BandScaling } from './viewMeasure';
 
 // The keys of the assets of `item` that hold one band, in the order of the item: not the pictures made from the bands, not
 // the mask layer, and not the asset the standard picture is made from where that is a true-colour one. For COG assets, whose
@@ -34,12 +34,19 @@ export function bandLookOf(collection: Collection | undefined, band: string): Di
   return lookOf(listed.find((one) => one?.name === band)?.['earthx:look']);
 }
 
-// The fixed range of a look in the values the tiles of the band draw: the look is physical, the tiles draw what is stored
-// (`viewMeasure.ts`); a scaling that cannot be read counts as none (M5-60 A5). `null` for a range that comes from a measure.
-export function fixedRangeOf(look: DisplayLook, scaling: BandScaling | null): { vmin: string; vmax: string } | null {
+// The scaling the registry states for a band (`earthx:scaling`, M5-68): for a picture drawn without an item, an overview. `null` for an
+// unscaled band and for one that cannot be turned back.
+export function scalingOfBand(collection: Collection | undefined, band: string | undefined): BandScaling | null {
+  const listed = Array.isArray(collection?.['earthx:bands']) ? collection['earthx:bands'] : [];
+  const stated = listed.find((one) => one?.name === band)?.['earthx:scaling'];
+  const { scale, offset } = stated ?? {};
+  return typeof scale === 'number' && scale > 0 && Number.isFinite(scale) && typeof offset === 'number' && Number.isFinite(offset) ? { scale, offset } : null;
+}
+
+// The fixed range of a look, physical as the fields are (M5-68). `null` for a range that comes from a measure.
+export function fixedRangeOf(look: DisplayLook): { vmin: string; vmax: string } | null {
   if (look.scale !== 'fixed' || look.low === undefined || look.high === undefined) return null;
-  const one = scaling ?? { scale: 1, offset: 0 };
-  return { vmin: fieldNumber(rawOf(look.low, one)), vmax: fieldNumber(rawOf(look.high, one)) };
+  return { vmin: fieldNumber(look.low), vmax: fieldNumber(look.high) };
 }
 
 // The asset a scene is drawn from for a look: the band of the look, else the one it was opened with.

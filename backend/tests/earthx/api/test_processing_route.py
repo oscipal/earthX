@@ -1475,6 +1475,22 @@ class TestAnExport:
         response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order()}, "outputs": outputs})
         assert response.status_code == 201, response.text
 
+    @pytest.mark.parametrize(
+        "style", [{}, {"band": "red"}, {"band": "red", "colormap": "nope", "range": [0, 1]}, "viridis", None]
+    )
+    async def test_a_style_that_is_none_is_a_400_and_nothing_is_placed(self, rig: Rig, style: Any) -> None:
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "exportStyle": style}})
+        assert "exportStyle" in problem(response, 400)["detail"]
+        untouched(rig)
+
+    async def test_a_style_goes_with_an_export_only(self, rig: Rig) -> None:
+        style = {"band": "red", "colormap": "magma", "range": [0, 0.3]}
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": order(), "exportStyle": style}})
+        assert "goes with an export" in problem(response, 400)["detail"]
+        untouched(rig)
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "exportStyle": style}})
+        assert response.status_code == 201, response.text
+
     async def test_a_lone_surrogate_in_the_origin_is_a_400(self, rig: Rig) -> None:
         """Valid JSON text, no UTF-8 form: it may not reach ATTRIBUTION.txt (review of M4-11a)."""
         body = json.dumps({"inputs": {"recipe": export_order(), "aoiProvenance": {"attribution": "SURROGATE"}}})

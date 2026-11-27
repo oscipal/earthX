@@ -576,8 +576,10 @@ class TestBuildDownloadZip:
             assert names == {
                 "exports/visual.tif",
                 "exports/visual_mask.tif",
+                "exports/visual.qml",
                 "exports/red.tif",
                 "exports/red_mask.tif",
+                "exports/red.qml",
                 "exports/BANDS.txt",
                 dl.NOTICE_FILENAME,
                 dl.AOI_FILENAME,

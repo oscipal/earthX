@@ -170,6 +170,43 @@ def test_guard_per_host_and_pattern_at_its_edges(world: World) -> None:
     assert guarded == (40,)
 
 
+def test_pages_that_are_gone_count_for_no_guard_and_are_hidden_however_many(world: World) -> None:
+    # Otto, 25.11.2026 (M5-67 §23): 404 and 410 are never the check's fault; timeouts, 429, 5xx, no_title and 403 are.
+    keys = [f"k{i:02d}" for i in range(60)]
+    _published(world, *keys)
+    gone = [replace(_result(world, k, "failed", pattern="dead"), reason=r, status=int(r[5:]))
+            for k, r in zip(keys[:30], ["http_404", "http_410"] * 15, strict=True)]
+    passed = [_result(world, k, pattern="alive") for k in keys[30:50]]
+    spa = [replace(_result(world, k, "failed", pattern="spa"), host="spa.example.org") for k in keys[50:55]]
+    spa += [replace(_result(world, k, "failed", pattern="spa"), host="spa.example.org", reason="http_403", status=403)
+            for k in keys[55:60]]
+    record_results(world.conn, gone + passed + spa, NOW)
+    groups = {(g.kind, g.key): g for g in guard_results(world.conn, NOW - timedelta(minutes=1), min_checked=10,
+                                                        failed_share=0.25)}
+    dead, host = groups[("pattern", "dead")], groups[("host", "amt.example.org")]
+    assert (dead.gone, dead.failed, dead.checked, dead.guarded) == (30, 0, 0, False)
+    assert (host.gone, host.passed, host.guarded) == (30, 20, False)
+    assert groups[("host", "spa.example.org")].guarded
+    applied = apply_results(world.conn, dry_run=False, only=[world.ckan.source_id])
+    assert applied.hidden == 30
+    assert {world.row(k)["state"] for k in keys[:30]} == {"link_hidden"}
+    assert {world.row(k)["state"] for k in keys[30:]} == {"published"}
+
+
+def test_a_page_that_is_gone_is_hidden_also_in_a_guarded_group(world: World) -> None:
+    keys = [f"k{i:02d}" for i in range(25)]
+    _published(world, *keys)
+    results = [_result(world, k, "failed") for k in keys[:20]]
+    results += [replace(_result(world, k, "failed"), reason="http_404", status=404) for k in keys[20:]]
+    record_results(world.conn, results, NOW)
+    groups = {(g.kind, g.key): g for g in guard_results(world.conn, NOW - timedelta(minutes=1), min_checked=20,
+                                                        failed_share=0.25)}
+    assert groups[("pattern", "p")].guarded and groups[("pattern", "p")].gone == 5
+    assert apply_results(world.conn, dry_run=False, only=[world.ckan.source_id]).hidden == 5
+    assert {world.row(k)["state"] for k in keys[20:]} == {"link_hidden"}
+    assert {world.row(k)["state"] for k in keys[:20]} == {"published"}
+
+
 def test_a_share_just_below_the_threshold_guards_nothing(world: World) -> None:
     keys = [f"k{i:02d}" for i in range(20)]
     world.put(world.ckan, *(_find(k) for k in keys))
@@ -180,10 +217,14 @@ def test_a_share_just_below_the_threshold_guards_nothing(world: World) -> None:
 
 
 def test_due_links_come_most_urgent_first(world: World) -> None:
-    _published(world, "fresh", "old", "never", "unchecked", "moved")
+    _published(world, "fresh", "old", "never", "unchecked", "moved", "guarded")
     world.put(world.ckan, _find("new"))
     world.report()
     record_results(world.conn, [_result(world, "fresh")], NOW - timedelta(days=2))
+    # A guarded result decided nothing: due again in the next run, not only after 30 days (M5-67 §23.8).
+    record_results(world.conn, [_result(world, "guarded", "failed")], NOW - timedelta(days=1))
+    world.conn.execute("UPDATE public.earthx_link_check SET guarded = true WHERE dataset_id = %s",
+                       (_id(world, "guarded"),))
     record_results(world.conn, [_result(world, "old")], NOW - timedelta(days=40))
     record_results(world.conn, [_result(world, "unchecked", "unchecked")], NOW - timedelta(days=1))
     record_results(world.conn, [_result(world, "moved", url="https://amt.example.org/frueher")], NOW)
@@ -193,6 +234,7 @@ def test_due_links_come_most_urgent_first(world: World) -> None:
         ("new", 0),
         ("never", 1),
         ("moved", 1),
+        ("guarded", 2),
         ("unchecked", 2),
         ("old", 3),
     ]

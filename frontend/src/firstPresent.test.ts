@@ -107,7 +107,7 @@ describe('preferredGeoreferencedAsset with first_present', () => {
 describe('quicklookPlan for a dataset whose quicklook the map cannot place', () => {
   it('draws the preview tiles of the band the scene carries instead of a thumbnail that would not show', () => {
     const plan = quicklookPlan(scene(['hh', 'hv']), dataset());
-    expect(plan).toEqual({ kind: 'tiles', asset: 'hh', minZoom: 7, maxZoom: 7, render: { expression: undefined, colormapName: undefined, rescale: '70,750' } });
+    expect(plan).toEqual({ kind: 'tiles', asset: 'hh', minZoom: 7, maxZoom: 7, render: { expression: undefined, colormapName: undefined, rescale: '70,750', stored: true } });
   });
 
   it('draws them for a VV scene with the stretch of vv', () => {

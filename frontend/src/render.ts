@@ -10,6 +10,7 @@ import { DEFAULT_PERCENT, percentOf, samePercent, type RangeUnit } from './perce
 import type { AppliedRender, EarthxDefaultRender } from './types';
 import type { PresetParams } from './quickPresets';
 import { canonicalJson } from './processing';
+import { physicalOf, rescaleThrough, type BandScaling } from './viewMeasure';
 
 export function autoRescale(stats: Record<string, BandStatistics>): [number, number] | null {
   const bands = Object.values(stats);
@@ -31,13 +32,25 @@ export function autoRescale(stats: Record<string, BandStatistics>): [number, num
 // the preview and the full-resolution view of one scene would not look like the
 // same data. `rescale` takes the first band pair, which TiTiler broadcasts to
 // every output band, exactly as `autoRescale` above relies on.
+// The range is in the stored numbers of the file (`stored`, M5-68), as the registry gives it to the tiler.
 export function appliedRenderFrom(render: EarthxDefaultRender): AppliedRender {
   const rescale = render.rescale?.[0];
   return {
     expression: render.expression ?? undefined,
     colormapName: render.colormap_name ?? undefined,
     rescale: rescale ? `${rescale[0]},${rescale[1]}` : undefined,
+    ...(rescale ? { stored: true as const } : {}),
   };
+}
+
+// A look in physical values (M5-68): a range of stored numbers goes through the scaling of the asset it is drawn from; without one the
+// numbers are the values already. A look that is physical stays the same object.
+export function physicalRender(render: AppliedRender, scaling: BandScaling | null): AppliedRender {
+  if (!render.stored) return render;
+  const physical = { ...render };
+  delete physical.stored;
+  if (scaling && physical.rescale && !physical.expression) physical.rescale = rescaleThrough(physical.rescale, (value) => physicalOf(value, scaling));
+  return physical;
 }
 
 // The fields of the view's controls for a look, the other way round: what "Apply" would send back to make the same

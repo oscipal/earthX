@@ -34,6 +34,8 @@ __all__ = [
     "LicenceCatalogue",
     "LicenceMatch",
     "LicenceTerm",
+    "NOT_A_LICENCE_FILE",
+    "NotALicence",
     "Spelling",
     "is_standard_term",
     "load_licences",
@@ -93,7 +95,19 @@ class Spelling:
     withdrawn_on: date | None = None
 
 
-for _part in (LicenceTerm, Grant, Spelling):
+@dataclass(frozen=True, slots=True)
+class NotALicence:
+    """A statement that is never a licence (Otto's rule of 19.11.2026; M5-67 §23.5): the address of a feed or a page,
+    a statement of access, a disclaimer, a note. It counts for no match; a find with only such statements waits as
+    ``no_licence``. ``match`` ``prefix`` for a long text known only by its beginning."""
+
+    statement: str
+    kind: str
+    added_on: date
+    match: str = "exact"
+
+
+for _part in (LicenceTerm, Grant, Spelling, NotALicence):
     _part.__pydantic_config__ = ENTRY_FILE_CONFIG  # type: ignore[attr-defined]
 del _part
 
@@ -121,6 +135,13 @@ class LicenceCatalogue:
     grants: Mapping[str, Mapping[str, frozenset[str]]]
     #: Normal statement → licence ref, only those of ``spellings.yaml``.
     spellings: Mapping[str, str] = field(default_factory=dict)
+    #: Statements that are never a licence (``not_a_licence.yaml``), exact and as beginnings.
+    not_licences: frozenset[str] = frozenset()
+    not_licence_prefixes: tuple[str, ...] = ()
+
+    def is_not_a_licence(self, statement: str) -> bool:
+        """Whether ``statement`` (in its normal form) is on the list of statements that are never a licence."""
+        return statement in self.not_licences or statement.startswith(self.not_licence_prefixes)
 
     @property
     def fingerprint(self) -> str:
@@ -128,7 +149,8 @@ class LicenceCatalogue:
         terms = sorted((ref, term.matches, repr(term.license)) for ref, term in self.terms.items())
         grants = sorted((source, sorted((p, sorted(r)) for p, r in by.items())) for source, by in self.grants.items())
         spellings = sorted(self.spellings.items())
-        return hashlib.sha256(repr((terms, grants, spellings)).encode("utf-8")).hexdigest()
+        not_licences = (sorted(self.not_licences), sorted(self.not_licence_prefixes))
+        return hashlib.sha256(repr((terms, grants, spellings, not_licences)).encode("utf-8")).hexdigest()
 
     def granted(self, source_id: str, publisher: str | None, refs: tuple[str, ...]) -> bool:
         """Whether every licence of ``refs`` is still in the catalogue and granted to this publisher of this source."""
@@ -139,9 +161,12 @@ class LicenceCatalogue:
         """The licence of a find of ``source_id`` by ``publisher`` with these statements (adr/0033 §6, §7).
 
         Every statement must mean a licence of the catalogue that is granted to this publisher of this source; the
-        entry then carries the narrowest of them (plan A10): the lowest tier, every flag only where all allow it.
+        entry then carries the narrowest of them (plan A10): the lowest tier, every flag only where all allow it. A
+        statement that is never a licence counts for nothing (M5-67 §23.5).
         """
-        normal = sorted({text for value in statements if (text := normal_statement(value))})
+        normal = sorted(
+            {text for value in statements if (text := normal_statement(value)) and not self.is_not_a_licence(text)}
+        )
         if not normal:
             return LicenceMatch(None, None, (), "no_licence")
         refs = []
@@ -256,6 +281,44 @@ def _read_grants(directory: Path, known_refs: Collection[str], known_sources: Co
     return grants
 
 
+NOT_A_LICENCE_FILE = "not_a_licence.yaml"
+NOT_A_LICENCE_KINDS = ("feed", "page", "access", "disclaimer", "note")
+#: A beginning shorter than this would catch statements it was not written for.
+MIN_PREFIX_CHARS = 80
+
+
+def _read_not_a_licence(path: Path, by_statement: Mapping[str, str]) -> tuple[frozenset[str], tuple[str, ...]]:
+    """The statements that are never a licence; none of them may mean a licence of the catalogue or a spelling."""
+    data = read_yaml(path) if path.exists() else None
+    if data is None:
+        return frozenset(), ()
+    if not isinstance(data, list):
+        raise EntryFileError(f"{path.name}: the statements are a list")
+    exact: set[str] = set()
+    prefixes: list[str] = []
+    for index, item in enumerate(data):
+        where = f"{path.name}[{index}]"
+        entry: NotALicence = _validate(NotALicence, item, where)
+        normal = normal_statement(entry.statement)
+        if not normal:
+            raise EntryFileError(f"{where}: statement is a non-blank text")
+        if entry.kind not in NOT_A_LICENCE_KINDS:
+            raise EntryFileError(f"{where}: kind is one of {', '.join(NOT_A_LICENCE_KINDS)}")
+        if entry.match not in ("exact", "prefix"):
+            raise EntryFileError(f"{where}: match is exact or prefix")
+        if entry.match == "prefix" and len(normal) < MIN_PREFIX_CHARS:
+            raise EntryFileError(f"{where}: a prefix has at least {MIN_PREFIX_CHARS} characters")
+        if entry.added_on > date.today():
+            raise EntryFileError(f"{where}: added_on lies in the future")
+        meant = [s for s in by_statement if s == normal or (entry.match == "prefix" and s.startswith(normal))]
+        if meant:
+            raise EntryFileError(f"{where}: the statement means {by_statement[meant[0]]} in terms.yaml or spellings.yaml")
+        if normal in exact or normal in prefixes:
+            raise EntryFileError(f"{where}: the statement stands twice")
+        (prefixes.append if entry.match == "prefix" else exact.add)(normal)
+    return frozenset(exact), tuple(prefixes)
+
+
 SPELLINGS_FILE = "spellings.yaml"
 SPELLING_RULES = ("S1", "S2", "S3")
 #: Hosts of licensors whose terms are standard licences without an SPDX identifier (the terms of opendata.swiss, the
@@ -307,7 +370,8 @@ def _read_spellings(path: Path, by_ref: Mapping[str, LicenceTerm], by_statement:
 
 
 def load_licences(known_sources: Collection[str], directory: Path = LICENSES_DIR) -> LicenceCatalogue:
-    """The licence catalogue, the spellings and the grants under ``directory``, checked (adr/0033 §6.2): a statement
+    """The licence catalogue, the spellings, the grants and the statements that are never a licence under
+    ``directory``, checked (adr/0033 §6.2): a statement
     means at most one licence, every granted licence is in the catalogue, every source of a grant is one of
     ``known_sources``."""
     terms = _read_terms(directory / "terms.yaml")
@@ -325,9 +389,12 @@ def load_licences(known_sources: Collection[str], directory: Path = LICENSES_DIR
             by_statement[normal] = term.license_ref
     spellings = _read_spellings(directory / SPELLINGS_FILE, by_ref, by_statement)
     grants = _read_grants(directory / "grants", by_ref, known_sources)
+    not_licences, prefixes = _read_not_a_licence(directory / NOT_A_LICENCE_FILE, by_statement)
     return LicenceCatalogue(
         terms=MappingProxyType(by_ref),
         by_statement=MappingProxyType(by_statement),
         grants=MappingProxyType({key: MappingProxyType(value) for key, value in grants.items()}),
         spellings=MappingProxyType(spellings),
+        not_licences=not_licences,
+        not_licence_prefixes=prefixes,
     )

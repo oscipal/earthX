@@ -554,10 +554,25 @@ def _link_candidates(
         else None
     )
     return [
-        *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources)),
-        *((LinkRank.DATASET_PAGE, page) for page in _page_candidates(package, extras, source)),
+        *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources) if not _old_form(url, source)),
+        *(
+            (LinkRank.DATASET_PAGE, page)
+            for page in _page_candidates(package, extras, source)
+            if not _old_form(page, source)
+        ),
         (LinkRank.CATALOGUE_PAGE, catalog_page),
     ]
+
+
+def _old_form(value: object, source: SourceConfig) -> bool:
+    """Whether ``value`` is the catalogue's page of a dataset in an older form that no longer leads to it
+    (``catalog_page_aliases``; Otto, 25.11.2026): the find then gets its page in the form of ``catalog_page``."""
+    text = text_of(value)
+    for alias in source.catalog_page_aliases if text is not None else ():
+        prefix, _, suffix = alias.partition("{name}")
+        if text.startswith(prefix) and text.endswith(suffix) and len(text) > len(prefix) + len(suffix):
+            return bool(_NAME.fullmatch(text[len(prefix) : len(text) - len(suffix)]))
+    return False
 
 
 def extract_package(

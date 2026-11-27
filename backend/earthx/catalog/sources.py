@@ -58,7 +58,7 @@ _FIELDS = frozenset(
     }
 )
 #: Fields a seed file may leave out (the default holds).
-_OPTIONAL_FIELDS = frozenset({"dedupe_collection_links", "catalog_page_check"})
+_OPTIONAL_FIELDS = frozenset({"dedupe_collection_links", "catalog_page_check", "catalog_page_aliases"})
 #: The lowest precedence a source may have among duplicates (M5-20 plan §8): 1 wins over 2.
 MAX_DEDUPE_RANK = 9
 _COUNTRY = re.compile(r"[A-Z]{2}")
@@ -146,6 +146,9 @@ class SourceConfig:
     dedupe_collection_links: bool = False
     #: How the link check verifies the links to ``catalog_page`` (M5-67 F12 = 2); by default the page itself.
     catalog_page_check: CatalogPageCheck = CatalogPageCheck()
+    #: Older forms of ``catalog_page`` that no longer lead to the page (CKAN only; Otto, 25.11.2026): an address in one
+    #: of them is never the link "Source" of a find, which gets its page in the form of ``catalog_page`` instead.
+    catalog_page_aliases: tuple[str, ...] = ()
 
     @property
     def host(self) -> str:
@@ -219,6 +222,21 @@ def _catalog_page(name: str, protocol: SourceProtocol, value: object) -> str | N
     if value.count(placeholder) != 1 or value.replace(placeholder, "").count("{"):
         raise _bad(name, f"catalog_page names {placeholder} once and no other placeholder")
     return value
+
+
+def _catalog_page_aliases(
+    name: str, protocol: SourceProtocol, catalog_page: str | None, value: object
+) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if protocol is not SourceProtocol.CKAN or catalog_page is None:
+        raise _bad(name, "catalog_page_aliases is only for a CKAN source with a catalog_page")
+    if not isinstance(value, list) or not value:
+        raise _bad(name, "catalog_page_aliases is a list of older forms of catalog_page")
+    aliases = tuple(form for form in value if form is not None and _catalog_page(name, protocol, form))
+    if len(aliases) != len(value) or catalog_page in aliases or len(set(aliases)) != len(aliases):
+        raise _bad(name, "catalog_page_aliases names each older form once, and not catalog_page itself")
+    return aliases
 
 
 def _robots_exception(name: str, endpoint: str, value: object) -> RobotsException | None:
@@ -314,6 +332,7 @@ def read_source(path: Path) -> SourceConfig:
         dedupe_rank=_count(name, data, "dedupe_rank", MAX_DEDUPE_RANK),
         dedupe_collection_links=collection_links,
         catalog_page_check=_catalog_page_check(name, protocol, catalog_page, data.get("catalog_page_check")),
+        catalog_page_aliases=_catalog_page_aliases(name, protocol, catalog_page, data.get("catalog_page_aliases")),
     )
 
 

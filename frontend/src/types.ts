@@ -278,7 +278,8 @@ export interface Collection {
   // of a STAC band, M5-59); the column "Description" of the Data catalogue. Absent on a backend before it. A band of classes
   // carries them as the classification extension writes them (M5-62, read by `bandClasses.ts`).
   // `earthx:look`: the look the band starts with (M5-60), the form of `x-earthx-looks`, its numbers in the unit of the band.
-  'earthx:bands'?: { name: string; description: string; 'classification:classes'?: unknown; 'earthx:look'?: unknown }[] | null;
+  // `earthx:scaling`: the `band_scaling` of a scaled band (M5-68), read by `viewBand.ts::scalingOfBand`.
+  'earthx:bands'?: { name: string; description: string; 'classification:classes'?: unknown; 'earthx:look'?: unknown; 'earthx:scaling'?: { scale?: unknown; offset?: unknown } }[] | null;
   // The assets that are no band of the data (a picture, a preview), by the asset key an order names (NM4-07).
   'earthx:auxiliary_assets'?: string[] | null;
   // The three bands of the colour picture, red, green, blue (NM4-64); empty for a dataset that has none.
@@ -329,6 +330,10 @@ export interface AppliedRender {
   // in their colours whatever its type, `float32` included, which holds no colour table of its own.
   colormap?: string;
   rescale?: string; // "min,max" (adr/0006 §3.4 Z4)
+  // `rescale` holds the stored numbers of the file, not physical values (M5-68): only the standard picture of the registry
+  // (`default_render`), which a browse preview draws as it is and the view lifts into physical values (`physicalRender`). Every other
+  // range is physical, the ones a permalink or a result kept included.
+  stored?: true;
   // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `rescale` holds the values they gave when
   // they were applied, so the picture is always drawn from values; this is only for the fields to show "%" again.
   percent?: Percent;

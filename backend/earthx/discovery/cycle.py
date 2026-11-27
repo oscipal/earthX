@@ -31,7 +31,7 @@ from typing import Any
 import psycopg
 import yaml
 
-from earthx.catalog.approvals import APPROVALS_DIR, load_approvals
+from earthx.catalog.approvals import APPROVALS_DIR, is_file_name, load_approvals
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.registry import ConfigError
@@ -230,6 +230,8 @@ class Finding:
 
     key: str
     text: str
+    #: Lines under the finding, each one point (the patterns of a guarded host).
+    items: tuple[str, ...] = ()
 
 
 _LINE = re.compile(r"- \[ \] \*\*(?P<key>[^*]+)\*\* · seit (?P<since>\d{4}-\d{2}-\d{2}) · zuletzt \d{4}-\d{2}-\d{2} · ")
@@ -248,6 +250,7 @@ def merge_findings(document: str, findings: Sequence[Finding], day: date) -> str
     lines = [
         f"- [ ] **{key}** · seit {previous.get(key, (day.isoformat(), ''))[0]} · zuletzt {day.isoformat()} · "
         + " ".join(clean(f.text).split())
+        + "".join(f"\n  - {' '.join(clean(item).split())}" for item in f.items)
         for key, f in keyed.items()
     ]
     body = "\n".join(lines) if lines else f"Keine offenen Befunde aus dem Lauf vom {day.isoformat()}."
@@ -269,6 +272,38 @@ def _examples(items: Sequence[Mapping[str, Any]], limit: int = 3) -> str:
     return "; ".join(shown)
 
 
+#: The patterns of a guarded host shown in the list of findings; the others are in ``linkpruefung.md``.
+GUARD_PATTERNS_SHOWN = 5
+
+
+def _counts(group: Mapping[str, Any]) -> str:
+    return f"{group['failed']} durchgefallen, {group['transient']} ohne Antwort, {group['passed']} bestanden"
+
+
+def guard_findings(groups: Sequence[Mapping[str, Any]]) -> list[Finding]:
+    """One finding per host with a guarded result (plan §4c), its guarded patterns as points with their numbers, the
+    largest first, so that ``befunde.md`` stays readable (Otto, 25.11.2026)."""
+    hosts = {g["key"]: g for g in groups if g["kind"] == "host"}
+    patterns: dict[str, list[Mapping[str, Any]]] = {}
+    for group in groups:
+        if group["kind"] == "pattern" and group["guarded"]:
+            patterns.setdefault(re.split(r"[/?#]", group["key"], maxsplit=1)[0], []).append(group)
+    guarded = [key for key, group in hosts.items() if group["guarded"]]
+    found = []
+    for host in guarded + sorted(set(patterns) - set(guarded)):
+        group = hosts.get(host)
+        if group is not None and group["guarded"]:
+            text = f"Host: {_counts(group)}; nichts verborgen, nichts freigegeben, liegt eher an der Prüfung."
+        else:
+            text = "Host nicht geschützt; in den Mustern unten nichts verborgen, nichts freigegeben."
+        own = sorted(patterns.get(host, []), key=lambda g: -(g["failed"] + g["transient"] + g["passed"]))
+        items = [f"`{g['key']}`: {_counts(g)}" for g in own[:GUARD_PATTERNS_SHOWN]]
+        if len(own) > GUARD_PATTERNS_SHOWN:
+            items.append(f"und {len(own) - GUARD_PATTERNS_SHOWN} weitere Muster, siehe `linkpruefung.md`")
+        found.append(Finding(f"SCHUTZ {host}", text, tuple(items)))
+    return found
+
+
 def findings_of(
     *,
     linkcheck: Mapping[str, Any] | None,
@@ -283,7 +318,7 @@ def findings_of(
     propose: Mapping[str, Any] | None = None,
     propose_error: str | None = None,
 ) -> list[Finding]:
-    """The findings of this run, the guarded hosts and patterns first (plan §4c)."""
+    """The findings of this run, the guarded hosts with their patterns first (plan §4c)."""
     found: list[Finding] = []
     if run_error:
         found.append(Finding("LAUF", f"Lauf gescheitert: {run_error}. Siehe `{folder}/fehler.log`."))
@@ -296,22 +331,24 @@ def findings_of(
             found.append(Finding(f"KANDIDATEN {source_id}", f"Kandidaten gescheitert ({count['error']})."))
     if linkcheck:
         examples = linkcheck.get("examples") or {}
-        for group in linkcheck.get("groups") or []:
-            if group["guarded"]:
-                found.append(
-                    Finding(
-                        f"SCHUTZ {group['kind']} {group['key']}",
-                        f"{group['failed']} durchgefallen, {group['transient']} ohne Antwort, {group['passed']}"
-                        " bestanden: nichts verborgen, nichts freigegeben; liegt eher an der Prüfung."
-                        + (f" Beispiele: {_examples(examples.get(group['key'], []))}" if group["kind"] == "pattern" else ""),
-                    )
+        found += guard_findings(linkcheck.get("groups") or [])
+        for form in linkcheck.get("forms") or []:
+            found.append(
+                Finding(
+                    f"UNGEPRUEFT {form['link']}",
+                    f"{form['count']} Links ohne sichere Prüfung, ihre Einträge bleiben unsichtbar."
+                    if form["reason"] == "no_safe_check"
+                    else f"{form['count']} Links: Prüfung über die Schnittstelle, wartet auf Ottos Bestätigung der"
+                    " Adressform (`form_confirmed_on` in `linkcheck.yaml`); bis dahin unsichtbar.",
                 )
+            )
         for group in linkcheck.get("groups") or []:
-            if group["kind"] == "pattern" and not group["guarded"] and group["failed"] + group["unchecked"] >= 5:
+            failed = group["failed"] + group.get("gone", 0)
+            if group["kind"] == "pattern" and not group["guarded"] and failed >= 5:
                 found.append(
                     Finding(
                         f"MUSTER {group['key']}",
-                        f"{group['failed']} durchgefallen, {group['unchecked']} nicht prüfbar, {group['passed']}"
+                        f"{failed} durchgefallen, {group['unchecked']} nicht prüfbar, {group['passed']}"
                         f" bestanden. Beispiele: {_examples(examples.get(group['key'], []))}",
                     )
                 )
@@ -335,7 +372,7 @@ def findings_of(
         if count >= 2:
             found.append(Finding(f"LIZENZ {statement[:60]}", f"{count} Funde warten auf eine Einstufung von Otto."))
     for source_id, message in sorted(source_errors.items()):
-        found.append(Finding(f"QUELLE {source_id}", f"Harvest gescheitert: {message}"))
+        found.append(Finding(f"QUELLE {source_id}", f"Harvest gescheitert: {message} {REPORT_SKIPPED}"))
     for pr in open_prs:
         found.append(Finding(f"PR {pr}", "PR eines früheren Laufs ist noch offen (nicht gemergt)."))
     return found
@@ -372,6 +409,9 @@ def _rule_files(approvals: Path) -> list[str]:
         if (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("decided_by") == "rules"
     )
 
+
+#: What the files of the run add to a source whose harvest failed: its report does not run (plan M5-67 §3 step 5).
+REPORT_SKIPPED = "Bericht übersprungen: ohne Ernte entfällt er in diesem Lauf."
 
 #: Why a find became no candidate, in German (``discovery.propose``).
 SKIPPED_TEXT = {
@@ -456,7 +496,7 @@ def run_files(
             + ("; kein Stapel" if stack is None else f"; Stapel {stack['batch_id']} mit {stack['entries']} Einträgen")
         )
     for source_id, message in sorted(source_errors.items()):
-        lines.append(f"- **{source_id}:** Harvest gescheitert: {message}")
+        lines.append(f"- **{source_id}:** Harvest gescheitert: {message} {REPORT_SKIPPED}")
     for source_id, message in sorted((source_pauses or {}).items()):
         lines.append(f"- **{source_id}:** Hinweis, planmäßige Pause (kein Fehler): {message}")
     lines += ["", "## Freigabe nach Regeln", ""]
@@ -496,7 +536,7 @@ def run_files(
             link.append(
                 f"- {'**geschützt** ' if group['guarded'] else ''}{group['kind']} `{group['key']}`: bestanden"
                 f" {group['passed']}, durchgefallen {group['failed']}, ohne Antwort {group['transient']},"
-                f" nicht prüfbar {group['unchecked']}"
+                f" weg (404/410) {group.get('gone', 0)}, nicht prüfbar {group['unchecked']}"
             )
             for example in (linkcheck.get("examples") or {}).get(group["key"], []) if group["kind"] == "pattern" else []:
                 link.append(f"  - {example['dataset_id']} <{example['url']}> `{example['reason']}`")
@@ -519,9 +559,8 @@ def run_files(
     for source_id, text in sorted(classify.items()):
         excerpt = [line[:300] for line in text.splitlines()[:600]]
         files[f"{source_id}-classify.md"] = f"# Classify-Auszug {source_id}\n\n```\n" + "\n".join(excerpt) + "\n```\n"
-    files["fehler.log"] = (run_error or "keine") + "\n" + "".join(
-        f"{source_id}: {message}\n" for source_id, message in sorted(source_errors.items())
-    )
+    errors = ([run_error] if run_error else []) + [f"{i}: {message}" for i, message in sorted(source_errors.items())]
+    files["fehler.log"] = "\n".join(errors or ["keine"]) + "\n"
     return {name: clean(text) for name, text in files.items()}
 
 
@@ -645,9 +684,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-_FILE_NAME = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z][a-z0-9-]{1,62}(?:-\d+)?\.yaml")
-
-
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     configure_logging()
@@ -658,7 +694,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         with psycopg.connect(autocommit=True) as conn:
             if args.command == "decide":
-                if not all(_FILE_NAME.fullmatch(name) for name in args.files):
+                if not all(is_file_name(name) for name in args.files):
                     print("cycle failed: decide takes names of approval files", file=sys.stderr)
                     return 1
                 reports = {p.stem.removeprefix("report-"): _load(p) for p in sorted(args.run.glob("report-*.json"))}

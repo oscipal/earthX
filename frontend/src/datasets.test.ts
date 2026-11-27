@@ -460,7 +460,7 @@ describe('quicklookPlan', () => {
       maxZoom: 8,
       // The registry's stretch travels with it: a preview rendered without it
       // does not look like the full-resolution view of the same scene.
-      render: { rescale: '0,0.3', colormapName: undefined, expression: undefined },
+      render: { rescale: '0,0.3', colormapName: undefined, expression: undefined, stored: true },
     });
   });
 
@@ -569,7 +569,7 @@ describe('quicklookPlan by georeferencing (F11 to #319)', () => {
       asset: 'vv',
       minZoom: 7,
       maxZoom: 19,
-      render: { rescale: '90,250', colormapName: undefined, expression: undefined },
+      render: { rescale: '90,250', colormapName: undefined, expression: undefined, stored: true },
     });
   });
 

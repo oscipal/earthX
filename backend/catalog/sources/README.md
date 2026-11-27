@@ -7,6 +7,9 @@ Präfix `proto-` sind vergeben. `enabled: false` hält eine Quelle an, ohne die 
 
 - `catalog_page`: Seite eines Datensatzes im Katalog mit `{id}` (STAC) bzw. `{name}` (CKAN), letzter Rang des Links
   „Source“ (Plan §6), oder `null`.
+- `catalog_page_aliases` (optional, nur CKAN): ältere Formen von `catalog_page` mit `{name}`, die nicht mehr zur Seite
+  führen; eine Adresse in einer davon ist nie Link „Source“, der Fund bekommt seine Seite in der Form von
+  `catalog_page`. Teil der Extraktor-Version (GovData, Otto 25.11.2026, M5-67 §23.1).
 - `filter`: STAC `collection_prefixes` (leer = alle); CKAN `fq` wörtlich oder `null` und `publisher_field`
   (`publisher_name` bei DCAT-AP.de, `organization` sonst); `page_extras`: Schlüssel von `extras`, die nach `url` als
   Seite des Datensatzes gelesen werden (GovData `[uri, guid]`, F12 = 1).

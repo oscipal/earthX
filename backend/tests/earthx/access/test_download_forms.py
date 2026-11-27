@@ -23,6 +23,7 @@ from rasterio.warp import transform_geom
 
 from earthx.access import download as dl
 from earthx.access.band_export import ExportPlanError, band_meta
+from earthx.access.qgis_style import ExportStyle
 from earthx.catalog.registry import AcquisitionYears
 from tests.catalog.entries import SENTINEL_2_L2A
 
@@ -414,3 +415,40 @@ class TestAPoint:
     def test_a_point_beside_the_scene_is_refused(self) -> None:
         with pytest.raises(dl.AoiOutsideItems):
             _zip(["red"], aoi=_point(-50, 50))
+
+
+class TestQgisStyle:
+    """M5-64: beside each data file its QGIS style, drawn as the order says, else with the collection's looks."""
+
+    def test_each_data_file_has_its_style_and_no_mask_has_one(self) -> None:
+        with _zip(["blue", "red", "scl"]) as archive:
+            names = archive.namelist()
+            data = [n for n in names if n.endswith(".tif") and not n.endswith("_mask.tif")]
+            assert sorted(n for n in names if n.endswith(".qml")) == sorted(n[:-4] + ".qml" for n in data)
+
+    def test_the_style_of_a_band_of_classes_draws_the_colours_of_its_colour_table(self) -> None:
+        with _zip(["scl"]) as archive, _open(archive, "exports/SCL_20m.tif") as mem, mem.open() as ds:
+            table = ds.colormap(1)
+            qml = archive.read("exports/SCL_20m.qml").decode()
+            assert 'type="paletted"' in qml
+            for row in SENTINEL_2_L2A.class_rows("scl") or ():
+                colour = "#{:02x}{:02x}{:02x}".format(*table[row.value][:3])
+                assert f'value="{row.value}" color="{colour}" alpha="255" label="{row.name}"' in qml
+
+    def test_the_drawn_band_is_drawn_in_a_stacked_file_on_its_number(self) -> None:
+        style = ExportStyle(band="red", colormap="magma", range=(0.02, 0.24))
+        with _zip(["blue", "red"], form="multi_band", common=10, style=style) as archive:
+            qml = archive.read("exports/bands_10m.qml").decode()
+            assert 'band="2"' in qml and 'classificationMin="0.02"' in qml and 'classificationMax="0.24"' in qml
+
+    def test_the_true_colour_bands_in_one_file_are_one_colour_picture(self) -> None:
+        assets, true_color = ["blue", "red", "rededge1"], ("red", "rededge1", "blue")
+        with _zip(assets, form="multi_band", common=10, true_color=true_color) as archive:
+            qml = archive.read("exports/bands_10m.qml").decode()
+            assert 'type="multibandcolor"' in qml and 'redBand="2"' in qml and 'greenBand="3"' in qml and 'blueBand="1"' in qml
+
+    def test_a_file_of_one_channel_of_the_drawn_picture_is_grey_in_its_stretch(self) -> None:
+        style = ExportStyle(rgb=("red", "rededge1", "blue"), ranges=((0.0, 0.3), (0.0, 0.25), (0.0, 0.2)))
+        with _zip(["blue", "red"], style=style) as archive:
+            qml = archive.read("exports/B02_blue_10m.qml").decode()
+            assert 'type="singlebandgray"' in qml and "<maxValue>0.2</maxValue>" in qml

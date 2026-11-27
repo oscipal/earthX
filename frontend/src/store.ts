@@ -72,7 +72,7 @@ import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
 import { channelsAtOwnPercent, samePercents, CHANNEL_COUNT, CHANNEL_NAMES, type ChannelRange } from './channels';
 import { buildExportOrder, isArea, trueColorOf } from './processingOrder';
-import { appliedRenderFrom, autoRescale, colourChannelsOf, colourInPercent, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
+import { appliedRenderFrom, autoRescale, colourChannelsOf, colourInPercent, lookChanged, lookOfPendingFields, pendingFieldsOf, physicalRender } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
   buildSections,
@@ -749,7 +749,9 @@ function defaultLookOf(s: LookSource, image: Pick<ViewImage, 'datasetId' | 'ids'
   const dataset = s.datasets.find((d) => d.id === image.datasetId);
   const item = sectionsForView(s).flatMap((section) => section.items).find((it) => it.id === image.ids[0]);
   const render = dataset ? defaultRenderOf(dataset.collection, item) : null;
-  return render ? appliedRenderFrom(render) : {};
+  // In physical values, as every look of the view (M5-68): the registry gives the range in the stored numbers of the asset.
+  const scaling = item && render?.assets.length === 1 ? scalingOfAsset(item, render.assets[0]) : null;
+  return render ? physicalRender(appliedRenderFrom(render), scaling) : {};
 }
 
 // The look an image is drawn with: for the one that is shown, what the map shows; for another, the first it has of
@@ -879,16 +881,18 @@ function measureOfView(s: AppState): ViewMeasure | null {
   const asked = areaQuestionOf({ datasetId: info.datasetId, collection, items: items.length === ids.length ? items : [], aoi: s.cropToAoi ? s.viewAoi : null, index, asset });
   const area = asked && 'order' in asked ? asked : null;
   const skipped = asked && 'reason' in asked ? asked.reason : null;
-  return { sceneUrl, area, skipped, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
+  // An index is computed from physical values; a scaled band is read from the stored numbers of the first scene, as its tiles draw them.
+  const scene = known.get(itemId);
+  const scaling = !index && scene ? (scaledAssetsOf(scene)?.[asset] ?? null) : null;
+  return { sceneUrl, scaling, area, skipped, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
 }
 
-// The band in the fields of the view, with its look and, where that is fixed, its range in the values the tiles draw (M5-60).
+// The band in the fields of the view, with its look and, where that is fixed, its range (M5-60), physical like every field (M5-68).
 function bandOfView(s: AppState): { look: DisplayLook | null; fixed: { vmin: string; vmax: string } | null } | null {
-  const { itemId, info } = firstSceneOfView(s);
+  const { info } = firstSceneOfView(s);
   if (!s.pendingBand || s.pendingIndex || !info) return null;
   const look = bandLookOf(s.datasets.find((d) => d.id === info.datasetId)?.collection, s.pendingBand);
-  const item = sectionsForView(s).flatMap((section) => section.items).find((it) => it.id === itemId);
-  return { look, fixed: look && item ? fixedRangeOf(look, scalingOfAsset(item, s.pendingBand)) : null };
+  return { look, fixed: look ? fixedRangeOf(look) : null };
 }
 
 function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
@@ -1194,7 +1198,10 @@ async function loadMosaic(
       try {
         const selection = await ensureSelection(datasetId, entries.map(([id]) => id), [entries[0][1].asset]);
         const json = await withSelection(selection, api.fetchMosaicTileJson);
-        info = { tileUrl: api.buildMosaicTileTemplate(selection), bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
+        // The scenes of a mosaic are scaled alike (the tiler checks it), so the first one's scaling is the mosaic's (M5-68).
+        const [, first] = entries[0];
+        const scaling = first.scalings?.[first.asset];
+        info = { tileUrl: api.buildMosaicTileTemplate(selection), bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order, ...(scaling ? { scaling } : {}) };
       } catch (e) {
         failures.push((e as Error).message);
       }
@@ -3299,10 +3306,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
     if (!item || !bandAssetsOf(item, collection).includes(band)) return;
-    // The band starts with its look (M5-60): the colormap at once, a fixed range at once in the values the tiles draw, any other range
-    // once it is measured. What is typed by hand then holds until the next band.
+    // The band starts with its look (M5-60): the colormap at once, a fixed range at once, any other range once it is measured. What is
+    // typed by hand then holds until the next band.
     const look = bandLookOf(collection, band);
-    const fixed = look ? fixedRangeOf(look, scalingOfAsset(item, band)) : null;
+    const fixed = look ? fixedRangeOf(look) : null;
     set({
       pendingBand: band,
       pendingIndex: '',

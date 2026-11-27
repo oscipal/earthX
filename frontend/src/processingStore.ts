@@ -172,7 +172,7 @@ import {
   type PreviewSpec,
 } from './processingPreview';
 import type { ResultStats } from './render';
-import { chooseDtype, dtypeOptions, effectiveDtype, keepsValuesOf, type Choice, type DtypeOption } from './processingDefaults';
+import { chooseDtype, dtypeOptions, effectiveDtype, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { previewRangeOf } from './permalinkRange';
@@ -1332,13 +1332,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           // How the registry of the operator says the band of the step is drawn (M5-10); the description of the dataset is there once the job was
           // started from the panel.
           (step) => lookOfStep(operatorsOf(order)?.find((o) => o.op === step.op)?.looks, step.params),
-          // A band of the source keeps its look where no step changed its values (M5-60 F5).
-          (name) => {
-            const operators = operatorsOf(order);
-            const collection = useAppStore.getState().datasets.find((d) => d.id === order?.inputs[0]?.dataset)?.collection;
-            const steps = order?.steps.map((step) => ({ op: step.op, values: step.params })) ?? [];
-            return operators && keepsValuesOf(name, steps, operators) ? bandLookOf(collection, name) : null;
-          },
+          // A band of the source keeps its look where no step changed its values (M5-60 F5), as the result says (M5-68).
+          (name) => bandLookOf(useAppStore.getState().datasets.find((d) => d.id === order?.inputs[0]?.dataset)?.collection, name),
         ),
         normalize: normalizeRuns(properties?.['earthx:normalize']),
       });

@@ -91,7 +91,8 @@ export function resultBands(
   properties: Record<string, unknown> | undefined,
   order: { steps: { op: string; params: Record<string, unknown> }[] } | null,
   looks: (step: { op: string; params: Record<string, unknown> }) => DisplayLook | null = () => null,
-  // The look of a band of the source whose values reach the result as they are (M5-60 F5), by its name.
+  // The look of a band of the source of this name, for a band whose values the result says are the source's (`earthx:source_values`,
+  // M5-68: the worker knows which steps changed which band).
   kept: (name: string) => DisplayLook | null = () => null,
 ): ResultBand[] {
   const listed = properties?.bands;
@@ -116,11 +117,12 @@ export function resultBands(
     const name = typeof (band as { name?: unknown } | null)?.name === 'string' ? (band as { name: string }).name : '';
     const classes = stacClasses((band as { 'classification:classes'?: unknown } | null)?.['classification:classes']);
     const unit = (band as { unit?: unknown } | null)?.unit;
+    const sourceValues = (band as { 'earthx:source_values'?: unknown } | null)?.['earthx:source_values'] === true;
     return {
       name,
       stats: statsFrom([band], order === null ? any : made.has(name)),
       expression: expressions.get(name) ?? null,
-      look: looked.get(name) ?? (order === null || made.has(name) ? null : kept(name)),
+      look: looked.get(name) ?? (sourceValues ? kept(name) : null),
       ...(classes ? { classes } : {}),
       ...(typeof unit === 'string' && unit !== '' ? { unit } : {}),
     };
