@@ -110,14 +110,28 @@
 **Maßnahmen**, jede ohne Wirkung auf das Ergebnis:
 
 1. **Zeit je Schritt ausgeben:** `catalog-load` schreibt am Ende eine Zeile je Schritt (`step <name>: <s> s`), ohne Kennungen, Texte oder Flächen.
-2. **YAML mit libyaml:** Derselbe strenge Leser (YAML 1.2 core, keine Anker, Aliase, doppelten Schlüssel) auf dem C-Parser von PyYAML. Anker und Aliase prüft ein Durchgang über die Ereignisse des C-Parsers (0,08 s für `govdata.yaml`); gemessen 0,4 s statt 1,9 s. Meldet der C-Parser einen Fehler, liest der Python-Leser die Datei noch einmal, damit die Meldung gleich bleibt. Fehlt libyaml, liest der Python-Leser wie bisher.
-3. **JIT aus in der Transaktion von `catalog-load`** (`SET LOCAL jit = off`): Die Abfragen laufen einmal je Lauf, die Übersetzung kostet mehr, als sie spart (gemessen 1,6 s → 1,0 s). Dazu die Hashes der Dubletten einmal gruppiert statt je Eintrag eine Unterabfrage.
-4. **Handeinträge:** Die Fläche aus `coverage_states` wird nur gerechnet, wenn sich die Datei (`approval_sha256`), das Dokument (`content_sha256`) oder die Grenzen (`write_regions` meldet eine Änderung) geändert haben; sonst bleibt die gespeicherte Zeile.
-5. **Ortsnamen:** Liegt ein Land ganz in der Box, ist sein Anteil 1, ohne geodätische Fläche der Schnittmenge. Ob das die Texte bitgleich lässt, prüft der Test über `text_hash` aller Registry-Einträge; wenn nicht, entfällt der Punkt.
+2. **YAML mit libyaml:** Derselbe strenge Leser (YAML 1.2 core, keine Anker, Aliase, doppelten Schlüssel) auf dem C-Parser von PyYAML. Anker und Aliase prüft ein Durchgang über die Ereignisse des C-Parsers (0,08 s für `govdata.yaml`); gemessen 0,4 s statt 1,6 s. Findet libyaml einen Fehler oder einen Anker, liest der Python-Leser die Datei noch einmal, damit die Meldung gleich bleibt. Fehlt libyaml, liest der Python-Leser wie bisher. Gleiche Daten für alle 44 YAML-Dateien des Repos.
+3. **JIT aus in der Transaktion von `catalog-load`** (`SET LOCAL jit = off`): Die Abfragen laufen einmal je Lauf, die Übersetzung kostet mehr, als sie spart (Hash-Vergleich 1,6 s → 1,0 s). Die Hashes der Dubletten einmal gruppiert statt je Eintrag eine Unterabfrage brachte nichts (gemessen) und ist nicht drin. Der Rest (0,7 s) ist der Hash selbst; ihn anders zu bilden, hieße neue `text_hash` und einmal alle 10⁵ Zeilen neu schreiben (bei 10⁵ etwa 50 s, M5-42 §3).
+4. **Handeinträge:** Ein veröffentlichter Handeintrag mit gleichem Dokument (`content_sha256`), gleicher Datei (`approval_sha256`) und gleichem Sortiertitel wird ohne Anweisung übersprungen, solange sich die Grenzen im Lauf nicht geändert haben (`write_regions` meldet 0). Das sind genau die Fälle, in denen der Upsert bisher nichts schrieb; teuer war nicht die Fläche (0,05 s), sondern die Regionen der CORINE-Fläche über Europa im Upsert (1,3 s).
+5. **Ortsnamen:** Liegt ein Land ganz in der Box, zählt es mit seiner beim Lesen gemessenen Fläche, ohne geodätische Fläche der Schnittmenge (0,7 → 0,2 s). Die `text_hash` aller Registry-Einträge sind gleich.
 6. **Gemeinden und Regionen:** eine Anfrage für alle Zeilen (`unnest`) mit derselben Bedingung `IS DISTINCT FROM`.
 7. **Embeddings:** Es gibt sie noch nicht (Vektorarm M5-23). `plans/m5/m5-42-suche-gelistete.md` §4 Punkt 2 legt schon fest, dass nur Zeilen mit geändertem `text_hash` neu eingebettet werden; das bleibt die Vorgabe für M5-23.
 
-**Erwartet [A]:** ohne Änderung etwa 2–3 s statt 7,2 s in `main()`; gemessen wird in PR 2.
+**Gemessen nach PR 2** [M], gleicher Bestand, Zeitzeilen von `catalog-load`, drei Läufe:
+
+| Schritt | `main` | PR 2 |
+|---|---|---|
+| Dateien lesen (Registry, Lizenzen, Freigaben, Gemeinden) | 2,5 s | 0,7–0,8 s |
+| Suchindex voller Einträge | 0,6 s | 0,2 s |
+| Regionen (mit erstem Laden von PostGIS) | 0,1–0,2 s | 0,3 s |
+| Gemeinden | 0,3–0,6 s | 0,1 s |
+| Handeinträge und Sperrliste | 1,35–1,5 s | 0,00 s |
+| Rücknahme von Lizenzen | 0,05–0,3 s | 0,3 s |
+| Suchindex gelisteter Einträge | 1,0–2,0 s | 1,1 s |
+| Rest | 0,1 s | 0,05 s |
+| **zusammen** | **7,1–7,4 s** | **2,7–2,8 s** |
+
+Alle Zähler des Laufs sind 0 wie vorher. Bei Otto kommt der Start der Container dazu (§8 misst ihn getrennt).
 
 ## 5. Der synthetische Bestand [M]
 
@@ -175,11 +189,36 @@ Was `adr/0026` §3.1 schon hat (Formel von Cormack et al. 2009, k = 60, Beispiel
 - Bewertungs-Set: unverändert (Deutsch 15/19, Englisch 41/42, alle Rangpositionen).
 - PR 2: Zeitzeile ohne Kennungen; strenger YAML-Leser auf beiden Wegen gleich (gleiche Daten, gleiche Fehler für Anker, Alias, doppelten Schlüssel, Datum als Text, Syntaxfehler); Handeintrag ohne Änderung rechnet keine Fläche, nach Änderung der Grenzen schon; zweiter Lauf schreibt nichts; Gemeinden und Regionen gleich wie vorher.
 
-## 8. Messung bei Otto (PowerShell 5.1, `docker compose`)
+## 8. Messung bei Otto (PowerShell 5.1, nur `docker compose`)
 
-Die Befehle stehen auch in der Antwort der Sitzung. Ausgaben nach `..\earthx-ausgaben\m5-66\`, nie ins Repo. Sie loggen und speichern keine Suchtexte außer den drei vorgegebenen Wörtern, keine Kennungen, keine Flächen; gespeichert werden nur Zeiten und Zahlen.
+Skript `scripts/m5-66-messung.ps1` (PR 1). Es läuft vom Wurzelverzeichnis des Repos, wo immer die Datei liegt, und schreibt nach `..\earthx-ausgaben\m5-66\`, nie ins Repo: `<Label>-suche.csv` (je Anfrage bester Wert und Median in ms, `numberReturned`, `numberMatched`, ob es eine nächste Seite gibt, ein Hash der Kennungen der Seite in ihrer Reihenfolge) und `<Label>-laden.txt` (Dauer von `catalog-load` mit und ohne `pgstac-migrate`, die Zeitzeilen und Zähler). Keine Kennungen, Titel oder Flächen; die einzigen Texte sind die drei Wörter „data“, „map“, „water“, je ohne Filter, mit Kategorie `water`, mit Region DE, mit Kategorie `boundaries` und Region DE, mit Region CH, dazu „data“ ab Platz 200.
 
-Vorher auf `main`, nachher auf dem Stand des PR: dieselben Befehle, mit `-Label vorher` bzw. `nachher`.
+Vorher (Stand `main`, das Skript aus dem Branch von PR 1 geholt):
+
+```powershell
+git switch main
+git pull
+git fetch origin claude/gracious-brahmagupta-30310c
+New-Item -ItemType Directory -Force ..\earthx-ausgaben\m5-66 | Out-Null
+git show FETCH_HEAD:scripts/m5-66-messung.ps1 | Set-Content -Encoding ASCII ..\earthx-ausgaben\m5-66\messung.ps1
+docker compose build api catalog-load pgstac-migrate
+docker compose up -d api
+powershell -NoProfile -ExecutionPolicy Bypass -File ..\earthx-ausgaben\m5-66\messung.ps1 -Label vorher
+```
+
+Nachher (beide PRs zusammen auf einem lokalen Branch, nichts davon wird gepusht):
+
+```powershell
+git fetch origin claude/gracious-brahmagupta-30310c claude/gracious-brahmagupta-30310c-load
+git switch -c m5-66-messung origin/claude/gracious-brahmagupta-30310c
+git merge --no-edit origin/claude/gracious-brahmagupta-30310c-load
+docker compose build api catalog-load pgstac-migrate
+docker compose up -d api
+powershell -NoProfile -ExecutionPolicy Bypass -File ..\earthx-ausgaben\m5-66\messung.ps1 -Label nachher
+git switch main
+```
+
+Gleicher Hash in der Spalte `Reihenfolge` heißt: gleiche Treffer in gleicher Reihenfolge auf der ersten Seite.
 
 ## 9. Fragen an Otto
 
