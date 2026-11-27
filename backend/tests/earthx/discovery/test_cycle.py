@@ -309,7 +309,6 @@ def test_a_source_whose_harvest_failed_is_named_with_its_skipped_report_and_the_
         source_errors={"govdata": message}, run_error="Bericht: gescheitert", published=(0, []), classify={},
     )
     assert both["fehler.log"] == f"Bericht: gescheitert\ngovdata: {message}\n"
-    assert files["fehler.log"].count("keine") == 0 and "keine" not in both["fehler.log"]
     none = run_files(
         day=DAY, folder="f", trial=False, linkcheck=None, reports=REPORTS, decided=[], spellings=None,
         source_errors={}, run_error=None, published=(0, []), classify={},

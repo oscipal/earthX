@@ -114,7 +114,7 @@ def test_the_steps_in_the_container_read_and_write_the_mounted_approvals() -> No
 
 def test_only_a_pass_counts_and_the_pr_number_is_checked() -> None:
     state = CODE[CODE.index("function Get-CheckState") : CODE.index("function Commit")]
-    assert "skipping" not in state.split("#")[0] and "elseif ($check.bucket -ne 'pass') { $script:RedChecks += $name }" in state
+    assert "skipping" not in state.split("#")[0] and "elseif ($check.bucket -ne 'pass') {\n                $script:RedChecks += $name" in state
     assert "if ($script:RedChecks.Count) { return 'fail' }" in state
     assert "$view[0] -notmatch '^[0-9]+$'" in CODE
 
@@ -248,7 +248,11 @@ def test_a_pull_request_with_a_red_required_check_is_closed_by_the_next_run_with
     closing = _between("function Close-EarlierRuns", "function Branch-Taken")
     # Only red: one that waits for its checks, or is green and not merged, stays and is a finding.
     assert "(Get-CheckState \"$($pr.number)\") -eq 'fail'" in closing
-    assert "if (-not $why) { continue }" in closing and "$script:RedChecks" in closing
+    assert "if (-not $why) { continue }" in closing and "$script:FailedChecks" in closing
+    # Only a check that failed counts, not one cancelled by hand or skipped: a rerun can still make it green.
+    state = _between("function Get-CheckState", "function Commit")
+    assert "if ($check.bucket -eq 'fail') { $script:FailedChecks += $name }" in state
+    assert "-and $script:FailedChecks.Count" in closing
     # Never someone else's pull request, a fork's, or one that is not a run of this script.
     assert "'--author', '@me'" in closing and "if ($pr.isCrossRepository) { continue }" in closing
     assert "-notmatch '^Harvest run '" in closing

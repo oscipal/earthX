@@ -100,7 +100,7 @@ function Native([string]$Label, [string[]]$Command, [string]$Capture = '') {
 }
 
 # The standard output of a native command (gh, git, compose) as an array of its non-empty lines, $null on an error
-# (an exit code outside $Accept; `gh pr checks` ends with 1 on a red and 8 on a pending check and still prints its list).
+# (an exit code outside $Accept; `gh pr checks` ends with 8 on a pending check, perhaps 1 on a red one, and still prints its list).
 # Never unrolled: PowerShell turns a returned empty array into $null and a one-element array into its element, so the
 # array goes back wrapped (return ,$out). Standard error stays out of the data and goes nowhere (2>$null).
 function Lines([string[]]$Command, [int[]]$Accept = @(0)) {
@@ -190,10 +190,12 @@ function Start-Docker {
 }
 
 # pass, fail or pending for the required checks of a pull request; the names of the red ones stay in $script:RedChecks.
-# `gh pr checks` ends with 1 on a red and with 8 on a pending check (and with 1 where there is no check yet, printing
-# nothing): the list counts, not the exit code, so a red check is seen at once and not after the waiting time.
+# `gh pr checks` ends with 8 on a pending check and, as far as known, with 1 on a red one and where there is no check
+# yet (printing nothing): the list counts, not the exit code, so a red check is seen at once and not after the waiting time.
 function Get-CheckState([string]$Number) {
     $script:RedChecks = @()
+    # The red ones that really failed (bucket fail), not cancelled or skipped: a run cancelled by hand can still be rerun.
+    $script:FailedChecks = @()
     $json = Lines @('gh', 'pr', 'checks', $Number, '--json', 'name,bucket') @(0, 1, 8)
     if ($null -eq $json -or -not $json.Count) { return 'pending' }
     $checks = ($json -join "`n") | ConvertFrom-Json
@@ -204,7 +206,10 @@ function Get-CheckState([string]$Number) {
         foreach ($check in $found) {
             # Only a pass counts: a skipped required check has not shown anything (fail, cancel, skipping).
             if ($check.bucket -eq 'pending') { $pending = $true }
-            elseif ($check.bucket -ne 'pass') { $script:RedChecks += $name }
+            elseif ($check.bucket -ne 'pass') {
+                $script:RedChecks += $name
+                if ($check.bucket -eq 'fail') { $script:FailedChecks += $name }
+            }
         }
     }
     if ($script:RedChecks.Count) { return 'fail' }
@@ -223,7 +228,7 @@ function Commit([string]$Message, [string[]]$Paths) {
 # Open pull requests of earlier runs that this run replaces (Otto, 24.11. and 27.11.2026), own pull requests of runs of
 # this script only (title "Harvest run ...", branch harvest/<day>[-...]): a draft of a failed run (title ends in
 # "(failed)") and a pull request with a red required check, which no run will make green (its files were made with the
-# code of that day). Each gets a comment with the reason, its branch is deleted, and this run makes the files again from
+# code of that day; a check cancelled or skipped is not red here, only one that failed). Each gets a comment with the reason, its branch is deleted, and this run makes the files again from
 # the current main. A pull request that is only waiting for its checks, or is green and unmerged, stays; the findings list
 # it. Nothing here stops the run. Returns the numbers closed.
 function Close-EarlierRuns {
@@ -239,8 +244,8 @@ function Close-EarlierRuns {
         $why = $null
         if ($pr.isDraft -and $pr.title -match '\(failed\)$') {
             $why = 'Dieser Lauf ist gescheitert.'
-        } elseif ((Get-CheckState "$($pr.number)") -eq 'fail') {
-            $red = (@($script:RedChecks | Select-Object -Unique) | ForEach-Object { $_.Replace([string]$Dash, '-') }) -join ', '
+        } elseif (((Get-CheckState "$($pr.number)") -eq 'fail') -and $script:FailedChecks.Count) {
+            $red = (@($script:FailedChecks | Select-Object -Unique) | ForEach-Object { $_.Replace([string]$Dash, '-') }) -join ', '
             $why = "Pflicht-Check rot: $red."
         }
         if (-not $why) { continue }

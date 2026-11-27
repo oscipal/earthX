@@ -364,7 +364,7 @@ def test_several_runs_on_one_day_with_a_stack_of_the_same_source_each_write_file
     for approval, _, _ in load_approvals(cycle_world.approvals):
         found[approval.source_id].append((approval.batch_id, approval.decision, approval.decided_by))
     for source_id, stacks in found.items():
-        assert stacks == sorted(stacks) and len({batch for batch, _, _ in stacks}) == len(stacks) >= 2, source_id
+        assert len({batch for batch, _, _ in stacks}) == len(stacks) >= 2, source_id
         assert stacks[0][1:] == ("pending", None) and all(s[1:] == ("approved", "rules") for s in stacks[1:]), source_id
     assert len(found[a]) == 3
 

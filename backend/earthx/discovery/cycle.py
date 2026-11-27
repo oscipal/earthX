@@ -410,10 +410,10 @@ def _rule_files(approvals: Path) -> list[str]:
     )
 
 
-#: Why a find became no candidate, in German (``discovery.propose``).
 #: What the files of the run add to a source whose harvest failed: its report does not run (plan M5-67 §3 step 5).
 REPORT_SKIPPED = "Bericht übersprungen: ohne Ernte entfällt er in diesem Lauf."
 
+#: Why a find became no candidate, in German (``discovery.propose``).
 SKIPPED_TEXT = {
     "no_format": "kein lesbares Format",
     "no_takeover": "nicht ablösbar",
@@ -559,7 +559,7 @@ def run_files(
     for source_id, text in sorted(classify.items()):
         excerpt = [line[:300] for line in text.splitlines()[:600]]
         files[f"{source_id}-classify.md"] = f"# Classify-Auszug {source_id}\n\n```\n" + "\n".join(excerpt) + "\n```\n"
-    errors = ([run_error] if run_error else []) + [f"{source_id}: {message}" for source_id, message in sorted(source_errors.items())]
+    errors = ([run_error] if run_error else []) + [f"{i}: {message}" for i, message in sorted(source_errors.items())]
     files["fehler.log"] = "\n".join(errors or ["keine"]) + "\n"
     return {name: clean(text) for name, text in files.items()}
 

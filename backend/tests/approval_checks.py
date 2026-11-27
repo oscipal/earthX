@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Container
 from pathlib import Path
 
-from earthx.catalog.approvals import file_number, load_approvals
+from earthx.catalog.approvals import load_approvals
 
 
 def assert_approvals_are_consistent(directory: Path, sources: Container[str]) -> tuple[str, ...]:
@@ -24,5 +24,4 @@ def assert_approvals_are_consistent(directory: Path, sources: Container[str]) ->
         if approval.decision == "approved":
             assert approval.decided_on is not None, name
             assert approval.sample and all(check.ok is not None for check in approval.sample), name
-        assert file_number(Path(name).stem, approval.created_on, approval.source_id) is not None, name
     return tuple(name for _, name, _ in found)

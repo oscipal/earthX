@@ -190,6 +190,32 @@ def test_files_of_other_days_and_sources_do_not_order_each_other(tmp_path: Path)
     assert len(load_approvals(tmp_path)) == 3
 
 
+def test_a_source_id_of_the_longest_length_still_has_later_files(tmp_path: Path) -> None:
+    # sources.py allows ids of 63 characters; the number of a later file must not push its name out of the shape.
+    long_id = "a" + "b" * 62
+    for number, batch in ((1, "3"), (2, "4"), (12, "5")):
+        name = f"{file_stem(DAY, long_id, number)}.yaml"
+        _write(tmp_path, name=name, source_id=long_id, batch_id=batch, fingerprint="abcdef"[number % 6] * 64)
+    assert [name for _, name, _ in load_approvals(tmp_path)] == [
+        f"approvals/{file_stem(DAY, long_id, n)}.yaml" for n in (1, 2, 12)
+    ]
+
+
+def test_a_source_that_ends_in_a_number_beside_the_source_without_it(tmp_path: Path) -> None:
+    # `feed` has a second file and `feed-2` its first on one day: the names meet, the files stay apart.
+    _write(tmp_path, name="2026-11-19-feed.yaml", source_id="feed", batch_id="3")
+    _write(tmp_path, name="2026-11-19-feed-2.yaml", source_id="feed", batch_id="5", fingerprint="b" * 64)
+    _write(tmp_path, name="2026-11-19-feed-2-2.yaml", source_id="feed-2", batch_id="6", fingerprint="c" * 64)
+    found = [(approval.source_id, name) for approval, name, _ in load_approvals(tmp_path)]
+    assert found == [
+        ("feed", "approvals/2026-11-19-feed.yaml"),
+        ("feed", "approvals/2026-11-19-feed-2.yaml"),
+        ("feed-2", "approvals/2026-11-19-feed-2-2.yaml"),
+    ]
+    # The writer reads names only: for `feed` the file of `feed-2` counts as a second one, which leaves a gap and no clash.
+    assert next_file_stem(tmp_path, DAY, "feed") == "2026-11-19-feed-3"
+
+
 def _with(tmp_path: Path, extra: str, *, check: str = "", **values: str) -> Path:
     """A file with fields of M5-67 added: ``extra`` at the top level, ``check`` under the entry of the sample."""
     _write(tmp_path, **values)

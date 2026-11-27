@@ -1,8 +1,8 @@
 """The approval files of the runs and what they publish (adr/0033 §8.3, §8.4; M5-20 plan §12).
 
 ``discovery report`` writes ``backend/catalog/approvals/<day>-<source>[-<n>].yaml`` with ``decision: pending`` for the
-stack of one source (the n-th file of a source on a day carries ``-<n>`` from the second on, see :func:`file_stem`); Otto checks the sample, sets ``decision: approved`` (or ``rejected``) and merges. ``catalog-load`` reads
-every file of the image and calls :func:`publish`: a stack becomes visible only where its file is approved and its
+stack of one source (the n-th file of a source on a day carries ``-<n>`` from the second on, see :func:`file_stem`);
+Otto checks the sample, sets ``decision: approved`` (or ``rejected``) and merges. ``catalog-load`` reads every file of the image and calls :func:`publish`: a stack becomes visible only where its file is approved and its
 fingerprint is that of the stack in Postgres, and of its entries only those whose own link passed the automatic check
 (M5-67, ``link_checks``). A changed entry since the stack was formed stays in review, as does one without a pass; a
 file with ``revoked_on`` hides again what it published, also what a failed link hid since. Idempotent: a second run
@@ -46,9 +46,10 @@ APPROVALS_DIR = CATALOG_DIR / "approvals"
 _README = "README.md"
 #: The number of the second and every later file of a source on one day: no ``-1``, no leading zero.
 _NUMBER = r"[2-9]|[1-9][0-9]+"
-#: The shape of the name of an approval file; a source id may end in ``-<n>`` itself, so the number is told apart from
-#: the id only with the content of the file (:func:`file_number`).
-_NAME = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z][a-z0-9-]{1,62}\.yaml")
+#: The shape of the name of an approval file: a source id of up to 63 characters, then a number for a later file. A
+#: source id may end in ``-<n>`` itself, so the number is told apart from the id only with the content of the file
+#: (:func:`file_number`).
+_NAME = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z][a-z0-9-]{1,62}(?:-[0-9]+)?\.yaml")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _DATASET_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 _REASON = re.compile(r"[a-z0-9_]{2,40}")
