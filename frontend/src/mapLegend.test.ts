@@ -105,7 +105,8 @@ describe('legendEntries', () => {
   it('turns the range of a scaled band into physical values with the scaling of the scene, in a layer and in the view', () => {
     const stored = (asset: string): DownloadedInfo => ({ ...scene(asset), scalings: { height: { scale: 0.5, offset: 100 } } });
     const scaled = layer('h', 'https://tiles.example/{z}/{x}/{y}.png?assets=height&colormap_name=terrain&rescale=0,4000', { restore: { downloaded: { s: stored('height') } } as unknown as MapLayer['restore'] });
-    const view = { downloaded: { s: stored('height') }, render: { colormapName: 'terrain', rescale: '0,4000' } };
+    // The look of the view is physical (M5-68); its tiles draw the stored 0…4000, and the legend says what the fields say.
+    const view = { downloaded: { s: stored('height') }, render: { colormapName: 'terrain', rescale: '100,2100' } };
     const [layerEntry, viewEntry] = legendEntries({ layers: [scaled], resultsAt: 1, datasets: DATASETS, view });
     expect(layerEntry.content).toMatchObject({ min: 100, max: 2100, unit: 'm' });
     expect(viewEntry.content).toMatchObject({ min: 100, max: 2100, unit: 'm' });

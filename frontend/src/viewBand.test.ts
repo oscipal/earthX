@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Collection, StacItem } from './types';
-import { bandAssetsOf, bandLookOf, fixedRangeOf } from './viewBand';
+import { bandAssetsOf, bandLookOf, fixedRangeOf, scalingOfBand } from './viewBand';
 
 const meteo = (overrides: Partial<Collection> = {}): Collection =>
   ({
@@ -79,21 +79,40 @@ describe('bandLookOf (M5-60: the look the collection publishes for a band)', () 
   });
 });
 
-describe('fixedRangeOf (a fixed look in the values the tiles draw)', () => {
-  const fixed = { colormap: 'viridis', scale: 'fixed' as const, low: 0, high: 0.3 };
-
-  it('turns the physical range back into the stored values with the scaling of the item', () => {
-    // Sentinel-2 reflectance: stored · 0.0001 − 0.1.
-    expect(fixedRangeOf(fixed, { scale: 0.0001, offset: -0.1 })).toEqual({ vmin: '1000', vmax: '4000' });
-  });
-
-  it('takes the values as they are without a scaling (a percentage of clouds, a temperature)', () => {
-    expect(fixedRangeOf({ ...fixed, low: 0, high: 100 }, null)).toEqual({ vmin: '0', vmax: '100' });
-    expect(fixedRangeOf({ ...fixed, low: -20, high: 30 }, { scale: 1, offset: 0 })).toEqual({ vmin: '-20', vmax: '30' });
+describe('fixedRangeOf (a fixed look in physical values, M5-68)', () => {
+  it('takes the values of the look as they are, a reflectance as well as a percentage of clouds or a temperature', () => {
+    const fixed = { colormap: 'viridis', scale: 'fixed' as const, low: 0, high: 0.3 };
+    expect(fixedRangeOf(fixed)).toEqual({ vmin: '0', vmax: '0.3' });
+    expect(fixedRangeOf({ ...fixed, low: 0, high: 100 })).toEqual({ vmin: '0', vmax: '100' });
+    expect(fixedRangeOf({ ...fixed, low: -20, high: 30 })).toEqual({ vmin: '-20', vmax: '30' });
   });
 
   it('gives none for a range that comes from a measure', () => {
-    expect(fixedRangeOf({ colormap: 'viridis', scale: 'measured' }, null)).toBeNull();
-    expect(fixedRangeOf({ colormap: 'viridis', scale: 'percentiles', low: 0, high: 100 }, null)).toBeNull();
+    expect(fixedRangeOf({ colormap: 'viridis', scale: 'measured' })).toBeNull();
+    expect(fixedRangeOf({ colormap: 'viridis', scale: 'percentiles', low: 0, high: 100 })).toBeNull();
+  });
+});
+
+describe('scalingOfBand (the scaling the registry states, M5-68)', () => {
+  const collection = {
+    'earthx:bands': [
+      { name: 'red', description: '', 'earthx:scaling': { scale: 0.0001, offset: -0.1 } },
+      { name: 'cloud', description: '' },
+      { name: 'odd', description: '', 'earthx:scaling': { scale: 0, offset: 0 } },
+      { name: 'text', description: '', 'earthx:scaling': { scale: '0.0001', offset: 0 } },
+    ],
+  } as unknown as Collection;
+
+  it('reads it for a scaled band and none for an unscaled one, an unknown one or no band', () => {
+    expect(scalingOfBand(collection, 'red')).toEqual({ scale: 0.0001, offset: -0.1 });
+    expect(scalingOfBand(collection, 'cloud')).toBeNull();
+    expect(scalingOfBand(collection, 'nothing')).toBeNull();
+    expect(scalingOfBand(collection, undefined)).toBeNull();
+    expect(scalingOfBand(undefined, 'red')).toBeNull();
+  });
+
+  it('reads none that cannot be turned back or is no number', () => {
+    expect(scalingOfBand(collection, 'odd')).toBeNull();
+    expect(scalingOfBand(collection, 'text')).toBeNull();
   });
 });

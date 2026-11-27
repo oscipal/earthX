@@ -17,6 +17,7 @@ import { buildMaskedOverviewTileTemplate } from './api';
 import type { FootprintSelection, MosaicSelection } from './api';
 import { selectionKeyOf } from './mosaicSelection';
 import type { Bbox, DownloadedInfo, TimeStepGroup } from './types';
+import type { BandScaling } from './viewMeasure';
 
 // Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ITEMS`, `MAX_SELECTION_ITEMS`, `MAX_MOSAIC_OPERATOR_ASSETS`,
 // `MAX_MOSAIC_REQUEST_BYTES`); the tiler answers `400` or `413` outside them (`414` for the length). A pass of more scenes
@@ -48,6 +49,9 @@ export type SceneEntry = [itemId: string, info: DownloadedInfo];
 export type PlannedRaster = Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> & {
   hideFrom?: number;
   attribution?: string;
+  // The scaling of the stored numbers its tiles draw where it is one band of a scaled asset (M5-68, `buildTileUrl`): set for a mosaic
+  // and an overview; a scene says it with `DownloadedInfo.scalings`.
+  scaling?: BandScaling;
 };
 
 // What the TileJSON of a mosaic said, by the mosaic's tile template. `null`: the tiler refused it
@@ -59,7 +63,7 @@ export interface SceneOrder {
 export interface SelectionInfo {
   selection: MosaicSelection;
 }
-export interface MosaicInfo extends SceneOrder, Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> {}
+export interface MosaicInfo extends SceneOrder, Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'>, Pick<PlannedRaster, 'scaling'> {}
 // The footprint selection of the scenes of a view of one dataset, by `footprintsKeyOf`: what its picture below the first level is
 // masked to (`overviewOverScenes`).
 export interface FootprintsInfo {

@@ -43,6 +43,10 @@ export function formatCount(value: number): string {
 // A value rounded to `digits` decimals, still a number: where a track of a slider is coarser than the three decimals of the display.
 export const roundTo = (value: number, digits: number): number => Number(value.toFixed(digits));
 
+// A value rounded to `digits` significant digits, still a number: a value computed through a scaling, as the registry writes a physical
+// value (twelve digits, `BandScaling.physical`, M5-68), so that 1200 · 0.0001 − 0.1 is 0.02.
+export const significant = (value: number, digits: number): number => Number(value.toPrecision(digits));
+
 // 0–100 and the like: "50%", "42.5%", no space (English).
 export const formatPercent = (value: number): string => (Number.isFinite(value) ? `${formatNumber(value)}%` : formatNumber(value));
 

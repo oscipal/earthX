@@ -90,14 +90,14 @@ describe('the hint beside the fields', () => {
     expect(hint()?.querySelector('.tip')?.getAttribute('aria-label')).toMatch(status === 413 ? /at most 16 files/u : /does not take the area/u);
   });
 
-  it('is there, with its reason, where the area was never asked for (the scenes are scaled differently)', async () => {
+  it('is there, with its reason, where the area was never asked for (an item does not describe the bands)', async () => {
     const both = [item('s0'), item('s1')];
-    (both[1].assets.visual['raster:bands'] as { scale?: number }[])[0].scale = 2;
+    delete (both[1].assets.visual as { 'raster:bands'?: unknown })['raster:bands'];
     const fetchMock = vi.fn(async (_url: string) => json(SCENE));
     vi.stubGlobal('fetch', fetchMock);
     await mount({ items: both, groups: [{ key: ['d'], label: 'd', items: both }], downloaded: { s0: info('s0'), s1: info('s1') }, selectedIds: ['s0', 's1'] });
     expect(hint()?.textContent).toContain(MEASURED_ON_SCENE);
-    expect(hint()?.querySelector('.tip')?.getAttribute('aria-label')).toMatch(/scaled differently/u);
+    expect(hint()?.querySelector('.tip')?.getAttribute('aria-label')).toMatch(/do not describe the bands/u);
     // The histograms too were measured on the first scene, and say so with the rest.
     const measured = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/statistics'));
     expect(measured).toHaveLength(1);

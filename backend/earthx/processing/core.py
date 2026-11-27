@@ -534,23 +534,44 @@ def _keep_classes(meta: RasterMeta, steps: Sequence[PlannedStep]) -> RasterMeta:
     """``meta`` with the classes of each band only while no step changes its values (plan §6, Otto 24.11.2026: per band),
     less the classes a mask hides in the band that decides it (``Operator.hides``): they are in the result no more.
 
-    A step that passes the values on changes none; any other changes the band it adds (Band math), the bands it acts on
-    (Normalize), or every band where it names none. The grid the core reads every band onto is drawn with ``nearest``,
-    which keeps them. A band a step adds has no classes to begin with.
+    Which bands a step changes says :func:`_changed_bands`. The grid the core reads every band onto is drawn with
+    ``nearest``, which keeps them. A band a step adds has no classes to begin with.
     """
-    changed: set[str] = set()
     hidden: dict[str, list[Callable[[numpy.ndarray], numpy.ndarray]]] = {}
     for step in steps:
         if step.operator.hides is not None:
             band, hides = step.operator.hides(step.params)
             hidden.setdefault(band, []).append(hides)
+    changed = _changed_bands(steps)
+    if changed is None:
+        return replace(meta, bands=tuple(replace(band, classes=None) for band in meta.bands))
+    return replace(meta, bands=tuple(_classes_left(band, changed, hidden.get(band.name, [])) for band in meta.bands))
+
+
+def _changed_bands(steps: Sequence[PlannedStep]) -> set[str] | None:
+    """The names of the bands whose values a step changes (:class:`BandUse`); ``None`` where a step changes every one.
+
+    A step that passes the values on changes none; any other changes the band it adds, the bands it acts on, or every band
+    where it names none.
+    """
+    changed: set[str] = set()
+    for step in steps:
         if step.operator.passes_values(step.params):
             continue
         use = step.operator.bands_used(step.params)
         if use.adds is None and use.acts_on is None:
-            return replace(meta, bands=tuple(replace(band, classes=None) for band in meta.bands))
+            return None
         changed |= {use.adds} if use.adds is not None else set(use.acts_on or ())
-    return replace(meta, bands=tuple(_classes_left(band, changed, hidden.get(band.name, [])) for band in meta.bands))
+    return changed
+
+
+def _source_values(source: RasterMeta, steps: Sequence[PlannedStep]) -> frozenset[str]:
+    """The bands of the source whose values reach the result unchanged (M5-68, plan M5-60 §15.2): they keep its look.
+
+    Physical values count as the source's own: the core scales a band before the first step, as its look is stated.
+    """
+    changed = _changed_bands(steps)
+    return frozenset() if changed is None else frozenset(band.name for band in source.bands) - changed
 
 
 def _classes_left(
@@ -574,9 +595,13 @@ def _properties(
     scenes: int,
     statistics: list[dict[str, Any]],
     measured: list[dict[str, Any]],
+    source_values: frozenset[str],
 ) -> dict[str, Any]:
     """The STAC properties of the result (§5.6): projection, bands with the statistics of the area, software,
     lineage, honesty flag, and where steps measured (NM4-71) the numbers they used.
+
+    A band named in ``source_values`` holds the values of the band of the source of that name, unchanged, and says so
+    with ``earthx:source_values`` (M5-68): its look is the source band's.
 
     ``planned`` holds a measuring step with the numbers it ran with, so lineage names what was converted."""
     properties: dict[str, Any]
@@ -596,6 +621,7 @@ def _properties(
             "nodata": "nan" if band.nodata is not None and math.isnan(band.nodata) else band.nodata,
             **({} if band.unit is None else {"unit": band.unit}),
             **({} if band.classes is None else {"classification:classes": _stac_classes(band.classes)}),
+            **({"earthx:source_values": True} if band.name in source_values else {}),
             "statistics": band_statistics,
         }
         for band, band_statistics in zip(meta.bands, statistics, strict=True)
@@ -726,6 +752,7 @@ def run(
             for segment in passes:
                 metas.append(_transform_meta(metas[-1], segment.steps))
             metas[-1] = _keep_classes(metas[-1], live_steps(planned, output.bands))
+            source_values = _source_values(metas[0], live_steps(planned, output.bands))
             nodata = _nodata_for(output.dtype, metas[-1], live_steps(planned, output.bands))
             state.total = sum(_block_count(meta) for meta in metas[1:])
             for index, segment in enumerate(passes[1:]):
@@ -815,6 +842,7 @@ def run(
         _scenes(recipe),
         state.statistics,
         state.measured,
+        source_values,
     )
     if any(state.nodata_moved):
         # How many valid pixels were moved one step off the nodata, per band (M5-28 R4, F4).

@@ -2,15 +2,16 @@
 // same question, and where the view is cropped to the AOI it is asked of the area, with the route of the tiler that counts an order as the
 // job does (`postAreaStatistics`, NM4-19), not of the first whole scene.
 //
-// That route measures in physical values (`scale`/`offset` of the item applied), while the tiles of a band and of the colour picture draw
-// the raw numbers of the file: the answer of a band is turned back with the item's own scaling, so that a range measured here fits the
-// tiles. An index is computed from physical values on both sides and stays as it is.
+// Every range of the page is physical (M5-68): that route measures in physical values (`scale`/`offset` of the item applied) and its
+// answer stays as it is; the statistics of a scene the tile server reads from the stored numbers of the file are turned into physical
+// values here (`measureView`), and a range into stored ones only where a tile URL is built (`storedRescale`, `buildTileUrl`).
 //
 // The order is built here and never leaves the page but in the body of that one request; its text lives in memory (`areaAnswers`) and goes
 // into no URL, storage, log or message. Where the tiler does not take it (`413` too many files, `422` an order or area it refuses) the
 // first whole scene is measured as before, and the caller says so.
 
 import { fetchStatisticsAt, HttpError, postAreaStatistics, withHistogram, withPercentiles, type AreaStatistics, type BandStatistics } from './api';
+import { significant } from './numberFormat';
 import type { QuickPreset } from './quickPresets';
 import { canonicalJson, type Order } from './processing';
 import { bandsOf, bandSources, isArea, orderAoi } from './processingOrder';
@@ -29,19 +30,21 @@ export interface BandScaling {
   offset: number;
 }
 
-// The question for the area of the view: the order the tiler counts, and how to read each band of its answer.
+// The question for the area of the view: the order the tiler counts.
 export interface AreaQuestion {
   datasetId: string;
   order: Order;
-  scalings: BandScaling[];
 }
 
 // How the statistics of what the view draws are asked: of the area where the view is cropped and the tiler can take it, always of the first
 // scene (`sceneUrl`, the statistics route of the tile server) as the fall-back.
 export interface ViewMeasure {
   sceneUrl: string;
+  // The scaling of the stored numbers the scene route answers in: the asset of one band it measures, where the item states one; `null`
+  // for an index or a step (physical already) and for an unscaled asset.
+  scaling: BandScaling | null;
   area: AreaQuestion | null;
-  // Why the view is cropped and the area was not asked for (nothing to turn back into raw values, scenes unknown); `null` otherwise.
+  // Why the view is cropped and the area was not asked for (scenes or bands unknown, no COG); `null` otherwise.
   skipped: string | null;
   // Says whether two measures ask the same question; it holds the order, and so the AOI, and is kept in memory only.
   key: string;
@@ -49,28 +52,34 @@ export interface ViewMeasure {
 
 const INPUT_NAME = 'input';
 
-const NOT_INVERTIBLE = 'A band of this image has a scale that cannot be turned back into the stored values.';
-
-// The scaling of each band of an asset as the item states it, or `null` where a band has one that cannot be turned back.
-function scalingsOf(item: StacItem, asset: string, count: number): BandScaling[] | null {
-  const described = bandsOf(item.assets[asset]);
-  const scalings: BandScaling[] = [];
-  for (let i = 0; i < count; i += 1) {
-    const { scale, offset } = described?.[i] ?? {};
-    const one = { scale: scale ?? 1, offset: offset ?? 0 };
-    if (!(one.scale > 0) || !Number.isFinite(one.scale) || !Number.isFinite(one.offset)) return null;
-    scalings.push(one);
-  }
-  return scalings;
-}
+// Twelve significant digits, as the registry writes a physical value (`BandScaling.physical`): 1200 · 0.0001 − 0.1 is 0.02.
+const tidy = (value: number): number => significant(value, 12);
 
 // A stored value in physical terms, and back.
-export const physicalOf = (raw: number, { scale, offset }: BandScaling): number => raw * scale + offset;
-export const rawOf = (value: number, { scale, offset }: BandScaling): number => (value - offset) / scale;
+export const physicalOf = (raw: number, { scale, offset }: BandScaling): number => tidy(raw * scale + offset);
+export const rawOf = (value: number, { scale, offset }: BandScaling): number => tidy((value - offset) / scale);
 
-// The scaling of an asset of one band as the item states it; `null` where it cannot be turned back.
+// The scaling of an asset of one band as the item states it; `null` where it cannot be turned back (a scale of 0 or below).
 export function scalingOfAsset(item: StacItem, asset: string): BandScaling | null {
-  return scalingsOf(item, asset, 1)?.[0] ?? null;
+  const described = item.assets?.[asset];
+  const { scale, offset } = (described ? bandsOf(described)?.[0] : undefined) ?? {};
+  const one = { scale: scale ?? 1, offset: offset ?? 0 };
+  return one.scale > 0 && Number.isFinite(one.scale) && Number.isFinite(one.offset) ? one : null;
+}
+
+// A physical range of a look (`AppliedRender.rescale`: one pair, or three joined by `;`) in the stored values of a tile of one band, or
+// the other way round with `physicalOf`. An end that is no number stays as it is.
+export function rescaleThrough(rescale: string, convert: (value: number) => number): string {
+  return rescale
+    .split(';')
+    .map((pair) => pair.split(',').map((end) => (end.trim() !== '' && Number.isFinite(Number(end)) ? String(convert(Number(end))) : end)).join(','))
+    .join(';');
+}
+
+// The range of `rescale` as a tile URL of stored values takes it (M5-68): the one place a physical range becomes a stored one. A range
+// the registry gives in stored values (`stored`) and a picture without scaling keep theirs.
+export function storedRescale(rescale: string, stored: boolean | undefined, scaling: BandScaling | null | undefined): string {
+  return stored || !scaling ? rescale : rescaleThrough(rescale, (value) => rawOf(value, scaling));
 }
 
 // The scaling of every asset of one band of `item` that has one other than 1 and 0, for `DownloadedInfo.scalings`; `undefined` for none.
@@ -82,11 +91,9 @@ export function scaledAssetsOf(item: StacItem): Record<string, BandScaling> | un
   return scaled.length > 0 ? Object.fromEntries(scaled) : undefined;
 }
 
-const sameScalings = (a: BandScaling[], b: BandScaling[]) => a.length === b.length && a.every((one, i) => one.scale === b[i].scale && one.offset === b[i].offset);
-
 // The area question for what the view draws: `null` where the view is not cropped (nothing to say), `{ reason }` where it is and none can be
-// asked: scenes the page does not know, an asset of no known bands, a source that is no COG, a scale that cannot be turned back, or scenes
-// of the image whose bands are scaled differently (one range in raw values would then be right for none of them).
+// asked: scenes the page does not know, an asset of no known bands, a source that is no COG. Scenes scaled differently are no reason: the
+// answer is physical, and a physical range fits each of them (M5-68).
 //  - a preset: its steps as a job runs them (an index: the one `band_math` step of `indexOrdersOfScenes`), its band or bands as the output;
 //  - a band or the colour picture: no step, the bands of the asset as the output (`float32`, so that nothing is cut off).
 export function areaQuestionOf(args: {
@@ -105,34 +112,29 @@ export function areaQuestionOf(args: {
   const output = (bands: string[]) => ({ kind: 'raster' as const, format: 'cog' as const, dtype: 'float32', bands });
   if (index) {
     const steps = index.steps.map((step) => ({ op: step.op, op_version: step.opVersion, params: step.params }));
-    return { datasetId, order: { recipe_version: 2, inputs: [input], aoi: orderAoi(aoi), steps, output: output(index.bands) }, scalings: index.bands.map(() => ({ scale: 1, offset: 0 })) };
+    return { datasetId, order: { recipe_version: 2, inputs: [input], aoi: orderAoi(aoi), steps, output: output(index.bands) } };
   }
   let names: string[] = [];
-  let scalings: BandScaling[] | null = null;
   for (const item of items) {
     const source = bandSources(item, 'cog', null, collection).find((one) => one.asset === asset);
     if (!source || source.names.length === 0 || (names.length > 0 && names.join() !== source.names.join())) return { reason: 'The items do not describe the bands of this image.' };
-    const own = scalingsOf(item, asset, source.names.length);
-    if (!own) return { reason: NOT_INVERTIBLE };
-    if (scalings && !sameScalings(scalings, own)) return { reason: 'The scenes of this image are scaled differently, so one range would not fit them all.' };
     names = source.names;
-    scalings = own;
   }
-  if (!scalings) return { reason: 'The items do not describe the bands of this image.' };
-  return { datasetId, order: { recipe_version: 2, inputs: [input], aoi: orderAoi(aoi), steps: [], output: output(names) }, scalings };
+  if (names.length === 0) return { reason: 'The items do not describe the bands of this image.' };
+  return { datasetId, order: { recipe_version: 2, inputs: [input], aoi: orderAoi(aoi), steps: [], output: output(names) } };
 }
 
 const KEYS_OF_VALUES = /^(minimum|maximum|min|max|mean|median|percentile_\d+)$/u;
 
-// One band of the answer, its numbers back in the raw values the tiles draw. A scaling is linear and rising, so every value, every
+// The statistics of a scene in the stored numbers of its file, in physical values. A scaling is linear and rising, so every value, every
 // percentile and every edge of the histogram goes through the same line; the spread only grows by the scale.
-export function inRawValues(statistics: Record<string, unknown>, scaling: BandScaling): Record<string, unknown> {
-  const raw = (value: number) => rawOf(value, scaling);
+export function inPhysicalValues(statistics: Record<string, unknown>, scaling: BandScaling): Record<string, unknown> {
+  const physical = (value: number) => physicalOf(value, scaling);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(statistics)) {
-    if (KEYS_OF_VALUES.test(key) && typeof value === 'number') out[key] = raw(value);
-    else if (key === 'stddev' && typeof value === 'number') out[key] = value / scaling.scale;
-    else if (key === 'histogram' && Array.isArray(value) && Array.isArray(value[1])) out[key] = [value[0], value[1].map((edge) => (typeof edge === 'number' ? raw(edge) : edge))];
+    if (KEYS_OF_VALUES.test(key) && typeof value === 'number') out[key] = physical(value);
+    else if (key === 'stddev' && typeof value === 'number') out[key] = value * scaling.scale;
+    else if (key === 'histogram' && Array.isArray(value) && Array.isArray(value[1])) out[key] = [value[0], value[1].map((edge) => (typeof edge === 'number' ? physical(edge) : edge))];
     else out[key] = value;
   }
   return out;
@@ -140,11 +142,10 @@ export function inRawValues(statistics: Record<string, unknown>, scaling: BandSc
 
 // The answer of the route as the statistics of the tile server have them (`Record<string, BandStatistics>`: by band, `min`/`max` and the
 // percentiles at hand), so that what reads those reads these.
-export function statisticsOfArea(answer: AreaStatistics, scalings: readonly BandScaling[]): Record<string, BandStatistics> {
+export function statisticsOfArea(answer: AreaStatistics): Record<string, BandStatistics> {
   const out: Record<string, BandStatistics> = {};
   answer.bands.forEach((band, index) => {
-    const values = scalings[index] ? inRawValues(band.statistics, scalings[index]) : band.statistics;
-    out[band.name || String(index)] = { ...values, min: values.minimum, max: values.maximum, unit: band.unit } as BandStatistics;
+    out[band.name || String(index)] = { ...band.statistics, min: band.statistics.minimum, max: band.statistics.maximum, unit: band.unit } as BandStatistics;
   });
   return out;
 }
@@ -184,7 +185,7 @@ export function fallbackReasonOf(measure: ViewMeasure): string | null {
   return measure.skipped ?? refused.get(measure.key) ?? null;
 }
 
-// The statistics of what the view draws, by band, in the values the tiles draw. `fellBack` is the reason, where the first whole scene was
+// The statistics of what the view draws, by band, in physical values. `fellBack` is the reason, where the first whole scene was
 // measured although the view is cropped: the area was not asked for (`skipped`) or the tiler did not take it (`413`, `422`). Any other
 // failure passes to the caller, as it always did.
 //  - `percentiles`: whole percents the scene route is asked to add (the area route has every whole percent);
@@ -195,11 +196,14 @@ export async function measureView(
 ): Promise<{ statistics: Record<string, BandStatistics>; fellBack: string | null }> {
   const scene = async () => {
     const asked = withPercentiles(measure.sceneUrl, percentiles);
-    return fetchStatisticsAt(histogram ? withHistogram(asked) : asked);
+    const statistics = await fetchStatisticsAt(histogram ? withHistogram(asked) : asked);
+    const { scaling } = measure;
+    if (!scaling) return statistics;
+    return Object.fromEntries(Object.entries(statistics).map(([band, values]) => [band, inPhysicalValues(values as Record<string, unknown>, scaling) as BandStatistics]));
   };
   if (!measure.area) return { statistics: await scene(), fellBack: measure.skipped };
   try {
-    const statistics = statisticsOfArea(await answerTo(measure.area), measure.area.scalings);
+    const statistics = statisticsOfArea(await answerTo(measure.area));
     refused.delete(measure.key);
     return { statistics, fellBack: null };
   } catch (error) {

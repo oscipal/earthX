@@ -231,7 +231,8 @@ describe('the dropdown "Band" of a dataset read through chunk references (M5-11)
 });
 
 describe('the look of a band (M5-60)', () => {
-  // Reflectance stored as whole numbers: stored · 0.0001 − 0.1 (Sentinel-2).
+  // Reflectance stored as whole numbers: stored · 0.0001 − 0.1 (Sentinel-2). The fields are physical (M5-68): the scene's measure of
+  // 150 … 2500 stored is −0.085 … 0.15.
   const scaled = { ...tiff(1), 'raster:bands': [{ scale: 0.0001, offset: -0.1 }] } as StacAsset;
   const looks = collection({
     'earthx:bands': [
@@ -246,15 +247,15 @@ describe('the look of a band (M5-60)', () => {
     choose('band:B04');
     expect(store().pendingColormapName).toBe('viridis');
     await settle();
-    expect(inputs().map((i) => i.value)).toEqual(['150', '2500']);
+    expect(inputs().map((i) => i.value)).toEqual(['-0.085', '0.15']);
   });
 
-  it('puts a fixed range in the stored values the tiles draw, without a measure', async () => {
+  it('puts a fixed range in the fields as the look gives it, physical, without a measure', async () => {
     mount({}, looks, assets);
     fetchMock.mockClear();
     choose('band:B08');
     await settle();
-    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['magma', '1000', '4000']);
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['magma', '0', '0.3']);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/statistics') && !String(url).includes('histogram_bins'))).toBe(false);
   });
 
@@ -264,13 +265,13 @@ describe('the look of a band (M5-60)', () => {
     await settle();
     act(() => {
       store().setPendingColormapName('gray');
-      store().setPendingVmin('1500');
+      store().setPendingVmin('0.05');
     });
     await act(async () => {
       await store().autoStretch();
     });
     // Only the range: the colormap chosen stays.
-    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['gray', '1000', '4000']);
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['gray', '0', '0.3']);
     choose('band:B04');
     await settle();
     expect(store().pendingColormapName).toBe('viridis');
@@ -285,7 +286,7 @@ describe('the look of a band (M5-60)', () => {
     await act(async () => {
       await store().autoStretch();
     });
-    expect([store().pendingUnit, store().pendingVmin, store().pendingVmax]).toEqual(['value', '1000', '4000']);
+    expect([store().pendingUnit, store().pendingVmin, store().pendingVmax]).toEqual(['value', '0', '0.3']);
   });
 
   it('measures a look in percentiles as its percentiles: 0–100 is the minimum to the maximum, in values and in percent', async () => {
@@ -293,7 +294,7 @@ describe('the look of a band (M5-60)', () => {
     mount({}, whole, assets);
     choose('band:B04');
     await settle();
-    expect(inputs().map((i) => i.value)).toEqual(['100', '4000']);
+    expect(inputs().map((i) => i.value)).toEqual(['-0.09', '0.3']);
     act(() => store().setPendingUnit('percent'));
     await act(async () => {
       await store().autoStretch();
@@ -305,7 +306,7 @@ describe('the look of a band (M5-60)', () => {
     mount({}, collection(), assets);
     choose('band:B04');
     await settle();
-    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['', '150', '2500']);
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['', '-0.085', '0.15']);
   });
 });
 
