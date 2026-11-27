@@ -56,9 +56,21 @@ Der Hook `scripts/setup-cloud-session.sh` ändert sich nicht: Er legt die Erweit
 
 T-C-Test `backend/tests/integration/test_postgres_extensions.py`: Die Datenbank bietet `vector` in einer Fassung ≥ 0.8.4 an (`pg_available_extension_versions`), dazu `postgis` und die Erweiterungen, die die Migrationen anlegen (`pg_trgm`, `unaccent`). Er läuft in CI und Cloud-Sitzung und überspringt sich nicht (`integration/conftest.py`). Ohne den Setup-Text aus §6 wird er in einer neuen Session rot (F2).
 
-## 8. Messung der Bauzeit
+## 8. Messung der Bauzeit [M]
 
-Wird nach dem ersten CI-Lauf eingetragen.
+Aus den Zeitstempeln der CI-Logs vom 27.11.2026 (Läufe 46021794240 ohne Cache, 46022497911 mit Cache), verglichen mit dem letzten Lauf auf `main` (46018938382, Service-Container `16-3.4`).
+
+| Schritt je Testteil | `main` (Service) | ohne Cache | mit Cache |
+|---|---|---|---|
+| Postgres bereitstellen: „Initialize containers“ bzw. `setup-buildx` + Bau + Start bis `healthy` | 14–19 s | 26–74 s | 18–27 s |
+| davon `setup-buildx` | — | 6–11 s | 4 s |
+| davon Bau (`build-push-action`, mit `load`) | — | 15–31 s; Teil 1 61 s, weil er den Cache schreibt | 10–18 s |
+| davon Start bis `healthy` | — | 3–5 s | 3–5 s |
+
+- **Mit Cache** kostet das eigene Image je Teil rund **5–10 s mehr** als der Service-Container. Die Teile laufen parallel; die Backend-Prüfung dauert damit spürbar nicht länger (Tests je Teil 3–7 min).
+- **Ohne Cache** (erster Lauf, neues Basis-Image, verdrängter Cache) je Teil bis rund 1 min mehr; nur Teil 1 schreibt den Cache.
+- **Compose-Job:** „Build images“ 72 s gegenüber 73 s auf `main`; Postgres (Basis-Image 6,6 s, `apt` mit pgvector 4,9 s, Prüfung 0,2 s) baut parallel zum Backend-Image (28 s für die schwerste Stufe).
+- Im Bau-Log steht bei jedem Bau ohne Cache die Fassung: `Candidate: 0.8.7-2.pgdg13+1`, `pgvector 0.8.7`.
 
 ## 9. Fragen an Otto
 
