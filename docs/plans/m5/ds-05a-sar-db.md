@@ -1,6 +1,6 @@
 # DS-05a — dB für Sentinel-1: Operator `sar_db`, Capability `sar_backscatter`, „VV dB“ und „VH dB“
 
-**Stand:** 27.11.2026, Plan mit Fragen F1–F6 und Auslegungen A1–A9. Umsetzung nach den Empfehlungen in zwei Draft-PRs (§9), Antworten Otto offen.
+**Stand:** 27.11.2026, Plan mit Fragen F1–F6 und Auslegungen A1–A9, umgesetzt nach den Empfehlungen in zwei Draft-PRs (§11, §12); Antworten Otto offen.
 **Stufe B.** Höchstens zwei PRs (Auftrag Otto, 27.11.2026).
 **Aufgabe (Otto, 27.11.2026):**
 
@@ -57,11 +57,11 @@ Eine Sentinel-1-GRD-Szene lässt sich in dB zeigen, prozessieren und exportieren
 
 **Rechnung:**
 
-- Eingabe nur `uint8` oder `uint16` (`BandMeta.data_type`, in `transform` vor dem ersten Block geprüft; im Block noch einmal am Array). Gleitkomma und andere Ganzzahlen: `RecipeInvalid` „sar_db reads whole numbers up to 65535; … is float32“ (F2 aus `adr/0030`: Gleitkomma später).
+- Eingabe: ganze Zahlen von 0 bis 65 535, geprüft an den Werten jedes Blocks (A2). Andere Werte: `RecipeInvalid` „sar_db reads whole numbers from 0 to 65535 (digital numbers); … holds others“ (F2 aus `adr/0030`: Gleitkomma später).
 - Wertetabelle `T[n] = float32(20·log10(n))` für `n = 1 … 65535`, `T[0]` maskiert (DN = 0 ist Nodata bei GRD, `adr/0030` §5.2.1). Intensität: `T[n] / 2`. Die Halbierung ist in `float32` exakt, also ebenso bitgleich.
 - Ausgabe `float32`, Nodata `NaN`, maskiert, wo die Eingabe maskiert oder 0 ist. Einheit `dB`.
 - `passes_values = MAKES_VALUES` (neue Werte, kein Ganzzahltyp im Ergebnis).
-- Kosten 0,2 je Mpx (`adr/0030` §7); gemessen in §8.
+- Kosten: `adr/0030` §7 schätzt 0,2 für den Tabellenzugriff allein. Mit dem Anhängen an den Bestand braucht der Kern 0,77 der Zeit von `band_math` [M, 4 Mpx]; dazu die Statistik des Ergebnisses wie bei `band_math`: Faktor 1,0.
 
 **Bitgleich (A1):** Die Tabelle entsteht so, als wäre jeder Eintrag mit Pythons `decimal` gerechnet und gerundet (`float(Decimal)`, dann `float32`). Ganz in `decimal` dauert das 2,8 s je Prozess [M] — zu lang für den ersten Kachelaufruf. Deshalb rechnet der Operator `20·log10` in `float64` mit numpy und rechnet nur die Einträge mit `decimal` nach, bei denen `float32(v·(1 − 10⁻¹²))` und `float32(v·(1 + 10⁻¹²))` verschieden sind. Für alle anderen liegt jede `float64`-Zahl im Abstand 10⁻¹² denselben `float32` nah; der Fehler von `log10` in `float64` ist um Größenordnungen kleiner. Das Ergebnis ist damit Eintrag für Eintrag gleich der `decimal`-Tabelle, unabhängig von der libm der Maschine. Ein Test vergleicht beide Tabellen ganz (65 535 Einträge). In dieser Session waren alle Einträge schon ohne Nachrechnen gleich [M].
 
@@ -102,9 +102,9 @@ step_presets:
 
 ## 5. Frontend [A]
 
-1. **Presets je Szene (Registry, „erscheint nicht“):** „Quick processing“ zeigt nur Presets, deren Bänder die gezeigte Szene hat (`bandAssetsOf`). Auf einer HH/HV-Szene fehlen „VV dB“ und „VH dB“; ohne Presets fehlt der Abschnitt (Leitfaden §1 Punkt 5). Kennt die Ansicht die Bänder nicht (keine Szene, Zarr), bleibt alles wie heute.
+1. **Presets je Szene (Registry, „erscheint nicht“):** „Quick processing“ zeigt nur Presets, deren Bänder die gezeigte Szene hat (`bandAssetsOf`, A7). Auf einer HH/HV-Szene fehlen „VV dB“ und „VH dB“; ohne Presets fehlt der Abschnitt (Leitfaden §1 Punkt 5). Kennt die Ansicht die Bänder nicht (keine Szene, Zarr), bleibt alles wie heute.
 2. **Panel:** `sar_db` ist ein Schritt, der `bands` liest und ein Band `name` hinzufügt, wie `terrain`: eine gemeinsame Liste statt der Namen an drei Stellen. Vorschlag beim Hinzufügen: das erste Datenband mit Einheit `DN`, Name `<band>_db` (frei gemacht mit `defaultName`). Ändert man das Band und trägt der Name noch den Vorschlag, folgt er (wie beim Produkt von `terrain`).
-3. **Legende (F5):** Ansicht und angeheftete Ebene mit einem Schritt-Preset tragen die Einheit, die der Server beim Messen des Bands nennt, im Look (`AppliedRender.unit`); die Legende nimmt sie, wo die Kachel Schritte hat. Ohne Messung (fester Look) keine Einheit statt einer falschen.
+3. **Legende (F5):** Die Ansicht merkt sich die Einheit, die der Server beim Messen eines Schritt-Presets für dessen Band nennt (je Datensatz und Schritt mit Parametern, `presetLooks.ts`); die Legende einer Ansicht oder Ebene mit Schritt-Preset nimmt sie. Ohne Messung (fester Look, Permalink vor dem ersten Messen) keine Einheit statt einer falschen. Ein Index zeigt keine Einheit.
 4. **Export:** nichts Neues. „Download crop“ einer Ebene mit „VV dB“ läuft wie bei jedem Schritt-Preset als Job (`indexDownload.ts`) und schickt den Look der Ebene als `exportStyle` mit (M5-64); der Browser-Check prüft den Auftrag.
 
 ---
@@ -148,12 +148,12 @@ step_presets:
 ### 7.1 Auslegungen (gelten, wenn du nicht widersprichst)
 
 - **A1** Wertetabelle wie §3: gleich der `decimal`-Tabelle, aber in Millisekunden gebaut; der Test vergleicht beide ganz.
-- **A2** `sar_db` Version 1 liest nur `uint8`/`uint16`; ein Band aus `band_math`, `normalize` oder einer Skalierung (`float32`) wird mit Grund abgewiesen. dB auf Gleitkomma kommt mit eigener Toleranzregel später (`adr/0030` F2, `adr/0036` §8: M6).
+- **A2** `sar_db` Version 1 liest nur ganze Zahlen von 0 bis 65 535; Brüche, negative, zu große oder nicht endliche Werte weisen den Schritt mit Grund ab (im Job: der Job scheitert mit der Meldung). Geprüft wird an den Werten, nicht am Typ [P]: Die Kachel kennt die Typen der Datei nicht (sie führt jedes Band als `float32`), die Schätzung in `api` nimmt `float64`, wo das Item keinen Typ nennt, und ein Bestand mit einem `float32`-Band hält jedes Band als `float32` (zweiter `sar_db`-Schritt nach einem ersten). dB auf Gleitkomma kommt mit eigener Toleranzregel später (`adr/0030` F2, `adr/0036` §8: M6).
 - **A3** `sar_quantity` hat wie `band_looks` eine leere Vorgabe; Pflicht ist es über die Prüfung „`sar_backscatter` ⇔ nicht leer“. Die Capability selbst hat keine Vorgabe (B10).
 - **A4** Die Beschreibung je Datensatz setzt `quantity` als `const`, wo der Eintrag nur eine Größe hat (Muster: `reproject` ohne `interpolation`, M5-07).
 - **A5** Kategorie des Operators `radar`, Titel „SAR dB“; der Reiter „Radar“ ordnet ihn später ein (UI-07).
 - **A6** Die Hinweise „Uncalibrated (DN)“ und „Approximate geolocation“ gelten weiter; `sar_db` ändert sie nicht. Der Methodentext nennt „amplitude“, nicht „backscatter“.
-- **A7** Presets einer Szene: nur ausgeblendet, wo die Bänder der gezeigten Szene bekannt sind und eines fehlt.
+- **A7** Presets einer Szene: ausgeblendet nur, wo ein Band, das sie lesen, ein Band des Datensatzes (`earthx:band_units`) ist und der gezeigten Szene fehlt. Kennt die Ansicht die Bänder der Szene nicht, bleibt alles wie heute.
 - **A8** Der Browser-Check nutzt eine synthetische Sentinel-1-Szene in der Form von Earth Search und gemockte Antworten; Collection und Prozessbeschreibung sind die der Registry (erzeugt). Live-Abrufe laufen nicht aus der Cloud-Session (`adr/0002`, M5-Plan §6.5); die echte Szene prüft Otto lokal (§10).
 - **A9** Kein neues Paket, keine neue Abhängigkeit.
 
@@ -182,3 +182,21 @@ step_presets:
 3. Eine EW-Szene mit HH/HV (Polarmeer): kein „VV dB“/„VH dB“.
 4. „Download crop“ der Ebene „VV dB“: ZIP mit `result.tif` und `result.qml`; in QGIS grau mit demselben Bereich.
 5. Processing-Panel: „Add step“ → „SAR dB“, Band `vh`, Name `vh_db`; Vorschau und Job.
+
+---
+
+## 11. Umsetzung PR 1: Plan und Backend (27.11.2026, #435)
+
+- `catalog`: `Capabilities.sar_backscatter`, `DatasetConfig.sar_quantity` mit Prüfung (A3), `earthx:capabilities.sar_backscatter`, Suchbegriffe in `capability_terms.yaml`; alle neun Einträge setzen das Flag.
+- `processing/operators/sar_db.py`: Operator, Tabelle (`db_table`, `exact_db_table`), Look, `dataset_check`, `dataset_schema`; neuer Haken `Operator.dataset_schema`, aufgerufen in `api/processing_docs.py`.
+- Sentinel-1: `sar_quantity`, Presets `vv_db`, `vh_db`.
+- Prozess-Fixture `frontend/src/fixtures/processes/sentinel-1-grd.json` neu geschrieben; die übrigen unverändert.
+- **Laufen lassen:** `pytest backend/tests/catalog backend/tests/earthx/processing backend/tests/earthx/api` (8573 grün; 8 Tests mit Listen der Operatoren und Presets nachgezogen, danach grün), `test_image_catalog_entries.py`, `test_live_smoke_dry_run.py`, `integration/test_api_collection_search.py`, `ruff check backend`, `lint-imports` (17 Verträge).
+- **Befund:** Die Kachel bitgleich zum Job auf der nativen Ebene [M] (`test_tiler_sar_db.py`); der Job bei Blockgröße 64 und 256 dieselben Bytes; die Tabelle ohne Nachrechnen schon gleich der `decimal`-Tabelle, mit einem um 10⁻¹³ verfälschten `log10` nach dem Nachrechnen ebenso (Test).
+
+## 12. Umsetzung PR 2: Frontend und Browser-Check (27.11.2026)
+
+- Panel: `readsBandsAddsBand` (`terrain`, `sar_db`) statt des Namens an jeder Stelle; Vorschlag erstes `DN`-Band und `<band>_db`; der Name folgt dem Band, bis man ihn selbst vergibt (wie das Produkt bei `terrain`). Nebenbei: Ein falsches Band eines `terrain`-Schritts steht jetzt am Feld „Bands“, nicht an einem Feld „expression“, das der Schritt nicht hat.
+- „Quick processing“ je Szene (A7), Legende (F5).
+- **Befund aus dem Browser-Check:** Die Kachel-URL der Ansicht trägt die Schritte nicht (die Ansicht zeichnet aus der Vorlage der Szene und ihrem Look); die Legende erkennt das Preset deshalb am Look (`index`), nicht an `op` in der URL.
+- **Laufen lassen:** Vitest aller Dateien zu Processing, Store, Presets, Legende und Ansicht (97 Dateien, 2869 Tests grün), `npm run lint`, `npx tsc -b`. Browser-Checks: neu `e2e/ds-05a-sar-db.cjs` (hell und dunkel, 1280×800 und 360×740: grün), dazu `quick-processing.cjs`, `preset-params.cjs`, `map-legend.cjs` grün. `s1-pass.cjs` und `processing-panel.cjs` scheitern auf `main` ebenso (Selektoren, die es seit früheren Umbauten nicht mehr gibt); nicht Teil dieser Aufgabe.
