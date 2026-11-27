@@ -1,6 +1,6 @@
 # M5-67 — Harvest ohne Handarbeit
 
-**Status (24.11.2026):** Plan angenommen (Otto, 24.11.2026): F1, F4–F11 je 1; F2 und F3 ersetzt durch Ottos Zusatz „jeder Eintrag erst nach bestandener Prüfung seines eigenen Links“ (§4, §4a–§4d, §18a); F12 = 2 und „ungeprüft heißt unsichtbar“ (Otto, 24.11.2026, §18b); F13 = 1, F14 = 1, A18 angenommen (§18c). **Teil 1 fertig** (24.11.2026); Teil 2 umgesetzt (§21); **Fix 1** nach Ottos erstem Probelauf, **Fix 2** nach dem zweiten (§22). **Stufe B.** Teil 1 (Plan, Nachträge, Backend-Bausteine) in [#408](https://github.com/oscipal/earthX/pull/408), Teil 2 (Skript, Freigabe nach Regeln, Laufdateien) danach.
+**Status (24.11.2026):** Plan angenommen (Otto, 24.11.2026): F1, F4–F11 je 1; F2 und F3 ersetzt durch Ottos Zusatz „jeder Eintrag erst nach bestandener Prüfung seines eigenen Links“ (§4, §4a–§4d, §18a); F12 = 2 und „ungeprüft heißt unsichtbar“ (Otto, 24.11.2026, §18b); F13 = 1, F14 = 1, A18 angenommen (§18c). **Teil 1 fertig** (24.11.2026); Teil 2 umgesetzt (§21); **Fix 1** nach Ottos erstem Probelauf, **Fix 2** nach dem zweiten (§22), **Fix 4** nach dem zweiten Lauf vom 25.11. (§22b). **Stufe B.** Teil 1 (Plan, Nachträge, Backend-Bausteine) in [#408](https://github.com/oscipal/earthX/pull/408), Teil 2 (Skript, Freigabe nach Regeln, Laufdateien) danach.
 **Aufgabe:** M5-67, Auftrag von Otto vom 24.11.2026.
 **Entscheidung Otto (24.11.2026):** Die Lauf-Freigabe geht von Otto auf feste Regeln über (`adr/0033` F1, Option 2, nachgelagerte Stichprobe). Otto übernimmt Haftung und Verantwortung. Lizenzen werden nie automatisch neu eingestuft. Grundsatz: **Im Zweifel wartet ein Fund; nie wird eine unsichere Lizenzangabe veröffentlicht.** Ziel: Otto startet einen Lauf mit einem Doppelklick, sonst nichts. Was er bisher aus dem Terminal kopiert hat, steht danach im Repo.
 **Grundlagen:** `adr/0033` (§5–§11 mit den Nachträgen vom 23.11. und 24.11.), `plans/m5/m5-20-freigabe-geernteter-eintraege.md` (§10, §12, §13a–§13h, §14, §16), `adr/0002` (keine Abrufe realer Quellen aus der Sitzung, Tests ohne Netz), `adr/0025` §6.5 (P1), `scripts/harvest-report.ps1`, Entscheidungslog bis 24.11.2026, `projektuebersicht.md` Prinzipien 12, 15, KLAERUNGEN B8, B11.
@@ -65,7 +65,7 @@ Schritte des Skripts `scripts/harvest-cycle.ps1` (Windows PowerShell 5.1, nur AS
 2. **Prüfen:** `git`, `gh` und `docker` vorhanden; `gh auth status` angemeldet; Checkout sauber (`git status --porcelain`), sonst Abbruch (F1); auf `main` wechseln, `git pull --ff-only`.
 3. **Docker:** `docker info`; antwortet es nicht, Docker Desktop starten und bis zu 5 min warten. Dann `docker compose up -d --build` und warten, bis `catalog-load` fertig ist.
 4. **Branch** `harvest/<Tag>-<HHmm>`, immer mit Uhrzeit (Otto, 25.11.2026, §22a). Vorher schließt der Lauf die Draft-PRs früherer gescheiterter Läufe und löscht ihre Branches (§22, A10 neu).
-5. **Ernten:** Images des Profils `harvest` leise bauen (`--progress quiet`, wie M5-20 §13e), dann je Quelle mit `enabled: true` ein Lauf `harvest <quelle>`. Scheitert eine Quelle (Host antwortet nicht, `robots`), ist das ein Befund dieser Quelle, kein Abbruch; ihr Bericht entfällt in diesem Lauf (A2). Eine planmäßige Pause (Exit-Code 75, §22) ist dagegen ein Erfolg: der Bericht der Quelle läuft weiter, die Pause steht als Hinweis im Bericht des Laufs.
+5. **Ernten:** Images des Profils `harvest` leise bauen (`--progress quiet`, wie M5-20 §13e), dann je Quelle mit `enabled: true` ein Lauf `harvest <quelle>`. Scheitert eine Quelle (Host antwortet nicht, `robots`), ist das ein Befund dieser Quelle, kein Abbruch; ihr Bericht entfällt in diesem Lauf (A2), und das Fenster sagt es: „Ernte <Quelle> gescheitert: …“ und später „Bericht <Quelle> uebersprungen: …“ (§22b.3). Eine planmäßige Pause (Exit-Code 75, §22) ist dagegen ein Erfolg: der Bericht der Quelle läuft weiter, die Pause steht als Hinweis im Bericht des Laufs.
 6. **Lizenzen:** `harvest-spellings` schreibt neue Schreibweisen nach §7 in `backend/catalog/licenses/spellings.yaml`; `harvest-grants` für alle Quellen (neue Herausgeber bekommen `grant-to-all.yaml`). Danach die Images neu bauen, damit der Bericht beides kennt.
 7. **Bericht** je Quelle in der Reihenfolge `dedupe_rank`, dann ID (FSDI zuerst, M5-20 §16): Stapel, Warnzeichen (§5), Stichprobe aus den Funden **ohne** Warnzeichen, Freigabedatei `pending`, Bericht `.md`, Classify-Auszug (A14).
 8. **Linkprüfung** (§4): neue und erneut vorgelegte Einträge aller Stapel, dann der Bestand nach Rotation (§4a), im Budget; Verbergen und Zurückholen nach §4a mit Schutz nach §4c; Ergebnis der Stichprobe in die Freigabedatei.
@@ -201,7 +201,7 @@ Rein aus den Metadaten, ohne Anfrage, im Bericht über **alle** Funde des Stapel
 
 ## 9. Ausgaben im Repo (Punkt 4b)
 
-**Je Lauf ein Ordner** `docs/harvest/laeufe/<Tag>/` (am selben Tag `<Tag>-2`), im PR des Laufs:
+**Je Lauf ein Ordner** `docs/harvest/laeufe/<Tag>/` (am selben Tag `<Tag>-2`, `<Tag>-3` …; ebenso die Freigabedateien, §22b.1), im PR des Laufs:
 
 | Datei | Inhalt |
 |---|---|
@@ -239,7 +239,7 @@ Die Stichprobe mit dem Ergebnis der Linkprüfung steht im Bericht `.md` neben de
 | 13 | Merge abgelehnt (Branch-Schutz) | kein Merge | „Merge abgelehnt: <Grund von gh>. PR <Nummer> bleibt offen.“ |
 | 13 | `compose up` nach dem Merge scheitert | gemergt, aber nicht veröffentlicht; Befund | „Gemergt, aber die Plattform startet nicht. Details: <Pfad>.“ |
 
-Bei jedem Fehler: nichts gemergt, Branch bleibt stehen, Sperrdatei entfernt, Protokoll unter `..\earthx-ausgaben\<Lauf>\`. Ein offener PR eines früheren Laufs hält einen neuen Lauf nicht auf; er steht in der Befundliste (A10). Der neue Stapel übernimmt die Funde des alten (`adr/0033` §8.3).
+Bei jedem Fehler: nichts gemergt, Branch bleibt stehen, Sperrdatei entfernt, Protokoll unter `..\earthx-ausgaben\<Lauf>\`. Ein offener PR eines früheren Laufs hält einen neuen Lauf nicht auf; er steht in der Befundliste (A10), außer er hat einen roten Pflicht-Check: den schließt der nächste Lauf selbst (§22b.5). Der neue Stapel übernimmt die Funde des alten (`adr/0033` §8.3).
 
 ## 11. Einmalige Einrichtung (Windows PowerShell 5.1, kein lokales Python)
 
@@ -459,7 +459,7 @@ Bis zu den Antworten auf F12 und F13 gilt der Schutz nach §4c: für diese Muste
 - **A7** `excluded_entries` hält nur Einträge zurück, nie Regeln; `excluded_rules` bleibt Otto.
 - **A8** Commit-Nachrichten und PR-Titel englisch, Laufdateien deutsch.
 - **A9** `harvest-grants` läuft in jedem Lauf (Anwendung von `grant-to-all.yaml`).
-- **A10** Offene PRs früherer Läufe bleiben offen und stehen in der Befundliste. **Ausnahme (Otto, 24.11.2026, §22):** Draft-PRs gescheiterter Läufe (Titel „Harvest run … (failed)“, Branch `harvest/<Tag>…`) schließt der nächste Lauf selbst mit einem Kommentar und löscht ihre Branches; sonst schließt der Lauf keinen PR.
+- **A10** Offene PRs früherer Läufe bleiben offen und stehen in der Befundliste. **Ausnahme (Otto, 24.11.2026, §22):** Draft-PRs gescheiterter Läufe (Titel „Harvest run … (failed)“, Branch `harvest/<Tag>…`) schließt der nächste Lauf selbst mit einem Kommentar und löscht ihre Branches; sonst schließt der Lauf keinen PR. **Zweite Ausnahme (Otto, 27.11.2026, §22b.5):** ein eigener PR eines früheren Laufs mit rotem Pflicht-Check.
 - **A11** Höchstens 90 min Warten auf die Checks; danach wie rot.
 - **A12** Nach dem Merge wird der Branch gelöscht (`--delete-branch`); bei einem Fehler bleibt er.
 - **A13** Das Skript schreibt nur `backend/catalog/approvals/`, `backend/catalog/licenses/grants/`, `backend/catalog/licenses/spellings.yaml`, `backend/catalog/candidates/` (Nachtrag 25.11.2026, M5-20 PR 2) und `docs/harvest/`; es ändert nie `terms.yaml`, `geodata.yaml`, `flags.yaml`, `blocked.yaml`, `sources/` oder `.github/`.
@@ -541,3 +541,145 @@ Ernte aller vier Quellen und Bericht von earth-search liefen, dann brach der Lau
 4. **Test, der es gefunden hätte.** `tests/container_tree.py` baut je Dienst den Baum nach, den Dockerfile (Stufe `app`, jede `COPY`-Zeile) und Compose (Mounts unter `/app`) ergeben, und startet darin den Einstieg des Dienstes als eigenen Prozess; dort zeigt `CATALOG_DIR` auf das `catalog/` des Baums. `tests/test_harvest_container_files.py` verlangt für jeden Dienst des Profils `harvest`, dass jeder Pfad unter `catalog/`, den ein geladenes Modul als Konstante nennt, im Baum liegt; ohne die Mounts schlagen drei Dienste mit der Liste der fehlenden Dateien fehl. `tests/integration/test_harvest_container_steps.py` lässt die Schritte `sources`, `spellings`, `grants`, `report` (mit `--classify`), `linkcheck --dry-run`, `decide`, `summary` und `harvest` (mit unbekannter Quelle, ohne Abruf) im Baum laufen, mit den Argumenten des Skripts, und löscht je eine Regeldatei, um die Meldung zu prüfen. **Grenze:** Das echte Image läuft nur im CI-Job `compose-topology`; ihn um die Schritte zu erweitern braucht eine Änderung an `.github/` und liegt bei Otto (Frage im PR).
 5. **Branch-Name, Entscheidung Otto (25.11.2026): immer `harvest/<Tag>-<HHmm>`, auch wenn der Name frei ist.** Vorher nahm der erste Lauf eines Tages `harvest/<Tag>` und die Uhrzeit nur bei vergebenem Namen (§22.4). Das war so geplant, aber im Probelauf vom 24.11. nahm der zweite Lauf wieder `harvest/2026-11-24`, weil er #413 samt Branch vorher geschlossen hatte. Jetzt trägt jeder Lauf seine Uhrzeit; nur ein zweiter Lauf in derselben Minute hängt `-<n>` an. PR-Titel „Harvest run <Tag> <HH:mm>“ immer mit Uhrzeit. Das Aufräumen gescheiterter Drafts erkennt die Namen unverändert. Der CI-Job `compose-topology` bleibt unverändert (Otto: der Nachbau-Test genügt).
 6. **Nicht geprüft in der Sitzung:** das Skript (keine PowerShell) und das echte Image (kein Docker). Offen beobachtet, nicht geändert: `gh pr checks --json` beendet sich laut Hilfe bei wartenden Checks mit 8; ob es bei einem roten Check mit 1 endet, ist hier nicht prüfbar. Endet es so, liest `Lines` die Ausgabe nicht (gibt `$null` zurück, das Skript behandelt es als „wartet“), und ein roter Check würde erst nach 90 min als nicht grün gemeldet. Folge wäre nur Wartezeit, kein falscher Merge. Otto sieht es am ersten Lauf mit rotem Check.
+
+### 22b. Fix 4 nach dem zweiten Lauf vom 25.11. (27.11.2026, Stufe A)
+
+Ottos zweiter Lauf am 25.11. (15:43, PR [#425](https://github.com/oscipal/earthX/pull/425), Branch `harvest/2026-11-25-1543`) scheiterte an der CI: `test_every_shipped_approval_loads_and_is_consistent` erwartete `approvals/2026-11-25-fsdi-stac.yaml` und fand `2026-11-25-fsdi-stac-2.yaml`. Der Branch hat drei Commits auf `main` vom Stand #418; der Lauf selbst hat alle Schritte durchlaufen.
+
+1. **Eine Regel für den Namen der Freigabedatei.** `<Tag>-<Quelle>.yaml` für die erste Datei einer Quelle an einem Tag, ab der zweiten `<Tag>-<Quelle>-<n>.yaml` mit `n` ≥ 2 (ohne `-1`, ohne führende Null). `<Tag>` ist `created_on` der Datei, `<Quelle>` ihre `source_id`. Ein zweiter, dritter … Lauf am selben Tag ist der Normalfall (jeder neue Stapel einer Quelle ist ein Fund der Quelle, auch die Fortsetzung einer pausierten Ernte); wie der Ordner des Laufs (§9) trägt er die Nummer, nicht die Uhrzeit. Ursache des roten Tests: Der Schreiber (`report.write_files`) nummerierte schon, der Lader (`approvals.py`) ließ `-<n>` schon zu, aber nur der Test der ausgelieferten Dateien verlangte den Namen ohne Nummer; eine Prüfung, die beides zusammen sah, gab es nicht.
+   - **Eine Stelle für die Regel:** `catalog/approvals.py` (`file_stem`, `file_number`, `next_file_stem`, `is_file_name`). Schreiber (`report`), Prüfung der Dateinamen für `decide` (`cycle`), Lader und Test nutzen sie.
+   - **Der Lader prüft den Namen am Inhalt:** Tag = `created_on`, Quelle = `source_id`, Nummer nach der Regel; sonst Ladefehler („the name is …“). Neu ist das für eine Datei, deren `source_id` nicht zum Namen passt: sie wurde bisher still nie veröffentlicht (der Test `test_a_wrong_approval_publishes_nothing` hat es erwartet) und ist jetzt ein Ladefehler.
+   - **Reihenfolge:** Von zwei Dateien einer Quelle am selben Tag hat die mit der höheren Nummer den höheren `batch_id` (die Stapel entstehen nacheinander); gleiche oder umgekehrte Reihenfolge ist ein Ladefehler. `load_approvals` gibt die Dateien nach Tag, Quelle, Nummer zurück (das Verzeichnis listet `-2` vor der Datei ohne Nummer, weil `-` vor `.` kommt). Über Tage und Quellen hinweg wird nichts verglichen.
+   - **Der Schreiber nimmt die höchste Nummer + 1**, füllt nie eine Lücke (sonst bekäme ein neuerer Stapel eine kleinere Nummer als ein älterer). Eine Pflicht, dass die Nummern lückenlos sind, gibt es nicht: ein von Hand gelöschtes `-2` darf `catalog-load` nicht anhalten.
+   - **Grenze der Reihenfolgeprüfung (Review, 27.11.2026):** Die `batch_id` zählt in Ottos Datenbank. Wird sie neu angelegt (`compose down -v`), beginnen die Nummern wieder bei 1; ein weiterer Lauf am Tag einer schon gemergten Datei mit höherem `batch_id` schreibt dann eine Datei, die der Lader ablehnt (Schritt Freigabe, CI rot), bis der Tag um ist. Die Prüfung bleibt (sie ist der Auftrag); nach einem Neuanlegen der Datenbank also nicht am selben Tag erneut ernten.
+   - **Lange Quellkennungen:** Der Name darf nach der Kennung (bis 63 Zeichen, `sources.py`) noch `-<n>` tragen; ein Test mit einer Kennung der Höchstlänge hält das fest.
+   - **Verworfen: Uhrzeit im Namen.** Der Name der Datei steht in der Datenbank (`approval_file`, Grabsteine, `revoked_on`); die bereits gemergten Dateien trügen dann zwei Formen. Mit der Nummer bleibt jede ausgelieferte Datei gültig; geprüft an allen sieben Dateien auf `main` und an der Datei `-2` aus #425.
+   - **Quellkennungen auf `-<n>`** (etwa `feed-2`): die Nummer wird nur mit der `source_id` der Datei gelesen, die erste Datei von `feed-2` heißt `<Tag>-feed-2.yaml` und gilt nie als zweite Datei von `feed`. Kein bestehendes Quell-ID endet so.
+2. **Test.** `tests/approval_checks.py` ist die Prüfung der ausgelieferten Dateien als eine Funktion (laden, Pflichtfelder, Name nach der Regel). `test_approvals.py` ruft sie für `backend/catalog/approvals/` auf, `test_cycle_run.py` für das, was drei Läufe am selben Tag hinterlassen: Lauf 1 als Probelauf (Dateien `pending`), Lauf 2 und 3 mit einer geänderten Fundmeldung der einen Quelle und der fortgesetzten Ernte der anderen, also je ein neuer Stapel derselben Quelle: `<Tag>-a`, `-a-2`, `-a-3` und `<Tag>-b`, `-b-2`, jeweils mit höherem `batch_id`, die späteren von den Regeln freigegeben. Mit der alten Prüfung (`name == <Tag>-<Quelle>.yaml`) scheitert dieser Test im zweiten Lauf mit `AssertionError: approvals/<Tag>-<Quelle>-2.yaml`, wie die CI. Dazu Einzeltests der Regel (gültige und ungültige Namen, Reihenfolge, nächste Nummer, Lücke, andere Tage und Quellen) und ein Test in `test_report.py`, dass das Verfahren des Berichts `-2` vergibt.
+3. **„Bericht govdata …“ fehlte: Absicht, aber stumm.** Belege im Branch von #425 (`docs/harvest/laeufe/2026-11-25-2/`): `README.md` nennt „govdata: Harvest gescheitert: … Exit-Code 1. Grund: robots.txt: Ausnahme für ckan.govdata.de/api/3/action/ (nicht gebraucht; …)“, `fehler.log` dieselbe Zeile, `befunde.md` hat `QUELLE govdata` (seit 25.11.), und unter den Quellen des Laufs steht für govdata keine Zahl und kein Stapel (die der anderen drei schon). Das Skript sammelt nur Quellen mit Exit-Code 0 oder 75 in `$Harvested` und läuft den Bericht nur darüber; so ist es in §3 Schritt 5 und A2 vorgesehen. Gefehlt hat nur die Aussage im Fenster: die Ernte-Schleife schrieb den Fehler in `quellen-fehler.txt`, das Fenster sagte nichts, und die Schleife über die Berichte übersprang govdata ohne Zeile. Jetzt:
+   - Fenster bei der Ernte: „Ernte govdata gescheitert: Der Harvest endete mit Fehler (Exit-Code 1). Grund: …“.
+   - Fenster beim Bericht: „Bericht govdata uebersprungen: Ernte gescheitert (siehe oben), der Bericht entfaellt in diesem Lauf.“ (die Schleife läuft über alle Quellen, nicht nur die geernteten).
+   - `README.md` des Laufs und Befund `QUELLE <Quelle>` schließen mit „Bericht übersprungen: ohne Ernte entfällt er in diesem Lauf.“
+   - Nebenbei: `fehler.log` begann bei einem Quellenfehler mit der Zeile „keine“ (`run_error or "keine"` vor den Quellenfehlern); „keine“ steht nur noch, wenn nichts anderes drinsteht.
+   - **Offen, nicht geändert:** Warum die Ernte von govdata am 25.11. um 15:43 mit `robots` stoppte, nachdem sie um 11:29 durchlief, steht nicht in den Dateien des Repos. Die Zeile der Ernte sagt „Ausnahme … nicht gebraucht“, also hat keine Anfrage die Ausnahme (`/api/3/action/`) berührt, und die Meldung nennt nur den Host, nicht den verweigerten Pfad. Die Ausgabe der Ernte liegt bei Otto unter `..\earthx-ausgaben\2026-11-25_1543\harvest-govdata.txt`. Die Sitzung fragt keine Quelle an (`adr/0002`). Frage F20 unten.
+4. **#425 weiterverwenden oder schließen: schließen, und zwar vom nächsten Lauf.** Gründe: (a) Der Branch steht auf `main` vor #420 und #421; seither haben sich `linkcheck.yaml`, `not_a_licence.yaml`, `linkcheck.py`, `cycle.py`, `govdata.yaml` und `befunde.md` geändert. Die Läufdateien von #425 (`befunde.md` ist ein Auszug aus dem Lauf) widersprächen `main`, ein Merge wäre ein Konflikt, den jemand von Hand auflösen müsste. (b) Der Lauf wendete die Linkprüfung von vor Fix 3 an (404 geschützt, Linkformen ohne Prüfung über die Schnittstelle des Portals); sein „verborgen 10 450“ und seine Freigabe nach Regeln stammen aus diesem Stand und sind zwei Tage alt. (c) Es geht nichts verloren: Postgres behält die Stapel (12 und 10 sind offen), die Ergebnisse der Linkprüfung und was verborgen wurde; `report` schreibt für einen offenen Stapel, dessen Datei auf `main` fehlt, die Datei neu (`_has_file`), `propose` legt die Kandidaten an, deren Dateien auf `main` fehlen (sie zählen dann als neu; das kostet erneut die Prüfabrufe). Die neuen Dateien heißen dann `<neuer Tag>-fsdi-stac.yaml` usw. (d) Otto muss nichts tun: Eine Sitzung pusht nur auf ihren eigenen Branch, den Branch von #425 zu aktualisieren wäre also Handarbeit („Update branch“, Re-Run der Checks), und das Ergebnis wäre trotz (a) und (b) ein zwei Tage alter Lauf.
+5. **Der nächste Lauf schließt einen PR mit roter CI selbst** (Otto, 27.11.2026). `Close-EarlierRuns` ersetzt `Close-FailedRuns`: Von den offenen PRs **des angemeldeten Benutzers** (`--author @me`), im Repo (nicht aus einem Fork), mit Titel „Harvest run …“ und Branch `harvest/<Tag>[-…]` schließt er (1) wie bisher Drafts mit Titel „… (failed)“ und (2) jeden PR, bei dem ein Pflicht-Check **fehlgeschlagen** ist (Bucket `fail`; ein abgebrochener oder übersprungener Check zählt nicht, ein Re-Run kann ihn noch grün machen), mit dem Kommentar „Geschlossen vom naechsten Harvest-Lauf. Pflicht-Check rot: <Namen>. Ein neuer Lauf macht die Dateien aus dem aktuellen main neu; … Der Branch wird geloescht.“ und `--delete-branch`, danach löscht er den lokalen Branch. Auch Commits, die Otto von Hand auf dem Branch nachgelegt hat, schützen ihn nicht (bei rotem Check wird er geschlossen; auf GitHub lässt sich der Branch wiederherstellen). Ein PR, dessen Checks noch laufen, oder ein grüner, der nicht gemergt wurde (Merge abgelehnt, Zeitlimit), bleibt und steht in der Befundliste (A10). Nichts davon hält den Lauf an; die Zeile im Fenster nennt die Nummern.
+   - **Beobachtung aus §22a.6 behoben:** `gh pr checks --json` beendet sich laut Hilfe mit 8 bei wartenden Checks (bei roten vermutlich mit 1, nicht geprüft); `Lines` gab bei jedem Exit-Code ≠ 0 `$null` zurück, `Get-CheckState` las das als „wartet“, und ein roter Check hätte das Skript 90 Minuten warten lassen. `Lines` nimmt jetzt eine Liste erlaubter Exit-Codes (`@(0, 1, 8)` nur für diesen Aufruf); entscheidend ist die Liste der Checks, nicht der Exit-Code. Ohne Liste (noch keine Checks) gilt „wartet“. `Get-CheckState` merkt sich die Namen der roten Checks (`$script:RedChecks`) für den Kommentar.
+   - **Nicht geprüft in der Sitzung:** das Skript (keine PowerShell) und das Verhalten von `gh` (ob `--json` bei rotem Check mit 1 oder 0 endet: beides wird gelesen). Die Tests halten den Text fest (ASCII, nur eigene PRs, Titel und Branch, nur Zustand `fail`, Kommentar mit Grund, `--delete-branch`, Zeile im Fenster für Ernte und Bericht).
+6. **Vor dem nächsten Doppelklick** (Otto): diesen PR mergen; sonst läuft der nächste Lauf mit dem alten Test und dem alten Skript (ein zweiter Lauf am selben Tag scheitert wieder, #425 bleibt offen). Danach nichts: kein Branch löschen, kein PR schließen, kein `git pull`. Die Images baut das Skript selbst (`compose up --build`).
+
+**F20 — Warum stoppte die Ernte von govdata am 25.11. um 15:43 mit `robots` (§22b.3)?** Die Meldung nennt nur den Host, nicht den verweigerten Pfad.
+1. Otto schickt die Zeilen von `..\earthx-ausgaben\2026-11-25_1543\harvest-govdata.txt` (ohne Adressen mit Schlüsseln), danach prüfe ich es **(Empfehlung)**
+2. Ich ergänze vorab den Pfad in der Meldung des Gateways (`RobotsDisallowed`) und im Bericht der Ernte, dann steht er beim nächsten Fehlschlag im Befund; das ändert `gateway` (Sicherheitsmodul, eigene Aufgabe, Stufe B)
+3. Nichts tun; der nächste Lauf zeigt, ob es wieder auftritt
+
+**Antwort Otto (27.11.2026): F20 = 3.** Nichts tun; der nächste Lauf zeigt, ob der `robots`-Stopp wieder auftritt. Tritt er auf, schickt Otto die Zeilen aus `harvest-govdata.txt`, und die Ursache wird dann geprüft. Keine Änderung an `gateway` oder Ernte.
+
+## 23. Fix 3: Linkprüfung nach dem ersten Probelauf schärfen (25.11.2026, Stufe B)
+
+Grundlage: Probelauf vom 25.11. (`docs/harvest/laeufe/2026-11-25/`, PR [#419](https://github.com/oscipal/earthX/pull/419)): fällig 102 662, geprüft 95 821, bestanden 11 406, durchgefallen 15 467, nicht prüfbar 68 948. Aus der Sitzung wird keine Quelle abgerufen (`adr/0002`); die Formen der Schnittstellen stammen aus Dokumentation und Quellcode der Portal-Software (Belege je Zeile in `linkcheck.yaml`). Zwei Draft-PRs: PR A Linkprüfung und Befundliste (Punkte 1–4, 6, dieser Nachtrag), PR B `not_a_licence` (Punkt 5).
+
+### 23.1 GovData-Adressform (Punkt 1)
+
+- **Bestätigt (Otto, 25.11.2026):** `https://www.govdata.de/suche/daten/<name>` führt zur Seite des Datensatzes (Beispiel `3d-meshes-brandenburg`), `/web/guest/suchen/-/details/<name>` und `/daten/-/details/<name>` nicht. `catalog_page` hatte schon diese Form; neu `catalog_page_check.form_confirmed_on: 2026-11-25`. Ab dem nächsten Lauf werden die rund 56 500 Katalogseiten über `package_search` geprüft (eine Anfrage je 40 Namen).
+- **Geht es über die Extraktor-Version von selbst? Nein.** `catalog_page` ändert sich nicht, also auch die Version nicht. Die Links in alter Form baut nicht `catalog_page`: Sie stehen in den Daten (Feld `url`, `extras` `uri`/`guid`) und sind Rang-2-Kandidaten [P, `ckan.py` `_page_candidates`]. **Neu:** Einstellung `catalog_page_aliases` der Quell-Datei (nur CKAN, mit `{name}`): Eine Adresse in einer dieser Formen ist nie Link „Source“, der Fund bekommt seine Katalogseite in der Form von `catalog_page`. Die Liste geht in die Extraktor-Version ein; mit dem geänderten `ckan.py` wertet der nächste Harvest jeden Fund ohne Anfrage neu aus.
+- **A25** Eine Adresse in alter Form fällt als Kandidat weg, statt umgeschrieben zu werden: Nennt sie den eigenen Namen, ist das Ergebnis dasselbe; nennt sie einen anderen, ist die eigene Katalogseite richtig.
+- Offen beobachtet, nicht geändert: `robots_exception.evidence` nennt noch `https://www.govdata.de/daten/-/details/govdata-metadatenkatalog` (Ottos Beleg vom 19.11.); die Form führt heute nicht mehr zur Seite. Neuer Beleg nur von Otto.
+
+### 23.2 Seiten, die per Skript laden: Prüfung je Linkform (Punkt 2)
+
+`no_title` traf 12 553 Links, fast alle aus Single-Page-Apps. Grundsatz bleibt: **„Seite antwortet“ ist nie bestanden.** Neu ist die Liste `link_forms` in `backend/catalog/linkcheck.yaml`, eingestellt je Form wie `catalog_page_check`, ohne Sondercode je Host:
+
+```yaml
+link_forms:
+  - link: https://www.geoportal.rlp.de/map?LAYER[id]={layer}&LAYER[zoom]={zoom}
+    check: api            # oder none (mit why)
+    api: https://www.geoportal.rlp.de/mapbender/php/mod_layerISOMetadata.php?SERVICE=WMS&outputFormat=iso19139&Id={layer}
+    evidence: https://github.com/mrmap-community/Mapbender2.8/blob/master/http/php/mod_layerISOMetadata.php
+    form_confirmed_on: null
+```
+
+- **Form:** Host, Teile des Pfads und des Fragments, Namen der Abfrage (Reihenfolge egal, keiner zu viel oder doppelt) wie in `link`; ein Platzhalter nimmt einen ganzen Teil aus `[A-Za-z0-9._~-]`, so dass kein Wert die Adresse der Schnittstelle verlassen kann.
+- **`check: api`:** Gefragt wird nur die Schnittstelle (über `gateway`, Allowlist genau ihre Hosts, Takt und `robots.txt`), nie die App. Bestanden wie eine Seite: `200`, und der Datensatz nennt Titel oder Kennung des Eintrags. Unbekannte Kennung: `404` (fällt durch, §23.3) oder ein Datensatz ohne diesen Titel (`no_title`). Erst mit `form_confirmed_on`, sonst `form_unconfirmed`.
+- **`check: none`:** keine belegte sichere Prüfung; `no_safe_check`, Einträge unsichtbar, Befund `UNGEPRUEFT <Form>` mit Zahl.
+
+| Form (Links im Lauf) | Prüfung | Beleg |
+|---|---|---|
+| `www.geoportal.rlp.de/map?LAYER[id]…` (6 727) und `www.geoportal.hessen.de/…` (36) | `api`: ISO 19139 des Layers aus Mapbender 2; antwortet auch bei unbekannter ID mit `200` und „title not given“, also entscheidet nur der Titel | Quellcode Mapbender 2.8 (Fork mrmap-community); Pfad bei Hessen nur aus der gemeinsamen Software [A] |
+| `open.bydata.de/datasets/{id}` (2 901) | `api`: piveau hub-search `GET /datasets/{id}`, `404` bei unbekannter ID | OpenAPI und README von piveau-hub-search; Basispfad `/api/hub/search` ist der Standard der Software, bei bydata nicht belegt [A] |
+| GeoNetwork `…/srv/{lang}/catalog.search#/metadata/{uuid}` (Herne 130, Frankfurt 126, geocat.ch 59) | `api`: `…/srv/api/records/{uuid}/formatters/xml`, `404` bei unbekannter UUID | Quellcode GeoNetwork 3.12 und 4 (`MetadataApi`, `ApiUtils`) |
+| `odlinfo.bfs.de/…/Messstelle.html?id={kenn}` (301) | `api`: WFS des BfS, Zeitreihe 24 h mit `viewparams=kenn:{kenn}`; unbekannte Kennung vermutlich leere Antwort mit `200`, dann `no_title` | OpenAPI bundesAPI/strahlenschutz-api, Datenschnittstelle ODL-Info |
+| `mobilithek.info//offers/{id}` (803) | `none` | keine Schnittstelle je Angebot dokumentiert |
+| `map.bern.ch/geoportal/#/produkt/{x}` (133), `data.geo.so.ch?filter=` (154), `www.agi.dij.be.ch/…detail.html?type=geoproduct&code=` (211), `metadata.geo.sg.ch/produkte/{x}` (47), `www.kiel.de/opendata/index.php?id=` (64) | `none` | keine Schnittstelle je Produkt dokumentiert |
+| `datenregister.berlin.de/dataset/{id}` (402, alle `403`) | `none` | §23.4 |
+
+**Wichtig für den nächsten Lauf:** Er ist kein Probelauf mehr (`docs/harvest/laeufe/` hat einen Ordner). Bisher hielt der Schutz die veröffentlichten Einträge dieser Formen sichtbar; jetzt sind sie `form_unconfirmed` bzw. `no_safe_check`, also ungeprüft, und werden verborgen (nicht gelöscht), bis eine Prüfung besteht. Mit Ottos Bestätigung (F15) kommen die `api`-Formen im übernächsten Lauf zurück.
+
+### 23.3 Tote Links nicht schützen (Punkt 3)
+
+`open.rlp.de/dataset/{x}` (1 268× `404`) und `registry.gdi-de.org/id/de.bw/{id}` (1 043× `404`) waren vom Schutz gedeckt. Neu: `404` und `410` zählen für den Schutz nicht und werden nie geschützt, auch wenn ihre Gruppe geschützt ist; solche Einträge werden auch in großer Zahl verborgen. Der Schutz bleibt für Timeouts, `429`, `5xx`, `no_title`, `403` und die übrigen Gründe. Die Laufdateien zeigen sie als „weg (404/410)“.
+
+- **A26** `404`/`410` zählen weder im Zähler noch im Nenner des Anteils: Ein Host mit 100 toten und 20 `no_title` bleibt geschützt (20 von 20), statt dass die `no_title` mit verborgen würden.
+- **Grenze:** Ein falsch gebautes Muster, dessen Adressen alle `404` liefern, wird jetzt ganz verborgen. Dagegen hilft nur, dass Adressformen bestätigt sind (`catalog_page_check`, `link_forms`).
+
+### 23.4 `403` bei datenregister.berlin.de (Punkt 4)
+
+Nicht der User-Agent: Das Berliner Open-Data-Handbuch nennt das Datenregister das „nicht-öffentliche“ Redaktionssystem des Portals (Konto nötig); öffentlich ist `daten.berlin.de` [Q: github.com/berlinonline/open-data-handbuch]. Am `gateway` ändert sich deshalb nichts; die Form steht als `none` in `linkcheck.yaml`. Ob die Links auf die öffentliche Seite umgebaut werden können, ist F17.
+
+### 23.5 Keine Lizenz (Punkt 5, PR B)
+
+Nach Ottos Regel (19.11.2026, Lizenzliste §1 K7 und §3) sind Feed-Adressen, Seiten-URLs, Zugangsangaben, INSPIRE `noLimitations`, Haftungsausschlüsse und Hinweise wie „Weitere Informationen … über das Portal“ nie Lizenzen. Neue Datei `backend/catalog/licenses/not_a_licence.yaml` (je Zeile `statement`, `kind`, `match` `exact` oder `prefix`, `added_on`); der Lader prüft, dass keine Angabe zugleich in `terms.yaml` oder `spellings.yaml` steht. Wirkung: Eine solche Angabe zählt beim Abgleich nicht. Hat ein Fund nur solche Angaben, wartet er still als `no_licence` und steht nicht mehr als „wartet auf Einstufung“ in der Befundliste; die Liste der wartenden Angaben (`spellings`) lässt sie weg.
+
+Vorschlag aus dem Lauf (Otto bestätigt im PR, F19):
+
+| Funde | Angabe | Art |
+|---|---|---|
+| 332 / 19 | „Weitere Informationen zu den Daten und Veröffentlichungen erhalten Sie über das Portal“ (mit und ohne Punkt) | Hinweis |
+| 166 | `https://data-lra-cha.opendata.arcgis.com/api/feed/dcat-ap/3.0.0.json` | Feed |
+| 116 | `https://www.offenedaten-wuppertal.de/page/nutzungsbedingungen-kontakt-lizenzen` | Seite |
+| 82 / 5 | „Es gelten keine Zugriffsbeschränkungen“ (mit und ohne Punkt) | Zugang |
+| 36 | `http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations` | Zugang |
+| 18 | `https://opendata.kreis-borken.de/pages/datenschutz` | Seite |
+| 16 / 5 | „Der Zugang zu den Daten ist nach § 3 (§ 6) des Informationsfreiheitsgesetzes beschränkt.“ | Zugang |
+| 8 | „Es erfolgt ein kompletter Haftungsausschluss. …“ (Präfix, der volle Text liegt der Sitzung nicht vor) | Haftungsausschluss |
+
+Nicht aufgenommen: `mdd-nrw-nutzungsbedingungen` (27): der Name von Nutzungsbedingungen, laut Lizenzliste „Otto: Bedingungen lesen“; also eine mögliche Lizenz.
+
+### 23.6 Befundliste kürzer (Punkt 6)
+
+Je Host ein Befund `SCHUTZ <Host>` mit den Zahlen des Hosts und den geschützten Mustern als Unterpunkte (die fünf größten mit Zahl, dann „und n weitere Muster, siehe `linkpruefung.md`“); Beispiele stehen nur noch in `linkpruefung.md`. Ein Muster ohne geschützten Host steht unter seinem Host mit „Host nicht geschützt“. `befunde.md` ist einmalig von Hand umgestellt (100 Zeilen → 27 Befunde), damit der nächste Lauf nicht die alten Schlüssel als erledigt abhakt.
+
+- **A27** `MUSTER`-Befunde nur noch bei mindestens 5 Fehlschlägen (durchgefallen samt `404`/`410`); ungeprüfte Formen stehen als `UNGEPRUEFT`, nicht zusätzlich als `MUSTER`. Ein Muster, das nur an `robots.txt` scheitert, steht damit nur in `linkpruefung.md`.
+
+### 23.7 Fragen an Otto
+
+**F15 — Adressformen der `api`-Prüfung bestätigen?** Je Form einen Link im Browser öffnen (aus `linkpruefung.md` des Laufs vom 25.11., z. B. RLP `…/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=42853`, bydata `…/datasets/zaehlstellen-b512-2012`) und prüfen, ob die Seite den Datensatz zeigt.
+1. Du nennst im PR die Formen, die stimmen; ich setze `form_confirmed_on` auf den Tag deines Tests, vor dem nächsten Lauf **(Empfehlung)**
+2. Alle sieben ohne Test bestätigen
+3. Bleiben unbestätigt (Einträge unsichtbar)
+
+**F16 — bydata: Basispfad der Schnittstelle nicht belegt** (`/api/hub/search` ist der Standard von piveau).
+1. Du öffnest zusätzlich `https://open.bydata.de/api/hub/search/datasets/zaehlstellen-b512-2012`; zeigt er JSON mit dem Titel, bleibt die Form `api` **(Empfehlung)**
+2. Form auf `none` setzen
+
+**F17 — Berlin?**
+1. Bleibt `none` (ungeprüft, unsichtbar), Befund `UNGEPRUEFT` **(Empfehlung)**
+2. Eigene Aufgabe: Links auf `https://daten.berlin.de/datensaetze/<name>` umbauen (ob der Name dem CKAN-Namen entspricht, ist nicht belegt; braucht deinen Browsertest)
+
+**F18 — Fund mit echter Lizenz und einer Nicht-Lizenz-Angabe daneben?**
+1. Die Nicht-Lizenz zählt nicht, die eingestufte Lizenz entscheidet (wie gebaut) **(Empfehlung)**
+2. Der Fund wartet weiter (`unknown_licence`)
+
+**F19 — Liste `not_a_licence` (§23.5)?**
+1. So übernehmen, `mdd-nrw-nutzungsbedingungen` bleibt draußen, Haftungsausschluss als Präfix **(Empfehlung)**
+2. Auch `mdd-nrw-nutzungsbedingungen` aufnehmen
+3. Haftungsausschluss erst mit vollem Text (dann wartet er weiter in der Liste)
+
+### 23.8 Antworten Otto (25.11.2026) und Nachtrag
+
+- **F15 = 1:** Ottos Browsertest vom 25.11.: Alle sieben `api`-Formen zeigen den Datensatz (RLP, Hessen, bydata, Herne, Frankfurt, geocat.ch, BfS); `form_confirmed_on: 2026-11-25` für alle.
+- **F16 = 1:** `https://open.bydata.de/api/hub/search/datasets/zaehlstellen-b512-2012` zeigt den Datensatz; bydata bleibt `api`.
+- **F17 = 1:** Berlin bleibt `none`; Befund H-2026-11-25-01 in `befunde.md`: Links auf `daten.berlin.de` umstellen (eigene Aufgabe).
+- **F18 = 1, F19 = 1:** PR B wie vorgeschlagen.
+- **A28 (Nachtrag beim Umsetzen):** Ein geschütztes Ergebnis ist im nächsten Lauf wieder fällig (Priorität 2 wie `unchecked`), nicht erst nach 30 Tagen. Vorher galten durchgefallene, geschützte Ergebnisse des Probelaufs als frisch: Die Regeln dieses Nachtrags (404 ohne Schutz, Prüfung je Linkform) hätten für RLP, bydata, `open.rlp.de` usw. erst nach einem Monat gegriffen, und die Einträge wären so lange sichtbar geblieben. Ein Schutz entscheidet nichts; also wird erneut geprüft. Kosten: Hosts, die dauerhaft geschützt bleiben (z. B. `www.gkd.bayern.de` mit rund 7 800 Links bei 1 s, etwa 2,2 h), werden in jedem Lauf geprüft und teilen sich das Budget mit dem Rest; die Hosts laufen parallel.
+- **Schätzung des nächsten (ersten echten) Laufs [A]:** Der Probelauf hätte 9 213 veröffentlichte Einträge verborgen. Dazu kommen, weil der Schutz sie nicht mehr hält: rund 2 300 tote Links (`open.rlp.de` 1 268, `registry.gdi-de.org/id/de.bw` 1 043) und rund 1 800 Links der Formen ohne sichere Prüfung (Mobilithek 803, Berlin 402, Kanton Bern 211, Solothurn 154, Stadt Bern 133, Kiel 64, St. Gallen 47). Zusammen **etwa 13 000** von rund 102 000 sichtbaren Einträgen (Spanne grob 11 000–16 000). Unsicher: die rund 10 300 Links der `api`-Formen (bestehen sie, bleiben sie sichtbar; fällt bei einer Form ein großer Anteil durch, greift wieder der Schutz) und die 56 500 GovData-Katalogseiten über die CKAN-API (erwartet fast alle bestanden). Die Zahlen der Gruppen zählen Links aller Zustände, nicht nur veröffentlichte; die Schätzung ist deshalb eher eine Obergrenze. Die Laufdateien nennen nach dem Lauf die genaue Zahl.

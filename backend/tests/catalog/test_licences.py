@@ -278,3 +278,76 @@ class TestLoadErrors:
         (directory / "grants" / "notes.txt").write_text("x", encoding="utf-8")
         with pytest.raises(EntryFileError, match="only <source_id>.yaml"):
             load_licences(SOURCES, directory)
+
+
+DISCLAIMER = "Es erfolgt ein kompletter Haftungsausschluss. Es wird keinerlei Gewähr für die Richtigkeit übernommen und"
+NOT_A_LICENCE = f"""\
+- {{statement: Es gelten keine Zugriffsbeschränkungen, kind: access, added_on: 2026-11-25}}
+- {{statement: 'https://portal.example.org/api/feed/dcat-ap.json', kind: feed, added_on: 2026-11-25}}
+- {{statement: '{DISCLAIMER}', kind: disclaimer, match: prefix, added_on: 2026-11-25}}
+"""
+
+
+class TestNotALicence:
+    """M5-67 §23.5 (Otto's rule of 19.11.2026): statements that are never a licence count for no match."""
+
+    def _with(self, tmp_path: Path, text: str = NOT_A_LICENCE):
+        directory = _write(tmp_path, BY + NC, GRANTS)
+        (directory / "not_a_licence.yaml").write_text(text, encoding="utf-8")
+        return load_licences(SOURCES, directory)
+
+    @pytest.mark.parametrize(
+        ("statements", "reason"),
+        [
+            (["Es gelten keine Zugriffsbeschränkungen"], "no_licence"),
+            (["https://portal.example.org/api/feed/dcat-ap.json/", " Es gelten keine Zugriffsbeschränkungen "],
+             "no_licence"),
+            ([DISCLAIMER + " Schäden, die …"], "no_licence"),
+            (["Es gelten keine Zugriffsbeschränkungen", "CC-BY-4.0"], None),  # the graded licence decides (F18)
+            (["Es gelten keine Zugriffsbeschränkungen", "something else"], "unknown_licence"),
+            (["es gelten keine Zugriffsbeschränkungen"], "unknown_licence"),  # verbatim, case counts
+            (["Es gelten keine Zugriffsbeschränkungen!"], "unknown_licence"),
+            ([DISCLAIMER[:-10]], "unknown_licence"),  # shorter than the beginning
+        ],
+    )
+    def test_what_waits_and_how(self, tmp_path: Path, statements: list[str], reason: str | None) -> None:
+        assert self._with(tmp_path).match("govdata", "Amt für Beispiele", statements).reason == reason
+
+    def test_the_list_changes_the_fingerprint(self, tmp_path: Path) -> None:
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        assert self._with(tmp_path / "a").fingerprint != self._with(tmp_path / "b", "[]\n").fingerprint
+
+    def test_the_shipped_list_loads_and_holds_no_licence_name(self) -> None:
+        catalogue = load_licences(read_sources(), LICENSES_DIR)
+        assert "Es gelten keine Zugriffsbeschränkungen" in catalogue.not_licences
+        assert not catalogue.is_not_a_licence("mdd-nrw-nutzungsbedingungen")  # F19: terms of use, maybe a licence
+        assert catalogue.match("govdata", "x", ["Es gelten keine Zugriffsbeschränkungen."]).reason == "no_licence"
+
+    @pytest.mark.parametrize(
+        ("text", "message"),
+        [
+            ("x: 1\n", "a list"),
+            ("- {statement: ' ', kind: note, added_on: 2026-11-25}\n", "non-blank"),
+            ("- {statement: a, kind: licence, added_on: 2026-11-25}\n", "kind is one of"),
+            ("- {statement: a, kind: note, match: fuzzy, added_on: 2026-11-25}\n", "exact or prefix"),
+            ("- {statement: Kurz, kind: note, match: prefix, added_on: 2026-11-25}\n", "at least 80"),
+            ("- {statement: a, kind: note, added_on: 2999-01-01}\n", "in the future"),
+            ("- {statement: CC-BY-4.0, kind: note, added_on: 2026-11-25}\n", "means cc-by-4.0"),
+            ("- {statement: a, kind: note, added_on: 2026-11-25}\n- {statement: a/, kind: page, added_on: 2026-11-25}\n",
+             "twice"),
+            ("- {statement: a, kind: note, added_on: 2026-11-25, surprise: 1}\n", "surprise"),
+        ],
+    )
+    def test_a_wrong_line(self, tmp_path: Path, text: str, message: str) -> None:
+        with pytest.raises(EntryFileError, match=message):
+            self._with(tmp_path, text)
+
+    def test_a_prefix_that_would_take_a_licence_is_refused(self, tmp_path: Path) -> None:
+        long_licence = _term("long", f"['{DISCLAIMER} aber CC BY']", spdx="CC-BY-4.0")
+        directory = _write(tmp_path, long_licence)
+        (directory / "not_a_licence.yaml").write_text(
+            f"- {{statement: '{DISCLAIMER}', kind: disclaimer, match: prefix, added_on: 2026-11-25}}\n", encoding="utf-8"
+        )
+        with pytest.raises(EntryFileError, match="means long"):
+            load_licences(SOURCES, directory)

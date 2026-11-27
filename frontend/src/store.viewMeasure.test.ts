@@ -161,13 +161,20 @@ describe('"auto-scale" over the area', () => {
     expect(state().pendingColormapName).toBe('magma');
   });
 
-  it('turns the range of a band back into the raw numbers the tile draws', async () => {
+  it('keeps the range of a band in the physical values of the area, as the legend shows them (M5-68)', async () => {
     openView(true);
     useAppStore.setState({ pendingBand: 'red' });
     answer(() => json({ exact: true, factor: 1, bands: [band('red', 0.1, 0.4, 0.12, 0.31)] }));
     await state().autoStretch();
-    expect(Number(state().pendingVmin)).toBeCloseTo(2200, 3);
-    expect(Number(state().pendingVmax)).toBeCloseTo(4100, 3);
+    expect([state().pendingVmin, state().pendingVmax]).toEqual(['0.12', '0.31']);
+  });
+
+  it('turns the stored numbers of the first scene into physical values where it stands in for the area (M5-68)', async () => {
+    openView(true);
+    useAppStore.setState({ pendingBand: 'red' });
+    answer(() => json({ detail: 'a measure opens at most 16 files' }, 413), () => json({ red: { min: 1000, max: 4000, percentile_2: 1200, percentile_98: 3400, count: 5 } }));
+    await state().autoStretch();
+    expect([state().pendingVmin, state().pendingVmax]).toEqual(['0.02', '0.24']);
   });
 
   it('measures an index as it is, the step in the order', async () => {
@@ -190,18 +197,17 @@ describe('"auto-scale" over the area', () => {
     expect(state().notice).toBeNull();
   });
 
-  it('measures the first scene, and has the reason for it, where the scenes are scaled differently', async () => {
+  it('asks the area also where the scenes are scaled differently: its answer is physical and fits each of them (M5-68)', async () => {
     openView(true);
     const second = scene('a2');
     (second.assets.red['raster:bands'] as { offset: number }[])[0].offset = 0;
     const both = [scene('a1'), second];
     useAppStore.setState({ pendingBand: 'red', items: both, groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: both }], downloaded: { a1: info, a2: { ...info, tileUrl: info.tileUrl.replace('a1', 'a2') } }, selectedIds: ['a1', 'a2'] });
-    answer(() => json({ red: { min: 1000, max: 3000, percentile_2: 1100, percentile_98: 2900, count: 5 } }));
+    answer(() => json({ exact: true, factor: 1, bands: [band('red', 0.1, 0.4, 0.12, 0.31)] }));
     await state().autoStretch();
-    expect(calls().map((c) => c.init?.method ?? 'GET')).toEqual(['GET']);
-    expect(viewMeasure(state())?.skipped).toMatch(/scaled differently/u);
-    expect(fallbackReasonOf(viewMeasure(state())!)).toMatch(/scaled differently/u);
-    expect([state().pendingVmin, state().pendingVmax]).toEqual(['1100', '2900']);
+    expect(calls().map((c) => c.init?.method ?? 'GET')).toEqual(['POST']);
+    expect(viewMeasure(state())?.skipped).toBeNull();
+    expect([state().pendingVmin, state().pendingVmax]).toEqual(['0.12', '0.31']);
   });
 
   it('says what went wrong, and changes nothing, on another failure', async () => {

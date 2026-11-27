@@ -93,6 +93,7 @@ from starlette.concurrency import run_in_threadpool
 
 from earthx.access.crop_rules import RECIPE_FILENAME, TEXT_FILES
 from earthx.access.download import attribution_names_year
+from earthx.access.qgis_style import ExportStyle, StyleInvalid, collection_look, qml_name, result_qml
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
 from earthx.api.crs_info import CrsRefused, crs_description
@@ -113,6 +114,7 @@ from earthx.catalog.registry import (
     AcquisitionYearMissing,
     AcquisitionYears,
     Attributable,
+    DatasetConfig,
     DatasetRegistry,
     RetiredDatasetError,
     UnknownDatasetError,
@@ -645,13 +647,13 @@ async def _read_body(request: Request) -> bytes:
     return b"".join(chunks)
 
 
-def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
+def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None, ExportStyle | None]:
     """The order inside the envelope ``{"inputs": {"recipe": {…}}}``, as JSON text; or the ``400`` that says why not.
 
     Only the part of the envelope the platform can honour is taken. An input given by
     reference is the part it cannot (F4, B8): nothing is fetched for it. Beside the order,
     an export or a raster job with an area may carry ``aoiProvenance`` (M4-11 F4, M4-30), returned
-    checked as the second value.
+    checked as the second value, and an export ``exportStyle`` (M5-64), returned checked as the third.
     """
     try:
         document = loads_i_json(raw)
@@ -668,6 +670,7 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
     if not isinstance(inputs, dict) or docs.PROCESS_ID not in inputs or set(inputs) - {
         docs.PROCESS_ID,
         docs.AOI_PROVENANCE,
+        docs.EXPORT_STYLE,
     }:
         raise Problem(
             400, f"inputs holds the input {docs.PROCESS_ID!r} and, for an order with an area, {docs.AOI_PROVENANCE!r}"
@@ -685,8 +688,16 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
     output = order.get("output")
     export = isinstance(output, dict) and output.get("kind") == "crop"
     _check_outputs(document.get("outputs"), docs.EXPORT_OUTPUTS if export else docs.RASTER_OUTPUTS)
+    style = None
+    if docs.EXPORT_STYLE in inputs:
+        if not export:
+            raise Problem(400, f"{docs.EXPORT_STYLE} goes with an export; a result takes its style at the download")
+        try:
+            style = ExportStyle.from_json(inputs[docs.EXPORT_STYLE])
+        except StyleInvalid as error:
+            raise Problem(400, f"{docs.EXPORT_STYLE}: {error}") from None
     try:
-        return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8"), provenance
+        return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8"), provenance, style
     except UnicodeEncodeError:
         # A lone surrogate (`"\ud800"`) is valid JSON text and not a string anyone can store.
         raise Problem(400, "not a JSON document: a string holds a character that has no UTF-8 form") from None
@@ -763,7 +774,7 @@ _ORDER_BODY = {
 async def execute(request: Request, process_id: str, api: Api) -> Response:
     if process_id != docs.PROCESS_ID:
         raise Problem(404, "there is no such process", type_=NO_SUCH_PROCESS, title="No such process")
-    order, provenance = _unwrap(await _read_body(request))
+    order, provenance, style = _unwrap(await _read_body(request))
     try:
         accepted = await accept_order(
             order,
@@ -772,6 +783,7 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
             item_source=api.item_source,
             gateway=api.gateway,
             aoi_provenance=provenance,
+            style=style,
         )
         check_recipe_hosts(accepted.recipe, api.registry)
     except OrderRefused as error:
@@ -843,7 +855,7 @@ def _duration(seconds: float) -> str:
 async def estimate_order_cost(request: Request, process_id: str, api: Api) -> Response:
     if process_id != docs.PROCESS_ID:
         raise Problem(404, "there is no such process", type_=NO_SUCH_PROCESS, title="No such process")
-    order, provenance = _unwrap(await _read_body(request))
+    order, provenance, _ = _unwrap(await _read_body(request))
     try:
         estimated = await estimate_order(
             order,
@@ -1314,11 +1326,18 @@ def _finished_at(status: JobStatus) -> datetime:
     return (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
 
 
-def _job_members(api: JobApi, body: dict[str, Any], status: JobStatus, facts: dict[str, FileFacts], folder: str) -> list[Member]:
+def _job_members(
+    api: JobApi,
+    body: dict[str, Any],
+    status: JobStatus,
+    facts: dict[str, FileFacts],
+    folder: str,
+    style: ExportStyle | None = None,
+) -> list[Member]:
     """The files of a raster job's ZIP below ``folder``: the one place of its content (M4-11b-1, M4-30).
 
-    The rasters from the store, then the files of the crop's ZIP beside them in its order (`TEXT_FILES`, the one
-    definition); the registry no longer knowing the dataset leaves out the citation and the notice, as it left out
+    The rasters from the store, their QGIS style drawn as ``style`` says (M5-64), then the files of the crop's ZIP
+    beside them in its order (`TEXT_FILES`, the one definition); the registry no longer knowing the dataset leaves out the citation and the notice, as it left out
     the citation before. ``result.zip`` of the job and every part of a bundle are laid out by this function.
     """
     members = [
@@ -1337,8 +1356,26 @@ def _job_members(api: JobApi, body: dict[str, Any], status: JobStatus, facts: di
         ).items()
     }
     documents[RECIPE_FILENAME] = _recipe_bytes(api, body, status)
+    qml = result_qml(
+        (status.result or {}).get("properties"),
+        style,
+        lambda band: collection_look(config, band) if isinstance(config, DatasetConfig) else None,
+    )
+    if qml is not None:
+        members.append(Member.of_bytes(f"{folder}/{qml_name(BUNDLE_FILES[0])}", qml.encode("utf-8")))
     members.extend(Member.of_bytes(f"{folder}/{name}", documents[name]) for name in TEXT_FILES if name in documents)
     return members
+
+
+def _style_query(request: Request) -> ExportStyle | None:
+    """The look of the layer a result is downloaded from (M5-64): the query ``style``, JSON, for ``result.qml``."""
+    text = request.query_params.get("style")
+    if text is None:
+        return None
+    try:
+        return ExportStyle.from_json(json.loads(text))
+    except (ValueError, StyleInvalid) as error:
+        raise Problem(400, f"style: {error}" if isinstance(error, StyleInvalid) else "style is a JSON object") from None
 
 
 async def _zip_response(request: Request, api: JobApi, layout: Layout, filename: str) -> Response:
@@ -1378,7 +1415,7 @@ async def _bundle_response(
     facts = reported_files(status.result, BUNDLE_FILES)
     if body is None or facts is None or status.result_id is None:
         raise _no_such_job()
-    members = _job_members(api, body, status, facts, filename.removesuffix(".zip"))
+    members = _job_members(api, body, status, facts, filename.removesuffix(".zip"), _style_query(request))
     layout = Layout(members, modified=_finished_at(status))
     await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})
     return await _zip_response(request, api, layout, filename)
@@ -1691,7 +1728,9 @@ async def create_bundle(request: Request, api: Api) -> Response:
     return JSONResponse({"href": href, "expires": expires.isoformat()}, status_code=201, headers={"Location": href})
 
 
-async def _lay_out_parts(api: JobApi, parts: list[_Part], folder: str) -> tuple[list[Member], list[_Part], list[_Part]]:
+async def _lay_out_parts(
+    api: JobApi, parts: list[_Part], folder: str, style: ExportStyle | None = None
+) -> tuple[list[Member], list[_Part], list[_Part]]:
     """The members of every part that can be laid out, those parts, and the parts left out with their reason."""
     members: list[Member] = []
     included: list[_Part] = []
@@ -1704,7 +1743,7 @@ async def _lay_out_parts(api: JobApi, parts: list[_Part], folder: str) -> tuple[
             continue
         status = await _with_derived_years(api, body, status)
         try:
-            members += _job_members(api, body, status, facts, f"{folder}/{part.number:02d}_{stem}")
+            members += _job_members(api, body, status, facts, f"{folder}/{part.number:02d}_{stem}", style)
         except Problem as problem:
             if problem.type != NO_ACQUISITION_YEARS:
                 raise
@@ -1743,7 +1782,7 @@ async def read_bundle(request: Request, bundle_id: str, api: Api) -> Response:
         raise Problem(410, "no part of this bundle has a result any more", type_=GONE, title="Gone")
     filename = f"{first}_batch-{len(parts)}.zip"
     folder = filename.removesuffix(".zip")
-    members, included, left_out = await _lay_out_parts(api, parts, folder)
+    members, included, left_out = await _lay_out_parts(api, parts, folder, _style_query(request))
     if not included:
         raise Problem(410, "no part of this bundle has a result any more", type_=GONE, title="Gone")
     if left_out:

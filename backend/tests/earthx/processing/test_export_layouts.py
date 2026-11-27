@@ -20,8 +20,9 @@ import rasterio
 from earthx.access import download
 from earthx.access.band_export import BandMeta, band_meta
 from earthx.access.crop_rules import compute_crop_region
+from earthx.access.qgis_style import ExportStyle
 from earthx.access.tiles import open_asset
-from earthx.catalog.registry import AcquisitionYears
+from earthx.catalog.registry import AcquisitionYears, Look
 from earthx.processing import run
 from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.export import Attachments, AttachmentsInvalid
@@ -43,6 +44,9 @@ ASSETS = {
     "scl": (20.0, "uint8", "SCL", None, None),
 }
 YEARS = AcquisitionYears(2025, 2025)
+#: The layer drawn as the order says (M5-64); the other bands take the look of the collection, one of them measured.
+STYLE = ExportStyle(band="blue", colormap="magma", range=(0.0, 0.3))
+LOOKS = {"blue": Look("viridis"), "rededge1": Look("viridis")}
 
 
 def _item() -> dict[str, Any]:
@@ -94,12 +98,15 @@ def _paths() -> dict[str, Any]:
 
 def _metas() -> dict[str, BandMeta]:
     return {
-        asset: band_meta(_item(), asset, unit="1", categorical=asset == "scl", classes=SENTINEL_2_L2A.class_rows(asset))
+        asset: band_meta(
+            _item(), asset, unit="1", categorical=asset == "scl", classes=SENTINEL_2_L2A.class_rows(asset),
+            look=LOOKS.get(asset),
+        )  # fmt: skip
         for asset in ASSETS
     }
 
 
-def _crop(assets: list[str], form: str, common: float | None) -> zipfile.ZipFile:
+def _crop(assets: list[str], form: str, common: float | None, style: ExportStyle | None = None) -> zipfile.ZipFile:
     from shapely.geometry import mapping, shape
 
     region = compute_crop_region([{"geometry": FOOTPRINT}], shape(AOI))
@@ -109,7 +116,7 @@ def _crop(assets: list[str], form: str, common: float | None) -> zipfile.ZipFile
         crops=[download.AssetCrop(asset=a, paths=(paths[a],)) for a in assets],
         aoi_geometry=AOI, region_geometry=mapping(region), item_ids=["ITEM_A"],
         form=form, common_resolution=common, band_metas=_metas(),
-        recipe_json=b"{}", citation_bib=b"@misc{x}\n",
+        recipe_json=b"{}", citation_bib=b"@misc{x}\n", style=style,
     )  # fmt: skip
     return zipfile.ZipFile(io.BytesIO(data))
 
@@ -144,13 +151,16 @@ def _recipe(assets: list[str], layout: dict[str, Any], *, aoi: Any = AOI) -> Any
     return recipe_of_data(json.loads(json.dumps(data)), OPERATORS)
 
 
-def _job(assets: list[str], layout: dict[str, Any], crop: zipfile.ZipFile, workdir: Path) -> zipfile.ZipFile:
+def _job(
+    assets: list[str], layout: dict[str, Any], crop: zipfile.ZipFile, workdir: Path, style: ExportStyle | None = None
+) -> zipfile.ZipFile:
     metas = _metas()
     attachments = Attachments(
         files={name: crop.read(name).decode() for name in ("ATTRIBUTION.txt", "citation.bib", "aoi.geojson")},
         attribution=("x",),
         dataset=DatasetFacts(SENTINEL_2_L2A.title, None),
         bands=tuple(metas[a] for a in assets),
+        style=style,
     )
     result = run(_recipe(assets, layout), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS, attachments=attachments)
     return zipfile.ZipFile(result.path)
@@ -183,6 +193,28 @@ def test_the_job_writes_the_crops_files_bit_for_bit(form: str, common: float | N
             assert job.read(name) == crop.read(name), name
         for name in ("exports/BANDS.txt", "ATTRIBUTION.txt"):
             assert job.read(name) == crop.read(name)
+
+
+@pytest.mark.usefixtures("served")
+@pytest.mark.parametrize("style", [STYLE, None], ids=["drawn", "collection"])
+@pytest.mark.parametrize(("form", "common"), list(CASES.values()), ids=list(CASES))
+def test_the_job_writes_the_crops_qgis_styles_byte_for_byte(
+    form: str, common: float | None, style: ExportStyle | None, tmp_path: Path
+) -> None:
+    assets = list(ASSETS)
+    layout = {"form": form, **({"resolution_m": common} if common else {})}
+    crop = _crop(assets, form, common, style)
+    with _job(assets, layout, crop, tmp_path, style) as job:
+        data = [n for n in crop.namelist() if n.endswith(".tif") and not n.endswith("_mask.tif")]
+        styles = sorted(n for n in crop.namelist() if n.endswith(".qml"))
+        # One beside each data file, none beside a mask (plan A1).
+        assert styles == sorted(n[: -len(".tif")] + ".qml" for n in data)
+        assert sorted(n for n in job.namelist() if n.endswith(".qml")) == styles
+        for name in styles:
+            assert job.read(name) == crop.read(name), name
+        if style is not None:
+            drawn = next(n for n in styles if b'colorramp name="[source]"' in crop.read(n) and b"#000004" in crop.read(n))
+            assert b'classificationMin="0.0"' in crop.read(drawn) and b'classificationMax="0.3"' in crop.read(drawn)
 
 
 @pytest.mark.usefixtures("served")

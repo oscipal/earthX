@@ -87,6 +87,7 @@ from earthx.access.download import (
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
 )
+from earthx.access.qgis_style import ExportStyle, collection_look
 from earthx.access.radar import RADAR_GRID_LINE, item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
@@ -257,15 +258,17 @@ async def accept_order(
     item_source: ItemSource,
     gateway: Gateway,
     aoi_provenance: Mapping[str, str] | None = None,
+    style: ExportStyle | None = None,
 ) -> AcceptedOrder:
     """The order as a recipe with a ``recipe_id`` — or an :class:`OrderRefused` (module docstring).
 
     ``aoi_provenance`` (M4-11 F4, M4-30) is where a place-search AOI came from (``attribution``,
     ``license``, ``source``), checked by the caller; it only goes into the side files of an export
-    or of a raster job's ZIP, never into the recipe or its hash.
+    or of a raster job's ZIP, never into the recipe or its hash. ``style`` (M5-64) is how the layer of an
+    export is drawn, for the QGIS style of its files; it goes into the attachments, never into the recipe.
     """
     try:
-        accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance)
+        accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance, style)
     except OrderRefused as refused:
         _log_refused(refused)
         raise
@@ -395,6 +398,7 @@ async def _accept(
     item_source: ItemSource,
     gateway: Gateway,
     aoi_provenance: Mapping[str, str] | None = None,
+    style: ExportStyle | None = None,
 ) -> AcceptedOrder:
     prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
     versions = await _gather(_version_of(target, gateway) for target in prepared.targets)
@@ -435,6 +439,7 @@ async def _accept(
             accepted_at=datetime.now(UTC),
             acquired_on=acquired_on,
             years=prepared.years,
+            style=style,
         )
     except AttachmentsInvalid:
         # The limit of the notice grows with the scenes (F4 = 2, plan M5-30b §6): up to MAX_ORDER_ITEMS scenes with ids
@@ -544,6 +549,7 @@ def layout_bands(prepared: _Prepared, recipe: Recipe) -> list[BandMeta]:
             unit=prepared.config.band_unit(asset),
             categorical=prepared.config.mask is not None and prepared.config.mask.asset == asset,
             classes=prepared.config.class_rows(asset),
+            look=collection_look(prepared.config, asset),
         )
         for asset in recipe.inputs[0].assets
     ]
@@ -638,10 +644,12 @@ def export_attachments(
     acquired_on: date | None = None,
     bands: Sequence[BandMeta] = (),
     scene_aoi: bool = False,
+    style: ExportStyle | None = None,
 ) -> Attachments:
     """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
 
-    ``bands`` (NM4-75): the assets as the items describe them, for the files of an output with a layout.
+    ``bands`` (NM4-75): the assets as the items describe them, for the files of an output with a layout; with them
+    ``style`` and the true-colour bands of the entry, for the QGIS style of each file (M5-64).
 
     ``ATTRIBUTION.txt`` with the groups the recipe reads, the items of groups the AOI did
     not touch at all (the crop names only those, not single items left out of a group) and
@@ -679,6 +687,8 @@ def export_attachments(
         bands=tuple(bands),
         notes=tuple(layout_notes(recipe)) if bands else (),
         scenes=sum(len(group) for group in entry.groups) + len(dropped),
+        style=style if bands else None,
+        true_color=tuple(config.true_color) if bands else (),
     )
 
 

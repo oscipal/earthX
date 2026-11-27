@@ -89,7 +89,8 @@ class TestTheResult:
     def test_the_unit_stands_between_nodata_and_the_statistics(self, tmp_path: Path) -> None:
         data = _recipe([_unit(_entry("red"), "1")], [])
         keys = list(_run(data, tmp_path).properties["bands"][0])
-        assert keys == ["name", "data_type", "nodata", "unit", "statistics"]
+        # Without a step the band holds the values of the source (M5-68).
+        assert keys == ["name", "data_type", "nodata", "unit", "earthx:source_values", "statistics"]
 
     def test_a_band_without_a_unit_says_nothing_about_it(self, tmp_path: Path) -> None:
         data = _recipe([_entry("red")], [])

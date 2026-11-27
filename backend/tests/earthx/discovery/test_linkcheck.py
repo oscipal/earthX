@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -17,7 +18,9 @@ from earthx.catalog.link_checks import DueLink
 from earthx.discovery import linkcheck
 from earthx.discovery.linkcheck import (
     LINKCHECK_FILE,
+    LinkForm,
     check_links,
+    form_values,
     judge_page,
     link_pattern,
     link_policy,
@@ -530,3 +533,159 @@ def test_the_numbers_of_a_run_for_the_files_of_the_harvest_run() -> None:
     assert numbers["due_by_host"] == [["amt.example.org", 3, 0.0]]
     assert numbers["examples"] == {"amt.example.org/{x}": [{"dataset_id": "t.b", "url": "https://amt.example.org/b",
                                                            "reason": "no_title"}]}
+
+
+# --- Forms of links checked through a portal's interface (M5-67 §23) -----------------------------------------------
+
+
+VIEWER = LinkForm(
+    link="https://viewer.example.org/map?LAYER[id]={layer}&LAYER[zoom]={zoom}",
+    check="api",
+    api="https://meta.example.org/records/{layer}",
+    evidence="https://doc.example.org/api",
+    form_confirmed_on=date(2026, 11, 25),
+)
+SPA = LinkForm("https://spa.example.org/#/metadata/{uuid}", "api", "https://spa.example.org/api/records/{uuid}",
+               "https://doc.example.org/geonetwork", date(2026, 11, 25))
+CLOSED = LinkForm("https://closed.example.org/opendata/index.php?id={id}", "none", why="No interface.")
+FORMS = replace(RULES, link_forms=(VIEWER, SPA, CLOSED))
+
+
+@pytest.mark.parametrize(
+    ("form", "url", "values"),
+    [
+        (VIEWER, "https://viewer.example.org/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=42853", {"layer": "42853", "zoom": "1"}),
+        (SPA, "https://spa.example.org/#/metadata/0b8c-11ef", {"uuid": "0b8c-11ef"}),
+        (VIEWER, "https://viewer.example.org/map?LAYER%5Bid%5D=1", None),  # a name missing
+        (VIEWER, "https://viewer.example.org/map?LAYER%5Bid%5D=1&LAYER%5Bzoom%5D=1&x=2", None),  # one too many
+        (VIEWER, "https://viewer.example.org/map?LAYER%5Bid%5D=1&LAYER%5Bid%5D=2&LAYER%5Bzoom%5D=1", None),  # twice
+        (VIEWER, "https://other.example.org/map?LAYER%5Bid%5D=1&LAYER%5Bzoom%5D=1", None),
+        (VIEWER, "http://viewer.example.org/map?LAYER%5Bid%5D=1&LAYER%5Bzoom%5D=1", None),
+        # A value must not leave its part of the interface's address.
+        (VIEWER, "https://viewer.example.org/map?LAYER%5Bid%5D=..%2F..%2Fadmin&LAYER%5Bzoom%5D=1", None),
+        (VIEWER, "https://viewer.example.org/map?LAYER%5Bid%5D=1%3Fx%3D1&LAYER%5Bzoom%5D=1", None),
+        (SPA, "https://spa.example.org/#/metadata/a/b", None),
+        (SPA, "https://spa.example.org/#/metadata/", None),
+        (SPA, "https://spa.example.org/catalog#/metadata/x", None),
+    ],
+)
+def test_the_values_of_a_form_in_a_link(form: LinkForm, url: str, values: dict[str, str] | None) -> None:
+    assert form_values(form, url) == values
+
+
+def test_the_shipped_forms_check_no_more_than_their_link_names() -> None:
+    for form in RULES.link_forms:
+        assert form.check in ("api", "none")
+        if form.check == "api":
+            assert form.evidence and form.api
+
+
+@pytest.mark.parametrize(
+    ("forms", "message"),
+    [
+        ("x", "link_forms is a list"),
+        ([{"link": "https://a.example.org/{id}", "check": "page"}], "check api with link"),
+        ([{"link": "https://a.example.org/{id}", "check": "none"}], "check api with link"),
+        ([{"link": "https://a.example.org/{id}", "check": "none", "why": " "}], "why says"),
+        ([{"link": "https://a.example.org/x", "check": "none", "why": "y"}], "at least one placeholder"),
+        ([{"link": "http://a.example.org/{id}", "check": "none", "why": "y"}], "https address"),
+        ([{"link": "https://a.example.org/{id}", "check": "api", "api": "https://b.example.org/{other}",
+           "evidence": "https://doc.example.org", "form_confirmed_on": None}], "only placeholders of link"),
+        ([{"link": "https://a.example.org/{id}", "check": "api", "api": "https://b.example.org/{id}",
+           "evidence": "nur ein Satz", "form_confirmed_on": None}], "evidence is the https address"),
+        ([{"link": "https://a.example.org/{id}", "check": "api", "api": "https://b.example.org/{id}",
+           "evidence": "https://doc.example.org", "form_confirmed_on": "2999-01-01"}], "not in the future"),
+        ([{"link": "https://a.example.org/{id}", "check": "none", "why": w} for w in "yz"], "each link once"),
+    ],
+)
+def test_a_wrong_form(tmp_path: Path, forms: object, message: str) -> None:
+    import yaml
+
+    data = yaml.safe_load(LINKCHECK_FILE.read_text(encoding="utf-8"))
+    data["link_forms"] = forms
+    path = tmp_path / "linkcheck.yaml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with pytest.raises(EntryFileError, match=message):
+        read_link_rules(path)
+
+
+def record(title: str = TITLE) -> httpx.Response:
+    return httpx.Response(200, headers={"content-type": "application/json"}, json={"title": title, "id": "x"})
+
+
+@pytestmark_anyio
+async def test_a_link_of_a_form_is_checked_through_the_interface_it_names() -> None:
+    spa_shell = httpx.Response(200, headers={"content-type": HTML}, text="<html><body><div id=app></div></body></html>")
+    pages = {
+        "meta.example.org/records/42853": record(),
+        "meta.example.org/records/7": record("Ein anderer Datensatz"),
+        "spa.example.org/api/records/0b8c-11ef": record(),
+        "spa.example.org/": spa_shell,  # the page itself never decides
+    }
+    policies: list[Policy] = []
+    asked: list[str] = []
+    handler = site(pages)
+
+    def counting(request: httpx.Request) -> httpx.Response:
+        asked.append(f"{request.headers['host']}{request.url.raw_path.decode()} {request.headers['accept']}")
+        return handler(request)
+
+    viewer = "https://viewer.example.org/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D="
+    results = await check_links(
+        [
+            due("ok", viewer + "42853"),
+            due("other", viewer + "7"),
+            due("gone", viewer + "9"),
+            due("spa", "https://spa.example.org/#/metadata/0b8c-11ef"),
+            due("closed", "https://closed.example.org/opendata/index.php?id=12"),
+        ],
+        rules=FORMS,
+        hosts={},
+        open_gateway=opener(counting, policies),
+        deadline=float("inf"),
+    )
+    found = {r.dataset_id: (r.outcome, r.reason, r.host, r.final_host) for r in results}
+    assert found == {
+        "t.ok": ("passed", "ok", "viewer.example.org", "meta.example.org"),
+        "t.other": ("failed", "no_title", "viewer.example.org", "meta.example.org"),
+        "t.gone": ("failed", "http_404", "viewer.example.org", "meta.example.org"),
+        "t.spa": ("passed", "ok", "spa.example.org", "spa.example.org"),
+        "t.closed": ("unchecked", "no_safe_check", "closed.example.org", None),
+    }
+    # Only the interfaces are asked, never the viewer, the shell of the app or the closed host.
+    assert all(a.split("/", 1)[0] in ("meta.example.org", "spa.example.org") for a in asked)
+    assert "spa.example.org/ " not in " ".join(asked)
+    assert all("application/json" in a for a in asked if "robots" not in a)
+    assert [sorted(p.allowed_hosts) for p in policies] == [["meta.example.org", "spa.example.org"]]
+
+
+@pytestmark_anyio
+async def test_a_form_without_ottos_confirmation_asks_nothing() -> None:
+    unconfirmed = replace(RULES, link_forms=(replace(VIEWER, form_confirmed_on=None),))
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return record()
+
+    results = await check_links(
+        [due("a", "https://viewer.example.org/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=1")],
+        rules=unconfirmed,
+        hosts={},
+        open_gateway=opener(handler, []),
+        deadline=float("inf"),
+    )
+    assert [(r.outcome, r.reason) for r in results] == [("unchecked", "form_unconfirmed")]
+    assert asked == []
+
+
+@pytestmark_anyio
+async def test_an_interface_that_does_not_answer_leaves_the_link_unchecked() -> None:
+    results = await check_links(
+        [due("a", "https://viewer.example.org/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=1")],
+        rules=FORMS,
+        hosts={},
+        open_gateway=opener(site({"meta.example.org/records/1": httpx.Response(503)}), []),
+        deadline=float("inf"),
+    )
+    assert [(r.outcome, r.reason) for r in results] == [("unchecked", "http_503")]

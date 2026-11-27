@@ -20,6 +20,7 @@ import yaml
 from psycopg.types.json import Jsonb
 
 from earthx.catalog.approvals import load_approvals, publish
+from earthx.catalog.entry_files import EntryFileError
 from earthx.catalog.licences import LicenceCatalogue, load_licences
 from earthx.catalog.listed import BlockReason, BlockRule, BlockScope, load_regions
 from earthx.catalog.listed_search import listed_entry
@@ -352,6 +353,10 @@ def test_a_later_stack_takes_over_and_the_older_file_publishes_nothing(world: Wo
     world.put(world.ckan, _find("b"))
     second = world.report()
     assert second.stack is not None and len(second.stack.entries) == 2 and second.files[0] != first
+    # The second stack of the day is the second file of the source, named by the rule of the loader (M5-67 fix 4).
+    stem = f"{DAY.isoformat()}-{world.ckan.source_id}"
+    assert (first.name, second.files[0].name) == (f"{stem}.yaml", f"{stem}-2.yaml")
+    assert [name for _, name, _ in load_approvals(world.out)] == [f"approvals/{first.name}", f"approvals/{second.files[0].name}"]
     world.approve(first)
     outcome = world.publish()
     assert outcome.published == {} and outcome.stale == (f"approvals/{first.name}",)
@@ -553,10 +558,14 @@ def test_a_wrong_approval_publishes_nothing(world: World) -> None:
     approval = world.report().files[0]
     world.approve(approval)
     document = yaml.safe_load(approval.read_text(encoding="utf-8"))
-    for field, value in (("fingerprint", "b" * 64), ("batch_id", 999999), ("source_id", "other")):
+    for field, value in (("fingerprint", "b" * 64), ("batch_id", 999999)):
         changed = dict(document, **{field: value})
         approval.write_text(yaml.safe_dump(changed, sort_keys=False), encoding="utf-8")
         assert world.publish().published == {}, field
+    # A file whose source is not the one in its name is no file of the run that wrote it: refused, not published.
+    approval.write_text(yaml.safe_dump(dict(document, source_id="other"), sort_keys=False), encoding="utf-8")
+    with pytest.raises(EntryFileError, match="the name is"):
+        world.publish()
     assert world.row("a")["state"] == "in_review"
 
 
@@ -973,6 +982,20 @@ def test_the_statements_of_extracted_finds_are_counted_for_new_spellings(world: 
     world.put(world.ckan, _find("a", licence_statements=[statement]), _find("b", licence_statements=[statement]))
     world.put(world.ckan, _find("c", licence_statements=[statement]), state="gone")
     assert waiting_statements(world.conn)[statement] == 2
+
+
+def test_a_statement_that_is_never_a_licence_does_not_wait_for_a_grade(world: World, tmp_path: Path) -> None:
+    # M5-67 §23.5: such a find waits silently as no_licence and is not listed as waiting for a grade.
+    from datetime import date
+
+    from earthx.catalog.licences import LICENSES_DIR
+    from earthx.discovery.spellings import run
+
+    access = "Es gelten keine Zugriffsbeschränkungen"
+    other = f"Freitext ohne Einstufung ({world.ckan.source_id})"
+    world.put(world.ckan, _find("a", licence_statements=[access]), _find("b", licence_statements=[other]))
+    _, waiting = run(world.conn, LICENSES_DIR, tmp_path, date(2026, 11, 25))
+    assert access not in waiting and waiting[other] == 1
 
 
 def test_a_title_with_a_mail_address_never_goes_into_the_report(world: World) -> None:

@@ -5,7 +5,7 @@ import { clipTileUrl } from './aoiClip';
 import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
 import type { QuickPreset } from './quickPresets';
-import { buildTileUrl } from './mapLayers';
+import { buildTileUrl, scalingOfRaster } from './mapLayers';
 import { inStackOrder, overviewOverScenes, stackLikeView, viewOfPass } from './mosaic';
 import { overviewRasterOf } from './overviewSubstitute';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
@@ -16,7 +16,7 @@ import type { AppliedRender, StacItem } from './types';
 
 const rasterOverlay = (raster: PlannedRaster, render: AppliedRender, clip: GeoJSON.Geometry | null): LayerOverlay => ({
   kind: 'raster',
-  tileUrl: clipTileUrl(buildTileUrl(raster.tileUrl, render), clip),
+  tileUrl: clipTileUrl(buildTileUrl(raster.tileUrl, render, scalingOfRaster(raster)), clip),
   bounds: raster.bounds,
   minZoom: raster.minZoom,
   maxZoom: raster.maxZoom,

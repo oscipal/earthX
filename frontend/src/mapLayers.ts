@@ -25,6 +25,7 @@ import { footprintSelectionFor, hitsOverviewsOf } from './overviewHits';
 import { overviewRasterOf } from './overviewSubstitute';
 import { tileSizeOf } from './tileSize';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup } from './types';
+import { storedRescale, type BandScaling } from './viewMeasure';
 
 const AOI_SRC = 'aoi-src';
 const SEL_SRC = 'mosaicsel-src'; // highlighted (selected-for-download) footprints
@@ -305,20 +306,30 @@ function placeRaster(
   );
 }
 
+// The scaling of the stored numbers a raster's tiles draw: its own (a mosaic, an overview), else that of the asset a scene is drawn from.
+export function scalingOfRaster(raster: PlannedRaster & Partial<Pick<DownloadedInfo, 'scalings' | 'asset'>>): BandScaling | null {
+  return raster.scaling ?? (raster.asset ? raster.scalings?.[raster.asset] : undefined) ?? null;
+}
+
 // Full tile URL from a template: the template already carries the mandatory
 // `asset` (api.ts `buildTileTemplate`, adr/0001 Z4); this adds the
 // stretch/colormap/band params — committed via "Apply" for a full-resolution
 // overlay, taken straight from the registry for a browse preview. Also used by
 // the store to snapshot a layer.
-export function buildTileUrl(template: string, render: AppliedRender): string {
+//
+// The range of a look is physical (M5-68); a tile of one band without steps or expression draws the stored numbers of its file, so its
+// range goes through `scaling`, the scaling of that band (`scalingOfRaster`). This is the one place it does: the tiler, the URL of a
+// layer and its cache see the stored values they always saw.
+export function buildTileUrl(template: string, render: AppliedRender, scaling: BandScaling | null = null): string {
   const params = new URLSearchParams();
+  const draws = scaling && !render.expression && !/[?&](op|expression)=/u.test(template) ? scaling : null;
   // Several bands (`2,1,3`, a colour picture) are one `bidx` each, in this order.
   for (const place of render.bidx ? render.bidx.split(',') : []) params.append('bidx', place);
   if (render.expression) params.set('expression', render.expression);
   if (render.colormapName) params.set('colormap_name', render.colormapName);
   if (render.colormap) params.set('colormap', render.colormap);
   // A colour picture with a range for each channel has three, in the order of its bands (`channels.ts`).
-  for (const pair of render.rescale ? rescaleParams(render.rescale) : []) params.append('rescale', pair);
+  for (const pair of render.rescale ? rescaleParams(storedRescale(render.rescale, render.stored, draws)) : []) params.append('rescale', pair);
   const q = params.toString();
   return q ? `${template}&${q}` : template;
 }
@@ -936,7 +947,7 @@ function addTiles(
   const srcId = dynamicId('tiles-src', i);
   const lyrId = dynamicId('tiles-lyr', i);
   keyResults(lyrId, 'view');
-  const tileUrl = buildTileUrl(info.tileUrl, render);
+  const tileUrl = buildTileUrl(info.tileUrl, render, scalingOfRaster(info));
   // The layer of a raster that steps aside for a picture above it (`hideFrom`) is laid without that limit where the picture is
   // not there yet (`substituteHold`); the signature below keeps it, so that the twin of a pinned layer is still found.
   placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, viewOpacity, openUntilLoaded ? { ...info, hideFrom: undefined } : info);
@@ -948,7 +959,7 @@ function addTiles(
 function tilesPicture(info: PlannedRaster, render: AppliedRender, clip: GeoJSON.Geometry | null): string {
   return overlaySignature({
     kind: 'raster',
-    tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, render), clip),
+    tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, render, scalingOfRaster(info)), clip),
     bounds: info.bounds,
     minZoom: info.minZoom,
     maxZoom: info.maxZoom,

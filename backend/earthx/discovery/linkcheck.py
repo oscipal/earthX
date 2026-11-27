@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import cache
 from html.parser import HTMLParser
 from pathlib import Path
@@ -75,6 +75,7 @@ from earthx.logging import configure_logging
 
 __all__ = [
     "LINKCHECK_FILE",
+    "LinkForm",
     "LinkRules",
     "LinkRun",
     "catalogue_name",
@@ -82,6 +83,8 @@ __all__ = [
     "judge_page",
     "link_pattern",
     "link_policy",
+    "fill",
+    "form_values",
     "load_link_rules",
     "read_link_rules",
     "run_linkcheck",
@@ -114,8 +117,31 @@ _KEYS = frozenset(
         "error_words",
         "login_path_parts",
         "login_words",
+        "link_forms",
     }
 )
+#: A placeholder of a link form: one whole part of a path, fragment or query value.
+_PLACEHOLDER = re.compile(r"\{([a-z][a-z_]{0,19})\}")
+#: What a placeholder takes from a link (unreserved characters only, nothing that leaves a part of an address).
+_VALUE = re.compile(r"[A-Za-z0-9._~-]{1,200}")
+_ESCAPE = re.compile(rb"%([0-9A-Fa-f]{2})")
+_FORM_KEYS = {"api": {"link", "check", "api", "evidence", "form_confirmed_on"}, "none": {"link", "check", "why"}}
+
+
+@dataclass(frozen=True, slots=True)
+class LinkForm:
+    """A form of link whose page cannot show the dataset to the check (a page that loads it by script), and how such a
+    link is checked instead (M5-67 §23, Otto 25.11.2026): ``api`` asks the portal's interface for the record named by
+    the link, which must name the dataset; ``none`` leaves the link unchecked, so its entry stays invisible."""
+
+    link: str
+    check: str
+    api: str | None = None
+    #: The https address of the portal's documentation of ``api``.
+    evidence: str | None = None
+    #: The day Otto found the page of a dataset under ``link`` in a browser; until then nothing is asked.
+    form_confirmed_on: date | None = None
+    why: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +159,7 @@ class LinkRules:
     error_words: tuple[str, ...]
     login_path_parts: frozenset[str]
     login_words: tuple[str, ...]
+    link_forms: tuple[LinkForm, ...] = ()
 
 
 def _number(path: Path, data: Mapping[str, object], key: str, low: float, high: float, *, whole: bool) -> float:
@@ -154,6 +181,92 @@ def _words(path: Path, data: Mapping[str, object], key: str) -> tuple[str, ...]:
     return found
 
 
+def _unquote(text: str) -> str:
+    return _ESCAPE.sub(lambda m: bytes([int(m[1], 16)]), text.encode("utf-8")).decode("utf-8", errors="replace")
+
+
+def _parts(url: str) -> tuple[str, list[str], dict[str, str], list[str]] | None:
+    """Host, the parts of the path, the query by name and the parts of the fragment, each decoded; ``None`` for no
+    ``https`` address or a query that names a parameter twice."""
+    parts = url_parts(url)
+    if parts is None:
+        return None
+    host, path, query, fragment = parts
+    pairs = [pair.partition("=") for pair in query.lstrip("?").split("&") if pair]
+    names = {_unquote(name): _unquote(value) for name, _, value in pairs}
+    if len(names) != len(pairs):
+        return None
+    return host, [_unquote(p) for p in path.split("/")], names, [_unquote(p) for p in fragment.lstrip("#").split("/")]
+
+
+def form_values(form: LinkForm, url: str) -> dict[str, str] | None:
+    """The values of the placeholders of ``form`` in ``url``, or ``None`` where ``url`` has another form: the same
+    host, the same parts of the path and fragment, the same names in the query (in any order); a placeholder takes one
+    whole part of unreserved characters, the same placeholder twice the same value."""
+    want, have = _parts(form.link), _parts(url)
+    if want is None or have is None or want[0] != have[0] or set(want[2]) != set(have[2]):
+        return None
+    if len(want[1]) != len(have[1]) or len(want[3]) != len(have[3]):
+        return None
+    pairs = [
+        *zip(want[1], have[1], strict=True),
+        *((want[2][name], have[2][name]) for name in want[2]),
+        *zip(want[3], have[3], strict=True),
+    ]
+    values: dict[str, str] = {}
+    for template, actual in pairs:
+        placeholder = _PLACEHOLDER.fullmatch(template)
+        if placeholder is None:
+            if template != actual:
+                return None
+        elif not _VALUE.fullmatch(actual) or values.setdefault(placeholder[1], actual) != actual:
+            return None
+    return values
+
+
+def fill(template: str, values: Mapping[str, str]) -> str:
+    """``template`` with each placeholder replaced by its value (unreserved characters: nothing to escape)."""
+    return _PLACEHOLDER.sub(lambda m: values[m[1]], template)
+
+
+def _form(path: Path, index: int, item: object) -> LinkForm:
+    where = f"{path.name}: link_forms[{index}]"
+    if not isinstance(item, dict) or item.get("check") not in _FORM_KEYS or set(item) != _FORM_KEYS[item["check"]]:
+        raise EntryFileError(
+            f"{where}: check api with link, api, evidence and form_confirmed_on, or check none with link and why"
+        )
+    link = item["link"]
+    if not isinstance(link, str) or _parts(link) is None or not _PLACEHOLDER.search(link):
+        raise EntryFileError(f"{where}: link is an https address with at least one placeholder")
+    if item["check"] == "none":
+        if not isinstance(item["why"], str) or not item["why"].strip():
+            raise EntryFileError(f"{where}: why says in a sentence why no check is safe")
+        return LinkForm(link, "none", why=item["why"].strip())
+    api, evidence, day = item["api"], item["evidence"], item["form_confirmed_on"]
+    named = set(_PLACEHOLDER.findall(link))
+    if not isinstance(api, str) or url_parts(api) is None or not set(_PLACEHOLDER.findall(api)) <= named:
+        raise EntryFileError(f"{where}: api is an https address with only placeholders of link")
+    if not isinstance(evidence, str) or url_parts(evidence) is None:
+        raise EntryFileError(f"{where}: evidence is the https address of the portal's documentation of api")
+    if isinstance(day, str):
+        try:
+            day = date.fromisoformat(day)
+        except ValueError:
+            raise EntryFileError(f"{where}: form_confirmed_on is null or a day") from None
+    if day is not None and (not isinstance(day, date) or day > date.today()):
+        raise EntryFileError(f"{where}: form_confirmed_on is null or a day, not in the future")
+    return LinkForm(link, "api", api, evidence, day)
+
+
+def _forms(path: Path, value: object) -> tuple[LinkForm, ...]:
+    if not isinstance(value, list):
+        raise EntryFileError(f"{path.name}: link_forms is a list")
+    forms = tuple(_form(path, index, item) for index, item in enumerate(value))
+    if len({f.link for f in forms}) != len(forms):
+        raise EntryFileError(f"{path.name}: link_forms names each link once")
+    return forms
+
+
 def read_link_rules(path: Path) -> LinkRules:
     data = read_yaml(path)
     if not isinstance(data, dict) or set(data) != _KEYS:
@@ -171,6 +284,7 @@ def read_link_rules(path: Path) -> LinkRules:
         error_words=_words(path, data, "error_words"),
         login_path_parts=frozenset(w.replace(" ", "-") for w in _words(path, data, "login_path_parts")),
         login_words=_words(path, data, "login_words"),
+        link_forms=_forms(path, data["link_forms"]),
     )
 
 
@@ -566,6 +680,66 @@ async def _catalogue_round(
     return found
 
 
+#: What an interface of a portal is asked for: its record as JSON or XML; a page only where it has nothing else.
+_API_ACCEPT = "application/json, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.1"
+
+
+def link_form(rules: LinkRules, url: str) -> tuple[LinkForm, dict[str, str]] | None:
+    """The first form of ``rules`` that ``url`` has, with the values of its placeholders."""
+    for form in rules.link_forms:
+        values = form_values(form, url)
+        if values is not None:
+            return form, values
+    return None
+
+
+async def _form_round(
+    items: Sequence[tuple[DueLink, str]],
+    *,
+    rules: LinkRules,
+    hosts: Mapping[str, HostLimit],
+    open_gateway: OpenGateway,
+    deadline: float,
+    clock: Callable[[], float],
+) -> list[LinkResult]:
+    """The links of a form with ``check: api``: the portal's interface is asked for the record the link names (one
+    host at a time, each in its own spacing, robots.txt obeyed), and it passes as a page would: ``200``, and the
+    record names the title or an identifier of the dataset. A record that is gone fails like a page (``404``)."""
+    by_host: dict[str, list[tuple[DueLink, str]]] = defaultdict(list)
+    for item, api in items:
+        by_host[_host(api) or "invalid"].append((item, api))
+    found: list[LinkResult] = []
+
+    async def one_host(gateway: Gateway, api_host: str, links: Sequence[tuple[DueLink, str]]) -> None:
+        for item, api in links:
+            if clock() >= deadline:
+                return
+            pattern, host = link_pattern(item.url, item.identifiers), _host(item.url) or "invalid"
+            try:
+                response = await gateway.get(api, headers={"Accept": _API_ACCEPT}, retry=True)
+            except GatewayError as error:
+                outcome, reason, status = _error(error)
+                found.append(LinkResult(item.dataset_id, item.url, host, pattern, outcome, reason, status, api_host))
+                continue
+            outcome, reason = judge_page(
+                api,
+                response.url or api,
+                response.status_code,
+                response.headers.get("content-type", ""),
+                response.content,
+                title=item.title,
+                identifiers=item.identifiers,
+                rules=rules,
+            )
+            found.append(
+                LinkResult(item.dataset_id, item.url, host, pattern, outcome, reason, response.status_code, api_host)
+            )
+
+    async with open_gateway(link_policy(frozenset(by_host), hosts, rules)) as gateway:
+        await asyncio.gather(*(one_host(gateway, h, links) for h, links in sorted(by_host.items())))
+    return found
+
+
 async def check_links(
     due: Sequence[DueLink],
     *,
@@ -578,10 +752,13 @@ async def check_links(
 ) -> list[LinkResult]:
     """Check ``due`` host by host until ``deadline`` (``clock`` seconds); what is left stays due. A link that is no
     ``https`` address fails without a request. A link to the catalogue page of a source whose ``catalog_page_check``
-    says ``api`` is checked through the source's API, and stays unchecked until Otto confirmed the form of the page."""
+    says ``api`` is checked through the source's API, and stays unchecked until Otto confirmed the form of the page;
+    so does a link of a form of ``link_forms`` (``check: api``), and one of a form without a safe check stays
+    unchecked (``no_safe_check``)."""
     results: dict[str, LinkResult] = {}
     groups: dict[str, list[DueLink]] = defaultdict(list)
     catalogue: dict[str, list[tuple[DueLink, str]]] = defaultdict(list)
+    forms: list[tuple[DueLink, str]] = []
     for item in due:
         host = _host(item.url)
         source = (sources or {}).get(item.source_id)
@@ -598,6 +775,17 @@ async def check_links(
             )
         elif name is not None:
             catalogue[item.source_id].append((item, name))
+        elif (matched := link_form(rules, item.url)) is not None:
+            form, values = matched
+            pattern = link_pattern(item.url, item.identifiers)
+            if form.check == "none" or form.form_confirmed_on is None:
+                reason = "no_safe_check" if form.check == "none" else "form_unconfirmed"
+                results[item.dataset_id] = LinkResult(
+                    item.dataset_id, item.url, host, pattern, "unchecked", reason, None, None
+                )
+            else:
+                assert form.api is not None
+                forms.append((item, fill(form.api, values)))
         else:
             groups[host].append(item)
     options = {"hosts": hosts, "open_gateway": open_gateway, "deadline": deadline, "clock": clock}
@@ -623,7 +811,7 @@ async def check_links(
                 found[result.dataset_id] = result
         return list(found.values())
 
-    rounds = [pages()] + [
+    rounds = [pages(), *([_form_round(forms, rules=rules, **options)] if forms else [])] + [
         (
             _collection_round
             if (sources or {})[source_id].protocol is SourceProtocol.STAC_API
@@ -649,6 +837,8 @@ class LinkRun:
     results: list[LinkResult] = field(default_factory=list)
     groups: list[GroupCount] = field(default_factory=list)
     applied: Applied = field(default_factory=lambda: Applied(0, 0, 0))
+    #: Links left unchecked by a form of ``link_forms``: ``(form, reason)`` → number.
+    forms: Counter[tuple[str, str]] = field(default_factory=Counter)
 
 
 def run_linkcheck(
@@ -675,6 +865,9 @@ def run_linkcheck(
             due, rules=rules, hosts=hosts, open_gateway=open_gateway, deadline=deadline, clock=clock, sources=sources
         )
     )
+    for result in run.results:
+        if result.reason in ("no_safe_check", "form_unconfirmed") and (matched := link_form(rules, result.url)):
+            run.forms[(matched[0].link, result.reason)] += 1
     # One transaction: a result is never seen unguarded, and a run that breaks off leaves none behind (review).
     with conn.transaction():
         record_results(conn, run.results, datetime.now(UTC))
@@ -711,13 +904,14 @@ def summary_text(run: LinkRun, hosts: Mapping[str, HostLimit], *, top: int = 20)
     for group in guarded:
         lines.append(
             f"    {group.kind} {group.key}: geprüft {group.checked}, durchgefallen {group.failed}"
-            f" ({group.failed / group.checked:.0%}), nicht prüfbar {group.unchecked}"
+            f" ({group.failed / group.checked:.0%}), nicht prüfbar {group.unchecked}, weg (404/410) {group.gone}"
         )
-    patterns = [g for g in run.groups if g.kind == "pattern" and not g.guarded and g.failed + g.unchecked]
+    patterns = [g for g in run.groups if g.kind == "pattern" and not g.guarded and g.failed + g.gone + g.unchecked]
     lines.append("  Muster mit Fehlschlägen:")
-    for group in sorted(patterns, key=lambda g: -(g.failed + g.unchecked))[:top]:
+    for group in sorted(patterns, key=lambda g: -(g.failed + g.gone + g.unchecked))[:top]:
         lines.append(
-            f"    {group.key}: bestanden {group.passed}, durchgefallen {group.failed}, nicht prüfbar {group.unchecked}"
+            f"    {group.key}: bestanden {group.passed}, durchgefallen {group.failed}, weg (404/410) {group.gone},"
+            f" nicht prüfbar {group.unchecked}"
         )
     return "\n".join(lines)
 
@@ -746,11 +940,12 @@ def run_numbers(run: LinkRun, hosts: Mapping[str, HostLimit], *, top: int = 30) 
         "due_by_host": due,
         "groups": [
             {"kind": g.kind, "key": g.key, "passed": g.passed, "failed": g.failed, "unchecked": g.unchecked,
-             "transient": g.transient, "guarded": g.guarded}
+             "transient": g.transient, "gone": g.gone, "guarded": g.guarded}
             for g in run.groups
-            if g.guarded or g.failed or g.unchecked or g.transient
+            if g.guarded or g.failed or g.unchecked or g.transient or g.gone
         ][:100],
         "examples": examples,
+        "forms": [{"link": link, "reason": reason, "count": n} for (link, reason), n in sorted(run.forms.items())],
     }
 
 

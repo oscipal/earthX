@@ -36,6 +36,7 @@ import psycopg
 from earthx.catalog import collection as collection_module
 from earthx.catalog import licences as licences_module
 from earthx.catalog import listed as listed_module
+from earthx.catalog.approvals import next_file_stem
 from earthx.catalog.collection import SCIENTIFIC_EXTENSION, STAC_VERSION
 from earthx.catalog.datasets import CATALOG_DIR, registry
 from earthx.catalog.entry_files import EntryFileError, dump_yaml
@@ -762,7 +763,7 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any], lic
         # Only the statements the catalogue does not know: a known one beside it is no reason to wait (Otto,
         # 23.11.2026: a publisher's pair showed what was granted, the cause was the identifier beside the address).
         for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
-            if statement not in licences.by_statement:
+            if statement not in licences.by_statement and not licences.is_not_a_licence(statement):
                 result.pairs[(row.publisher or "–", statement[:100])] += 1
     elif row.waiting_reason == "not_granted":
         result.pairs[(row.publisher or "–", _not_granted(licences, row.source_id, row.publisher, derived.licence.refs))] += 1
@@ -1185,10 +1186,7 @@ def write_files(
     rows = _rows(conn, [item["dataset_id"] for item in sample] + sorted(flagged))
     pairs = _pairs(conn, source.source_id, stack.fingerprint)
     out.mkdir(parents=True, exist_ok=True)
-    stem, number = f"{day.isoformat()}-{source.source_id}", 1
-    while (out / f"{stem}.yaml").exists():
-        number += 1
-        stem = f"{day.isoformat()}-{source.source_id}-{number}"
+    stem = next_file_stem(out, day, source.source_id)
     approval = out / f"{stem}.yaml"
     document = approval_document(source, stack, sample, rows, day, excluded=list(flagged))
     approval.write_text(dump_approval(document), encoding="utf-8")

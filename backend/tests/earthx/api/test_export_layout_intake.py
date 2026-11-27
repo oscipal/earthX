@@ -13,7 +13,10 @@ import pytest
 from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
 
+from earthx.access.qgis_style import ExportStyle
 from earthx.api.intake import OrderRefused
+from earthx.catalog.registry import Look
+from earthx.processing.export import Attachments
 from tests.earthx.api.test_estimate_resampling import ask, put, resampling, sentinel
 from tests.earthx.api.test_intake import accept, export_order, refused
 from tests.earthx.api.test_intake_mosaic import overpass, scene
@@ -75,6 +78,25 @@ class TestTheOrderTheJobIsGiven:
         assert accepted.recipe.output.layout is None
         assert accepted.attachments is not None and accepted.attachments.bands == ()
         assert "layout" not in accepted.recipe.output.model_dump(mode="json")
+
+
+class TestTheQgisStyle:
+    async def test_the_style_of_the_layer_and_the_looks_of_the_collection_come_with_the_order(self) -> None:
+        style = ExportStyle(rgb=("nir", "red", "green"), ranges=((0, 0.5), (0, 0.3), (0, 0.3)))
+        accepted = await accept(layout_order({"form": "per_band"}), scenes("S2_A"), style=style)
+        attachments = accepted.attachments
+        assert attachments is not None and attachments.style == style
+        assert attachments.true_color == ("red", "green", "blue")
+        looks = {band.asset: band.look for band in attachments.bands}
+        assert looks["red"] == Look("viridis") and looks["scl"] is None, "classes have no look, they have their classes"
+        assert Attachments.from_json(json.loads(json.dumps(attachments.to_json()))) == attachments
+        assert "nir" not in json.dumps(accepted.recipe.model_dump(mode="json")), "not in the recipe, nor in its hash"
+
+    async def test_without_a_layout_no_file_takes_a_style(self) -> None:
+        style = ExportStyle(band="red", colormap="magma", range=(0.0, 0.3))
+        accepted = await accept(layout_order(None), scenes("S2_A"), style=style)
+        assert accepted.attachments is not None
+        assert accepted.attachments.style is None and accepted.attachments.true_color == ()
 
 
 class TestWhatIsRefused:

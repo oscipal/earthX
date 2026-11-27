@@ -106,6 +106,7 @@ from earthx.access.mosaic_tiles import (
     open_mosaic,
 )
 from earthx.access.overview_tiles import PYRAMID_GATE, EarthxOverviewTilerFactory, PyramidTile
+from earthx.access.qgis_style import ExportStyle, collection_look
 from earthx.access.radar import item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
@@ -1872,11 +1873,27 @@ class DownloadRequest(BaseModel):
         description="the pixel size in metres of the one file of `multi_band`; with no other form",
     )
 
+    style: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "How the layer is drawn, for the QGIS style beside each file (M5-64), in physical values: "
+            '`{"band", "colormap", "range"}` (colormap null: grey) or `{"rgb", "ranges"}`. Left out, each file is '
+            "drawn with the look of the collection."
+        ),
+    )
+
     @model_validator(mode="after")
     def _form_and_resolution_agree(self) -> DownloadRequest:
         if (self.form == "multi_band") != (self.common_resolution is not None):
             raise ValueError("common_resolution goes with the form multi_band, and with no other")
         return self
+
+    @field_validator("style")
+    @classmethod
+    def _style_is_one_we_draw(cls, style: dict[str, Any] | None) -> dict[str, Any] | None:
+        if style is not None:
+            ExportStyle.from_json(style)
+        return style
 
     @field_validator("groups")
     @classmethod
@@ -2003,6 +2020,7 @@ async def download_crop(
         asset: band_meta_of_items(
             all_matched, asset, unit=config.band_unit(asset),
             categorical=config.mask is not None and config.mask.asset == asset, classes=config.class_rows(asset),
+            look=collection_look(config, asset),
         )
         for asset in wanted
     }  # fmt: skip
@@ -2169,6 +2187,8 @@ async def download_crop(
             common_resolution=body.common_resolution,
             band_metas=band_metas,
             bands_notes=bands_notes,
+            style=None if body.style is None else ExportStyle.from_json(body.style),
+            true_color=config.true_color,
             line_times=(
                 None
                 if config.line_times is None

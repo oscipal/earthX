@@ -1,5 +1,5 @@
-// The measure of the view over the AOI (UI-03e): the order for what the view draws, the answer turned back into the values the tiles draw,
-// and the fall-back to the first whole scene.
+// The measure of the view over the AOI (UI-03e): the order for what the view draws, every answer in physical values (M5-68), the range
+// turned into stored values for a tile, and the fall-back to the first whole scene.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,7 +7,7 @@ import type { AreaStatistics } from './api';
 import type { IndexPreset } from './indexPresets';
 import { presetOfIndex } from './quickPresets';
 import type { Collection, StacItem } from './types';
-import { areaQuestionOf, fallbackReasonOf, forgetAreaAnswers, inRawValues, measureView, statisticsOfArea, type ViewMeasure } from './viewMeasure';
+import { areaQuestionOf, fallbackReasonOf, forgetAreaAnswers, inPhysicalValues, measureView, physicalOf, rawOf, rescaleThrough, scalingOfAsset, statisticsOfArea, storedRescale, type ViewMeasure } from './viewMeasure';
 
 const TIFF = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const SCALED = { data_type: 'uint16', nodata: 0, scale: 0.0001, offset: -0.1 };
@@ -43,21 +43,17 @@ describe('the order for what the view draws', () => {
       steps: [],
       output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: ['red'] },
     });
-    expect(question?.scalings).toEqual([{ scale: 0.0001, offset: -0.1 }]);
   });
 
   it('names the three bands of the colour picture as the item does', () => {
     const question = ask({ asset: 'visual' });
     expect(question?.order.output).toMatchObject({ bands: ['visual_1', 'visual_2', 'visual_3'] });
-    expect(question?.scalings).toEqual(Array.from({ length: 3 }, () => ({ scale: 1, offset: 0 })));
   });
 
   it('is one band_math step of version 2 for an index, and that band as the output', () => {
     const question = ask({ index: presetOfIndex(NDVI) });
     expect(question?.order.steps).toEqual([{ op: 'band_math', op_version: 2, params: { expression: NDVI.expression, name: 'NDVI' } }]);
     expect(question?.order.output).toMatchObject({ dtype: 'float32', bands: ['NDVI'] });
-    // An index is physical on both sides: nothing is turned back.
-    expect(question?.scalings).toEqual([{ scale: 1, offset: 0 }]);
   });
 
   it('carries the position of the AOI and nothing else of it', () => {
@@ -85,41 +81,59 @@ describe('the order for what the view draws', () => {
     expect(asked(over as Over)).toEqual({ reason: expect.stringMatching(reason) });
   });
 
+  it('asks the area of scenes scaled differently: the answer is physical, and a physical range fits each of them (M5-68)', () => {
+    expect(ask({ items: [item('a'), item('b', { ...SCALED, offset: 0 })] })).not.toBeNull();
+  });
+});
+
+describe('physical and stored values (M5-68)', () => {
+  const S2 = { scale: 0.0001, offset: -0.1 };
+  const stored = { min: 1200, max: 3400, mean: 2300, stddev: 200, count: 4, valid_percent: 100, percentile_2: 1300, percentile_98: 3300, histogram: [[1, 3], [1200, 2300, 3400]] };
+
+  it('turns the statistics of a scene into physical values, every value, percentile and edge, and keeps the counts', () => {
+    const physical = inPhysicalValues(stored, S2);
+    expect(physical).toMatchObject({ min: 0.02, max: 0.24, mean: 0.13, percentile_2: 0.03, percentile_98: 0.23, count: 4, valid_percent: 100 });
+    expect(physical.stddev).toBeCloseTo(0.02, 12);
+    expect(physical.histogram).toEqual([[1, 3], [0.02, 0.13, 0.24]]);
+  });
+
+  it('leaves a band that has no valid value as it is', () => {
+    expect(inPhysicalValues({ count: 0, valid_percent: 0 }, S2)).toEqual({ count: 0, valid_percent: 0 });
+  });
+
+  it('rounds to twelve significant digits, as the registry writes a physical value', () => {
+    expect(physicalOf(1200, S2)).toBe(0.02);
+    expect(rawOf(0.02, S2)).toBe(1200);
+    expect(rawOf(physicalOf(3456, S2), S2)).toBe(3456);
+  });
+
+  it('turns a physical range into the stored values of a tile, one pair or one for each channel', () => {
+    expect(storedRescale('0.02,0.24', undefined, S2)).toBe('1200,3400');
+    expect(storedRescale('0.02,0.24;0,0.1;-0.1,0', undefined, S2)).toBe('1200,3400;1000,2000;0,1000');
+    expect(rescaleThrough('1200,3400', (value) => physicalOf(value, S2))).toBe('0.02,0.24');
+  });
+
+  it('keeps a range the registry gives in stored values, and one of a picture without scaling', () => {
+    expect(storedRescale('1200,3400', true, S2)).toBe('1200,3400');
+    expect(storedRescale('0.02,0.24', undefined, null)).toBe('0.02,0.24');
+  });
+
+  it('keeps an end that is no number', () => {
+    expect(storedRescale('0.02,', undefined, S2)).toBe('1200,');
+  });
+
   it.each([
     ['a scale of zero', { ...SCALED, scale: 0 }],
     ['a falling scale', { ...SCALED, scale: -0.0001 }],
     ['a scale that is no number', { ...SCALED, scale: Number.NaN }],
     ['an offset that is no number', { ...SCALED, offset: Number.POSITIVE_INFINITY }],
-  ])('gives the reason for %s, which cannot be turned back', (_, red) => {
-    expect(asked({ items: [item('a', red)] })).toEqual({ reason: expect.stringMatching(/cannot be turned back/u) });
+  ])('reads no scaling of an item with %s, which cannot be turned back', (_, red) => {
+    expect(scalingOfAsset(item('a', red), 'red')).toBeNull();
   });
 
-  it('gives the reason for scenes whose bands are scaled differently: one raw range would be right for none of them', () => {
-    expect(asked({ items: [item('a'), item('b', { ...SCALED, offset: 0 })] })).toEqual({ reason: expect.stringMatching(/scaled differently/u) });
-    expect(ask({ items: [item('a'), item('b', SCALED)] })).not.toBeNull();
-  });
-});
-
-describe('the answer in the values the tiles draw', () => {
-  const physical = { minimum: 0.1, maximum: 0.3, mean: 0.2, stddev: 0.02, count: 4, valid_percent: 100, percentile_2: 0.12, percentile_98: 0.28, histogram: [[1, 3], [0.1, 0.2, 0.3]] };
-
-  it('turns every value, percentile and edge back with raw · scale + offset, and keeps the counts', () => {
-    const raw = inRawValues(physical, { scale: 0.0001, offset: -0.1 });
-    expect(raw.minimum).toBeCloseTo(2000, 6);
-    expect(raw.maximum).toBeCloseTo(4000, 6);
-    expect(raw.mean).toBeCloseTo(3000, 6);
-    expect(raw.percentile_2).toBeCloseTo(2200, 6);
-    expect(raw.percentile_98).toBeCloseTo(3800, 6);
-    expect(raw.stddev).toBeCloseTo(200, 6);
-    const [counts, edges] = raw.histogram as [number[], number[]];
-    expect(counts).toEqual([1, 3]);
-    expect(edges[0]).toBeCloseTo(2000, 6);
-    expect(edges[2]).toBeCloseTo(4000, 6);
-    expect([raw.count, raw.valid_percent]).toEqual([4, 100]);
-  });
-
-  it('leaves a band that has no valid value as it is', () => {
-    expect(inRawValues({ count: 0, valid_percent: 0 }, { scale: 0.0001, offset: -0.1 })).toEqual({ count: 0, valid_percent: 0 });
+  it('reads the scaling of an asset as the item states it, and none as 1 and 0', () => {
+    expect(scalingOfAsset(item('a'), 'red')).toEqual(S2);
+    expect(scalingOfAsset(item('a', { data_type: 'uint16' }), 'red')).toEqual({ scale: 1, offset: 0 });
   });
 
   it('is by band in the order of the answer, with the names the tile route has for the ends', () => {
@@ -131,7 +145,7 @@ describe('the answer in the values the tiles draw', () => {
         { name: 'visual_2', unit: null, statistics: { minimum: 6, maximum: 240, count: 9 } },
       ],
     };
-    const statistics = statisticsOfArea(answer, [{ scale: 1, offset: 0 }, { scale: 1, offset: 0 }]);
+    const statistics = statisticsOfArea(answer);
     expect(Object.keys(statistics)).toEqual(['visual_1', 'visual_2']);
     expect(statistics.visual_2).toMatchObject({ min: 6, max: 240, minimum: 6, maximum: 240 });
   });
@@ -139,9 +153,10 @@ describe('the answer in the values the tiles draw', () => {
 
 describe('the measure', () => {
   const area = ask()!;
-  const measure: ViewMeasure = { sceneUrl: '/collections/s2/items/a/statistics?asset=red', area, skipped: null, key: 'k' };
+  const measure: ViewMeasure = { sceneUrl: '/collections/s2/items/a/statistics?asset=red', scaling: { scale: 0.0001, offset: -0.1 }, area, skipped: null, key: 'k' };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const physical = { bands: [{ name: 'red', unit: null, statistics: { minimum: 0.1, maximum: 0.3, count: 4, percentile_2: 0.12, percentile_98: 0.28 } }], exact: true, factor: 1 };
+  // The scene route answers in the stored numbers of the file: 2000 … 4000 is 0.1 … 0.3.
   const scene = { red: { min: 2000, max: 4000, percentile_2: 2200, percentile_98: 3800, count: 4 } };
   let fetchMock: ReturnType<typeof vi.fn>;
   const answers = (...replies: (() => Response)[]) => {
@@ -159,12 +174,11 @@ describe('the measure', () => {
     vi.restoreAllMocks();
   });
 
-  it('asks the route for the area, with the AOI in the body and in no address', async () => {
+  it('asks the route for the area, with the AOI in the body and in no address, and keeps its physical answer', async () => {
     answers(() => json(physical));
     const { statistics, fellBack } = await measureView(measure);
     expect(fellBack).toBeNull();
-    expect(statistics.red.min).toBeCloseTo(2000, 6);
-    expect(statistics.red.percentile_98).toBeCloseTo(3800, 6);
+    expect(statistics.red).toMatchObject({ min: 0.1, percentile_98: 0.28 });
     expect(urls()).toEqual(['/collections/s2/statistics']);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe('POST');
@@ -181,7 +195,7 @@ describe('the measure', () => {
     answers(() => json(scene));
     const { statistics, fellBack } = await measureView({ ...measure, area: null }, { percentiles: [5, 95], histogram: true });
     expect(fellBack).toBeNull();
-    expect(statistics.red.max).toBe(4000);
+    expect(statistics.red).toMatchObject({ min: 0.1, max: 0.3, percentile_2: 0.12, percentile_98: 0.28 });
     const url = new URL(urls()[0], 'http://x');
     expect(url.pathname).toBe('/collections/s2/items/a/statistics');
     expect(url.searchParams.getAll('p')).toEqual(['5', '95']);
@@ -193,7 +207,8 @@ describe('the measure', () => {
     const { statistics, fellBack } = await measureView(measure, { percentiles: [5] });
     expect(fellBack).toBe(fallbackReasonOf(measure));
     expect(fellBack).toMatch(status === 413 ? /at most 16 files/u : /does not take the area/u);
-    expect(statistics.red.max).toBe(4000);
+    // The first scene in the same physical values as the area would have been.
+    expect(statistics.red.max).toBe(0.3);
     expect(urls()).toHaveLength(2);
     expect(new URL(urls()[1], 'http://x').searchParams.getAll('p')).toEqual(['5']);
   });
@@ -220,12 +235,17 @@ describe('the measure', () => {
   });
 
   it('says why the first scene stands in where the area was never asked, for the range and for the histograms alike', async () => {
-    const skipped: ViewMeasure = { ...measure, area: null, skipped: 'The scenes of this image are scaled differently, so one range would not fit them all.' };
+    const skipped: ViewMeasure = { ...measure, area: null, skipped: 'The items do not describe the bands of this image.' };
     answers(() => json(scene), () => json(scene));
     expect((await measureView(skipped, { percentiles: [5] })).fellBack).toBe(skipped.skipped);
     expect((await measureView(skipped, { histogram: true })).fellBack).toBe(skipped.skipped);
     expect(fallbackReasonOf(skipped)).toBe(skipped.skipped);
     expect(urls().every((url) => url.startsWith('/collections/s2/items/a/statistics'))).toBe(true);
+  });
+
+  it('keeps the answer of a scene without scaling (an index, a step, an unscaled band) as it is', async () => {
+    answers(() => json(scene));
+    expect((await measureView({ ...measure, area: null, scaling: null })).statistics.red.max).toBe(4000);
   });
 
   it('says nothing where the view is not cropped, the first scene being the question there', async () => {

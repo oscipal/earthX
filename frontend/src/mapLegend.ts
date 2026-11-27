@@ -82,7 +82,7 @@ function viewLegend(downloaded: Record<string, DownloadedInfo>, render: AppliedR
   const scene = Object.values(downloaded)[0];
   if (!scene || typeof scene.tileUrl !== 'string') return null;
   const dataset = datasets.find((d) => d.id === scene.datasetId);
-  const tileUrl = buildTileUrl(scene.tileUrl, render);
+  const tileUrl = buildTileUrl(scene.tileUrl, render, scalingOf(scene));
   const content = legendOfTile(tileUrl, dataset ? classesOfBand(dataset.collection, scene.asset) : null, datasetUnit(dataset, scene.asset, tileUrl), scalingOf(scene));
   return content ? { id: VIEW_LEGEND, title: dataset?.title ?? scene.datasetId, content } : null;
 }
