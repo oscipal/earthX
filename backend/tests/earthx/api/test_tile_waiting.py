@@ -13,6 +13,7 @@ unchanged, on the state before the gate to give the numbers of the plan.
 from __future__ import annotations
 
 import asyncio
+import functools
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -26,7 +27,7 @@ from fastapi import FastAPI
 
 from earthx.access import mosaic_tiles as reading
 from earthx.access.overview_tiles import PYRAMID_GATE, PYRAMID_PLACES
-from earthx.api import mosaic_tiles, overview_tiles
+from earthx.api import mosaic_tiles, overview_tiles, tiler
 from earthx.api.tiler import build_app
 from earthx.objectstore.client import S3
 from tests.earthx.api.test_tiler_mosaic import Scenes, _serve
@@ -144,6 +145,14 @@ async def _all_at_the_gate(rig: Rig, gate: reading.TileGate, count: int) -> None
         await asyncio.sleep(0.02)
 
 
+async def _places_taken(rig: Rig, count: int) -> None:
+    """Until ``count`` tiles are being read, that is until every place is held; fails after 20 s instead of guessing."""
+    deadline = time.monotonic() + 20.0
+    while rig.started < count and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    assert rig.started >= count, "the storm did not take every place"
+
+
 async def _end(tasks: list[asyncio.Task[httpx.Response]], client: httpx.AsyncClient) -> None:
     """The clients give up: the tiles that wait leave, the ones being read end in a moment."""
     for task in tasks:
@@ -199,11 +208,15 @@ def test_the_tiles_themselves_are_read_two_at_a_time_and_all_are_answered(rig: R
     assert elapsed >= 4 * READ_S
 
 
-def test_a_client_that_hangs_up_while_its_tile_waits_takes_no_place_and_reads_nothing(rig: Rig) -> None:
-    rig.read_s = 0.8
+def test_a_client_that_hangs_up_while_its_tile_waits_takes_no_place_and_reads_nothing(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rig.read_s = 2.0  # the places are held for 4 s: far longer than anything the client does below
+    monkeypatch.setattr(reading.TileGate, "POLL_S", 0.01)
 
     async def scenario() -> tuple[int, float, int]:
-        tasks, client = await _storm(rig, 2, settle=0.3)  # both places are taken, for about a second
+        tasks, client = await _storm(rig, 2, settle=0.0)
+        await _places_taken(rig, 2)  # both places are taken, whatever the speed of the machine
         opened_before = len(rig.scenes.opened)
         status, took = await _call(rig.app, _path(extension="npy"), hang_up_after=0.1)
         opened_by_it = len(rig.scenes.opened) - opened_before
@@ -214,14 +227,32 @@ def test_a_client_that_hangs_up_while_its_tile_waits_takes_no_place_and_reads_no
 
     status, took, opened_by_it = asyncio.run(scenario())
     assert status == 499
-    assert took < 0.1 + reading.TileGate.POLL_S + 0.3, f"it left after {took:.2f} s, when it was noticed"
+    assert took < 2.0, f"it left after {took:.2f} s: not when it was noticed, but when a place came"
     assert opened_by_it == 0, "nothing was read for a client that was no longer there"
     assert rig.most_reading <= reading.MAX_CONCURRENT_TILES
 
 
 def test_a_tile_that_waited_is_read_with_its_whole_time_budget(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The wait is not the budget's (adr/0032 §6.2): with a budget shorter than the wait every tile is still answered ``200``."""
+    """The wait is not the budget's (adr/0032 §6.2): with a budget shorter than the wait every tile is still answered ``200``.
+
+    The budget runs on a clock of the thread of its tile that only the reading of a scene advances (by ``READ_S``), so
+    how fast this machine is decides nothing: a tile has used 2 * READ_S of its budget of 2 * READ_S + 0.2 whatever
+    the wall clock says, and the tiles that wait for a place spend none of it.
+    """
+    spent = threading.local()
+
+    def clock() -> float:
+        return getattr(spent, "seconds", 0.0)
+
+    open_asset = reading.open_asset
+
+    def timed_scene(scene: Any, **options: Any) -> Any:
+        spent.seconds = clock() + READ_S
+        return open_asset(scene, **options)
+
+    monkeypatch.setattr(reading, "open_asset", timed_scene)
     monkeypatch.setattr(mosaic_tiles, "TILE_TIME_BUDGET_S", 2 * READ_S + 0.2)
+    monkeypatch.setattr(tiler, "ReadBudget", functools.partial(reading.ReadBudget, clock=clock))
 
     async def scenario() -> list[int]:
         client = rig.client()
@@ -230,6 +261,7 @@ def test_a_tile_that_waited_is_read_with_its_whole_time_budget(rig: Rig, monkeyp
         return [r.status_code for r in responses]
 
     assert asyncio.run(scenario()) == [200] * 6
+    assert rig.started == 6
 
 
 def test_a_tile_of_a_pyramid_does_not_wait_behind_the_tiles_of_a_mosaic(rig: Rig) -> None:
@@ -237,10 +269,11 @@ def test_a_tile_of_a_pyramid_does_not_wait_behind_the_tiles_of_a_mosaic(rig: Rig
 
     The answer here is a refusal (the process has no store), which is the point: how long it takes to say so.
     """
-    rig.read_s = 0.8
+    rig.read_s = 2.0  # the places are held for 4 s
 
     async def scenario() -> float:
-        tasks, client = await _storm(rig, 6, settle=0.3)
+        tasks, client = await _storm(rig, 6, settle=0.0)
+        await _places_taken(rig, 2)
         started = time.monotonic()
         status, _ = await _call(rig.app, "/collections/synthetic-terrain/overview/tiles/WebMercatorQuad/3/0/0.npy")
         waited = time.monotonic() - started
@@ -248,7 +281,7 @@ def test_a_tile_of_a_pyramid_does_not_wait_behind_the_tiles_of_a_mosaic(rig: Rig
         await _end(tasks, client)
         return waited
 
-    assert asyncio.run(scenario()) < 0.3
+    assert asyncio.run(scenario()) < 2.0, "it waited for the places of the mosaic"
 
 
 # The pyramid tiles: one read of an object, and a rendering, each in a thread of the pool. A slow store must not fill it.
