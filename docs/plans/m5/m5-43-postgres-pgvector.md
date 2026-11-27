@@ -61,19 +61,20 @@ T-C-Test `backend/tests/integration/test_postgres_extensions.py`: Die Datenbank 
 
 ## 8. Messung der Bauzeit [M]
 
-Schrittdauern aus der CI (27.11.2026), verglichen mit dem letzten Lauf auf `main` (46018938382, Service-Container `16-3.4`). Gemessen ist die mehrstufige Fassung (F1 = 3): Lauf 46031421724 ohne Cache, Lauf MIT_CACHE_RUN mit Cache.
+Schrittdauern aus der CI (27.11.2026), verglichen mit dem letzten Lauf auf `main` (46018938382, Service-Container `16-3.4`). Gemessen ist die mehrstufige Fassung (F1 = 3): Lauf 46031421724 ohne Cache, Lauf 46032760769 mit Cache.
 
 | Schritt je Testteil | `main` (Service) | ohne Cache | mit Cache |
 |---|---|---|---|
 | „Initialize containers“ (Pull und Start von `16-3.4`) | 14–19 s | — | — |
-| `setup-buildx` | — | 5–9 s | MIT_CACHE_BUILDX |
-| Bau (`build-push-action`, mit `load`) | — | 45–50 s; Teil 1 114 s, weil er den Cache schreibt | MIT_CACHE_BUILD |
-| Start bis `healthy` | — | 3–5 s | MIT_CACHE_START |
-| **zusammen** | **14–19 s** | **55–64 s** (Teil 1 125 s) | **MIT_CACHE_SUM** |
+| `setup-buildx` | — | 5–9 s | 8–11 s |
+| Bau (`build-push-action`, mit `load`) | — | 45–50 s; Teil 1 114 s, weil er den Cache schreibt | 18–34 s |
+| Start bis `healthy` | — | 3–5 s | 4–6 s |
+| **zusammen** | **14–19 s** | **55–64 s** (Teil 1 125 s) | **31–48 s** |
 
 Im Bau ohne Cache (Logs der Läufe 46031239436 und 46031421724): Basis-Image 5–6 s, `apt` mit `build-essential`, `git` und `postgresql-server-dev-16` 17–28 s, Klonen und Übersetzen 9–10 s, Export ins lokale Docker 10–11 s; die Endstufe kopiert nur die Dateien von pgvector. Die Prüfung meldet `pgvector 0.8.7`.
 
-- **Compose-Job:** „Build images“ 81 s ohne Cache gegenüber 73 s auf `main`; die Bau-Stufe von Postgres läuft parallel zum Backend-Image.
+- **Mit Cache** kostet das eigene Image je Teil **15–30 s mehr** als der Service-Container (Testteile 4–6 min, also etwa 5–10 %). Gegenüber der ersten Fassung aus PGDG (18–27 s) kommen 10–20 s dazu; vermutlich, weil der Cache mit `mode=max` auch die Bau-Stufe enthält [A, nicht einzeln gemessen]. Den Export des fertigen Image mit `load` (10–11 s) hatten beide Fassungen.
+- **Compose-Job:** „Build images“ 72–81 s gegenüber 73 s auf `main` (dieser Job baut ohne Layer-Cache); die Bau-Stufe von Postgres läuft parallel zum Backend-Image.
 - **Ohne Cache** (erster Lauf, neues Basis-Image, verdrängter Cache) kostet das je Teil rund 40–45 s mehr als der Service-Container, Teil 1 rund 110 s. Die Testteile laufen parallel und brauchen danach 4–6 min.
 - Die erste Fassung (pgvector aus PGDG, ohne Bau-Stufe) brauchte mit Cache 18–27 s und ohne Cache 26–74 s.
 
