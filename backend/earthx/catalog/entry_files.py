@@ -85,6 +85,46 @@ def _core_int(loader: _StrictLoader, node: yaml.ScalarNode) -> int:
 _StrictLoader.add_constructor("tag:yaml.org,2002:int", _core_int)
 
 
+if yaml.__with_libyaml__:
+
+    class _FastStrictLoader(yaml.cyaml.CParser, _StrictLoader):
+        """:class:`_StrictLoader` on the parser of libyaml (M5-66): the same resolvers and constructors, about five times
+        as fast on a file of 1 MB (``licenses/grants/govdata.yaml``). Its composer is in C and never calls
+        :meth:`_StrictLoader.compose_node`, so :func:`_load` looks for anchors and aliases in the events first."""
+
+        def __init__(self, stream: str) -> None:
+            yaml.cyaml.CParser.__init__(self, stream)
+            yaml.constructor.SafeConstructor.__init__(self)
+            yaml.resolver.Resolver.__init__(self)
+
+else:  # pragma: no cover - PyYAML without libyaml
+    _FastStrictLoader = None
+
+
+def _anchored(text: str) -> bool:
+    """Whether the events of ``text`` hold an anchor or an alias, by the parser of libyaml."""
+    for event in yaml.parse(text, Loader=_FastStrictLoader):
+        if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) is not None:
+            return True
+    return False
+
+
+def _load(text: str) -> Any:
+    """The plain data of ``text`` by :class:`_StrictLoader`, through libyaml where it can.
+
+    Whatever libyaml finds wrong, and any anchor or alias, goes to the loader in Python, so that a file is refused with
+    the very message it had before; libyaml only reads the files that load.
+    """
+    if _FastStrictLoader is not None:
+        try:
+            yaml.reader.Reader(text)  # the check of characters the loader in Python makes; libyaml makes its own
+            if not _anchored(text):
+                return yaml.load(text, Loader=_FastStrictLoader)
+        except yaml.YAMLError:
+            pass
+    return yaml.load(text, Loader=_StrictLoader)
+
+
 class _PlainDumper(yaml.SafeDumper):
     """``SafeDumper`` that never writes an anchor or an alias: PyYAML gives one to every object that occurs twice, a
     ``date`` shared by two lines too, and the strict loader above refuses it."""
@@ -104,7 +144,7 @@ def dump_yaml(data: Any, *, width: int | None = None) -> str:
         data, Dumper=_PlainDumper, sort_keys=False, allow_unicode=True, **({} if width is None else {"width": width})
     )
     try:
-        yaml.load(text, Loader=_StrictLoader)
+        _load(text)
     except yaml.YAMLError as error:
         problem = getattr(error, "problem", None) or str(error).splitlines()[0]
         raise EntryFileError(f"the YAML written is not readable again: {problem}") from None
@@ -121,7 +161,7 @@ def read_yaml(path: Path) -> Any:
     except (OSError, UnicodeDecodeError) as error:
         raise EntryFileError(f"{path.name}: cannot be read as UTF-8 text ({type(error).__name__})") from None
     try:
-        return yaml.load(text, Loader=_StrictLoader)
+        return _load(text)
     except yaml.YAMLError as error:
         problem = getattr(error, "problem", None) or str(error).splitlines()[0]
         mark = getattr(error, "problem_mark", None)
