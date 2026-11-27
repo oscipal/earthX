@@ -259,7 +259,7 @@ Antworten zu 8b-2 (an die Session geschickt 13.11., Umsetzung nach #345/#335): a
 | **M5-21** | Extraktoren GeoSphere, INSPIRE-ATOM, STAC Index als Register (`adr/0025` Schnitt 6) | B | Opus, mittel | M5-20 gemergt |
 | **M5-24** | Prozess `harvester` als Takt, Health-Checks, „Last checked“ (`adr/0025` Schnitt 7, §6.6); Vorgabe Otto 18.11.: für jeden Datensatz wird geklärt und festgehalten, wann bzw. wie oft `materialize` laufen soll (Aktualisierungstakt der Quelle), Umsetzung legt die Session vor | B | Opus, mittel | M5-20, M5-37 gemergt |
 | **DS-05b** | Speckle-Filter Boxcar und Lee auf `focal` | B | Opus, hoch | M5-10, DS-05a gemergt |
-| **DS-05d** | σ⁰-Kalibrierung, danach RVI; erweitert nach `adr/0036` F6: Azimut-Rauschen, Wahl β⁰/σ⁰/γ, Ort der Annotation per Registry-Regel, `sar_ipf_min` als Randmaske für Szenen vor IPF 2.90 | B | Opus, hoch | DS-05a gemergt |
+| **DS-05d** | σ⁰-Kalibrierung, danach RVI; erweitert nach `adr/0036` F6: Azimut-Rauschen, Wahl β⁰/σ⁰/γ, Ort der Annotation per Registry-Regel, `sar_ipf_min` als Randmaske für Szenen vor IPF 2.90. **Dazu (Otto, 27.11.2026, aus DS-05a):** Presets „VV dB“/„VH dB“ (heute dB der unkalibrierten DN, so im Tooltip), Beschreibung von `sar_db` und Legende nach der Kalibrierung anpassen (`plans/m5/ds-05a-sar-db.md` §13) | B | Opus, hoch | DS-05a gemergt |
 | **M5-25** | JSON-LD und Sitemap für die Datensätze | B | Opus, mittel | — |
 | **M5-27** | Abnahmebericht M5 (§7) | C | Opus, hoch | alle übrigen |
 
