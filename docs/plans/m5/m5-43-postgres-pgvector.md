@@ -1,6 +1,6 @@
 # M5-43 — Postgres-Image mit pgvector für Compose, CI und Cloud-Umgebung
 
-**Status (27.11.2026):** Plan, **Stufe B**. Auftrag Otto vom 27.11.2026 (`plans/m5/m5-discovery-und-suche.md` §6.2), Erlaubnis für `.github/` im Auftrag; das Setup der Cloud-Umgebung trägt Otto selbst ein (Text in §6). Fragen F1–F3 in §9.
+**Status (27.11.2026):** Plan, **Stufe B**. Auftrag Otto vom 27.11.2026 (`plans/m5/m5-discovery-und-suche.md` §6.2), Erlaubnis für `.github/` im Auftrag; das Setup der Cloud-Umgebung trägt Otto selbst ein (Text in §6). Fragen F1–F4 in §9.
 
 Belegstufen wie in `plans/m5/m5-41-pgvector.md`: **M** in dieser Sitzung gemessen, **P** Primärquelle selbst gelesen, **P\*** Primärseite über das Abrufwerkzeug eines Hilfsagenten gelesen, **S** Suchtreffer, Seite nicht gelesen, **A** eigene Ableitung.
 
@@ -22,7 +22,7 @@ Belegstufen wie in `plans/m5/m5-41-pgvector.md`: **M** in dieser Sitzung gemesse
 | `postgis/postgis:16-3.7` | zuletzt gebaut **24.11.2026**; Basis `postgres:16-trixie`, PostgreSQL **16.16**, PostGIS **3.7.0**, Debian 13 trixie, glibc **2.41**, PGDG-Quelle `trixie-pgdg main 16` eingetragen | Docker Hub API `tags/16-3.7` (`tag_last_pushed`) [M]; `docker inspect` und `docker run` im Image [M]; Dockerfile https://github.com/postgis/docker-postgis/blob/master/16-3.7/Dockerfile [P] |
 | `postgis/postgis:16-3.4` (heute) | zuletzt gebaut **14.10.2024**; PostgreSQL **16.4**, PostGIS **3.4.3**, Debian 11 bullseye, glibc **2.31** | Docker Hub API `tags/16-3.4` [M]; `docker inspect`/`docker run` [M] |
 | `pgvector/pgvector:0.8.7-pg16-trixie` | gebaut 12.11.2026, ohne PostGIS | Docker Hub API [M] |
-| pgvector in PGDG für trixie | **in der Sitzung nicht lesbar**: `apt.postgresql.org`, `ftp.postgresql.org` und `www.postgresql.org` sind aus der Sitzung gesperrt (403) [M]. Suchtreffer nennt `0.8.6-1.pgdg13+2` [S]. Die CI liest die Fassung beim Bau aus (`apt-cache policy` im Log) | §7 |
+| pgvector in PGDG für trixie | **0.8.7-2.pgdg13+1** (Kandidat), daneben 0.8.7-1.pgdg13+2 und 0.8.7-1.pgdg13+1; 0.8.6 nicht mehr im Index | `apt-cache policy postgresql-16-pgvector` im Bau der CI am 27.11.2026 [M]. Aus der Sitzung nicht lesbar: `apt.postgresql.org`, `ftp.postgresql.org`, `www.postgresql.org` gesperrt (403) [M]; ein Suchtreffer nannte noch 0.8.6-1.pgdg13+2 [S], mit dem der erste Bau scheiterte |
 | pgvector in Ubuntu 24.04 (Cloud-Sitzung) | nur **0.6.0** | `apt-cache policy postgresql-16-pgvector` [M] |
 
 Beide Images legen die Daten unter `PGDATA=/var/lib/postgresql/data` ab und setzen `LANG=en_US.utf8` [M]. Die Hauptversion bleibt 16, das Datenverzeichnis ist also lesbar. Es ändern sich die Unterversion (16.4 → 16.16), PostGIS (3.4.3 → 3.7.0) und glibc (2.31 → 2.41).
@@ -32,13 +32,13 @@ Beide Images legen die Daten unter `PGDATA=/var/lib/postgresql/data` ab und setz
 Neben `compose/objectstore/`, wo die übrigen Dateien der Compose-Dienste liegen.
 
 1. `FROM postgis/postgis:16-3.7`.
-2. pgvector aus PGDG mit fester Paketfassung (`postgresql-16-pgvector=<Fassung>`, als `ARG`), wie das Dockerfile von `postgis/postgis` PostGIS festschreibt (G4 = 1). Vorher `apt-cache policy` ins Bau-Log, damit eine abgelöste Fassung sofort sichtbar ist.
+2. pgvector aus PGDG mit fester Paketfassung (`postgresql-16-pgvector=0.8.7-2.pgdg13+1`, als `ARG`), wie das Dockerfile von `postgis/postgis` PostGIS festschreibt (G4 = 1). Vorher `apt-cache policy` ins Bau-Log, damit eine abgelöste Fassung sofort sichtbar ist.
 3. Prüfung im Bau: `default_version` in `vector.control` ≥ 0.8.4, sonst bricht der Bau ab.
 4. Nichts weiter: kein eigenes Init-Skript, keine Einstellungen. Die Erweiterung legt später die Migration von M5-23 an.
 
 ## 4. Compose
 
-`services.postgres`: `build: ./compose/postgres` statt `image: postgis/postgis:16-3.4`, dazu `image: earthx-postgres:16-3.7` als fester Name des gebauten Images. Volume, Umgebung und Healthcheck bleiben. `docker compose build` baut das Image mit.
+`services.postgres`: `build: ./compose/postgres` statt `image: postgis/postgis:16-3.4`. Volume, Umgebung und Healthcheck bleiben. `docker compose build` baut das Image mit.
 
 ## 5. CI (`.github/workflows/ci.yml`)
 
@@ -62,10 +62,10 @@ Wird nach dem ersten CI-Lauf eingetragen.
 
 ## 9. Fragen an Otto
 
-**F1 — Feste pgvector-Fassung aus PGDG.** PGDG führt im Paketindex nur die jeweils neueste Fassung. Ein festgeschriebenes Paket lässt sich nach einem neuen Upload nicht mehr installieren; der Bau bricht ab, sobald der Layer-Cache nicht mehr greift (z. B. nach einem neuen Basis-Image).
-1. So lassen (G4 = 1): feste Fassung aus PGDG. Bricht der Bau, wird die Fassung im Dockerfile bewusst angehoben **(Empfehlung, bis der erste CI-Lauf die PGDG-Fassung zeigt; dann aktualisiert in §8)**
-2. PGDG ohne feste Fassung, aber Bau bricht unter 0.8.4 ab; die Fassung steht im Bau-Log
-3. Bau aus dem Quelltext am Tag `v0.8.7`, wie die Cloud-Umgebung: überall dieselbe Fassung, unabhängig von PGDG; Bau etwa 30 s länger ohne Cache
+**F1 — Feste pgvector-Fassung aus PGDG.** Gemessen (§2): PGDG behält im Index mehrere Builds derselben Fassung, eine ältere Fassung (0.8.6) aber nicht. Die feste Paketfassung hält also bis zur nächsten Fassung von pgvector; danach bricht der Bau, sobald der Layer-Cache nicht mehr greift (neues Basis-Image, Ottos erster Bau).
+1. So lassen (G4 = 1): feste Fassung `0.8.7-2.pgdg13+1`. Bricht der Bau, wird die Fassung bewusst angehoben (eine Zeile, eigener PR) **(Empfehlung)**
+2. PGDG ohne feste Fassung, Bau bricht nur unter 0.8.4 ab; die Fassung steht im Bau-Log
+3. Bau aus dem Quelltext am Tag `v0.8.7`, wie die Cloud-Umgebung: unabhängig von PGDG, Bau ohne Cache etwa 30 s länger
 
 **F2 — Reihenfolge Setup und Merge.** Der neue T-C-Test verlangt pgvector auch in der Cloud-Sitzung.
 1. Otto trägt den Setup-Text (§6) vor dem Merge ein; der Test gilt überall **(Empfehlung)**
@@ -75,10 +75,112 @@ Wird nach dem ersten CI-Lauf eingetragen.
 1. Tag ohne Digest, wie entschieden: Unterversionen und Sicherheitskorrekturen kommen mit dem nächsten Bau **(Empfehlung)**
 2. Tag mit Digest, Anheben von Hand
 
-## 10. Ottos lokaler Bestand
+**F4 — Tiger-Geocoder in Ottos Bestand.** PostGIS 3.7 liefert `postgis_tiger_geocoder` nicht mehr mit; das neue Image legt ihn nicht an [M]. In Ottos Datenbank hat ihn das alte Init-Skript angelegt (Fassung 3.4.3, nur mitgelieferte Nachschlagetabellen, von EarthX nicht benutzt). Er bleibt nach dem Wechsel auf 3.4.3 liegen, und eine Rücksicherung aus `pg_dump` meldet für ihn Fehler (sonst vollständig, §10) [M].
+1. Nach der Prüfung entfernen (`DROP EXTENSION postgis_tiger_geocoder`, Befehl in §11 Schritt 5); `fuzzystrmatch` bleibt **(Empfehlung)**
+2. Liegen lassen
 
-PowerShell-Befehle für Sicherung, Wechsel, `ALTER EXTENSION … UPDATE` und Prüfung stehen im PR und in §11. Vorgehen: Sicherung (logisch mit `pg_dump`, physisch als Archiv des Datenverzeichnisses), Wechsel im selben Volume ohne `down -v`, danach `ALTER EXTENSION … UPDATE` für alle Erweiterungen, `REINDEX DATABASE` und `ALTER DATABASE … REFRESH COLLATION VERSION` wegen der neuen glibc, Prüfung der Fassungen und Zeilenzahlen gegen den Stand vorher.
 
-## 11. Ablauf lokal (wird mit der Umsetzung ergänzt)
+## 10. Ottos lokaler Bestand: Vorgehen und Simulation
 
-Siehe PR-Beschreibung; nach der Simulation in der Sitzung hier nachgetragen.
+Wechsel im **selben Volume**, ohne `docker compose down -v`: Die Hauptversion bleibt 16, das neue Image liest das Datenverzeichnis. Zwei Dinge sind danach nötig:
+
+- **Erweiterungen:** PostGIS 3.4.3 → 3.7.0 über `postgis_extensions_upgrade()` (zieht `postgis_topology` mit), die übrigen mit `ALTER EXTENSION … UPDATE`.
+- **Collation:** glibc 2.31 → 2.41. Postgres meldet „collation version mismatch“ bei jeder Verbindung; Text-Indizes können falsch sortieren. Abhilfe: `REINDEX DATABASE` und `ALTER DATABASE … REFRESH COLLATION VERSION` in jeder Datenbank.
+
+Beides steht in `scripts/m5-43-postgres-switch/` und läuft im Container. Die Sicherung davor ist doppelt: logisch (`pg_dumpall --globals-only` und `pg_dump -Fc`) und physisch (Archiv des Datenverzeichnisses bei gestopptem Postgres, für den schnellen Rückweg auf das alte Image).
+
+**Simulation in der Sitzung [M]:** Mini-Compose-Projekt mit demselben Dienst `postgres`. Altes Image `16-3.4` mit pgstac 0.9.12, allen 37 Migrationen, `catalog-load` und einer Texttabelle mit 10⁵ Zeilen und B-Baum. Dann Sicherung, Wechsel auf `16-3.7` mit pgvector (in der Sitzung aus dem Quelltext statt aus PGDG, das gesperrt ist), `upgrade-all.sh`, Prüfung. Ergebnis: Zeilenzahlen aller Tabellen gleich; PostGIS und Topologie 3.7.0; Collation 2.41 in allen Datenbanken; nach Neustart keine Warnung mehr; `pypgstac migrate` und `catalog-load` laufen danach durch; `vector` 0.8.7 angeboten. Die Rücksicherung des Dumps in ein frisches neues Image ging vollständig bis auf den Tiger-Geocoder (F4) und die Meldung, dass die Rolle schon existiert. Den physischen Rückweg habe ich nicht simuliert; er braucht Löschen im Volume und gehört Otto.
+
+## 11. PowerShell-Befehle für Otto (Windows, PowerShell 5.1)
+
+Im Wurzelverzeichnis des Repos. Ausgaben nach `..\earthx-ausgaben\m5-43`, nie ins Repo. Schritte 0 bis 2 **vor** dem Holen des neuen Stands: Bis dahin ist der Dienst `postgres` noch das alte Image.
+
+**0. Ablage und Skripte holen (ohne das Repo zu ändern)**
+
+```powershell
+$out = '..\earthx-ausgaben\m5-43'
+New-Item -ItemType Directory -Force -Path $out | Out-Null
+git fetch origin pull/431/head
+git archive -o "$out\switch.zip" FETCH_HEAD scripts/m5-43-postgres-switch
+Expand-Archive -Force "$out\switch.zip" -DestinationPath $out
+$s = "$out\scripts\m5-43-postgres-switch"
+Get-ChildItem $s
+```
+
+**1. Stand vorher erfassen**
+
+```powershell
+docker compose up -d --wait postgres
+docker compose cp "$s\versions.sql" postgres:/tmp/versions.sql
+docker compose cp "$s\counts.sql" postgres:/tmp/counts.sql
+docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -At -f /tmp/versions.sql' | Out-File -Encoding utf8 "$out\versionen-vorher.txt"
+docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -At -f /tmp/counts.sql' | Out-File -Encoding utf8 "$out\zeilen-vorher.txt"
+Get-Content "$out\versionen-vorher.txt"
+```
+
+Die Zeile `size` zeigt die Größe der Datenbank; Dump und Archiv brauchen zusammen etwa so viel Platz.
+
+**2. Sicherung (logisch und physisch)**
+
+```powershell
+docker compose exec -T postgres sh -c 'pg_dumpall -U $POSTGRES_USER --globals-only -f /tmp/globals.sql && pg_dump -U $POSTGRES_USER -d $POSTGRES_DB -Fc -f /tmp/earthx.dump'
+docker compose cp postgres:/tmp/globals.sql "$out\globals.sql"
+docker compose cp postgres:/tmp/earthx.dump "$out\earthx.dump"
+docker compose stop
+docker compose run --rm --no-deps -v "$((Resolve-Path $out).Path):/backup" --entrypoint tar postgres -czf /backup/postgres-data.tgz -C /var/lib/postgresql/data .
+Get-ChildItem $out
+```
+
+`docker compose cp` statt `>`: PowerShell 5.1 schreibt Umleitungen als UTF-16 und würde den binären Dump zerstören.
+
+**3. Wechsel**
+
+```powershell
+git pull origin pull/431/head
+docker compose build postgres
+docker compose up -d --wait postgres
+```
+
+Nach dem Merge statt der ersten Zeile `git pull origin main`. Der neue Container hat ein leeres `/tmp`; deshalb kopiert Schritt 4 die Skripte noch einmal.
+
+**4. Erweiterungen, Indizes und Collation**
+
+```powershell
+docker compose cp "$s\upgrade.sql" postgres:/tmp/upgrade.sql
+docker compose cp "$s\upgrade-all.sh" postgres:/tmp/upgrade-all.sh
+docker compose cp "$s\versions.sql" postgres:/tmp/versions.sql
+docker compose cp "$s\counts.sql" postgres:/tmp/counts.sql
+docker compose exec -T postgres sh -c 'sh /tmp/upgrade-all.sh 2>&1' | Tee-Object -FilePath "$out\upgrade.txt"
+```
+
+Erwartet: je Datenbank `== <Name>`, bei `earthx` und `template_postgis` „Upgrade to version 3.7.0 completed“, überall „changing version from 2.31 to 2.41“, kein `ERROR`. Die Warnungen „collation version mismatch“ davor sind der Grund für diesen Schritt.
+
+**5. Prüfung**
+
+```powershell
+docker compose restart postgres
+docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -At -f /tmp/versions.sql' | Out-File -Encoding utf8 "$out\versionen-nachher.txt"
+docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -At -f /tmp/counts.sql' | Out-File -Encoding utf8 "$out\zeilen-nachher.txt"
+Get-Content "$out\versionen-nachher.txt"
+Compare-Object (Get-Content "$out\zeilen-vorher.txt") (Get-Content "$out\zeilen-nachher.txt")
+docker compose logs --since 2m postgres | Select-String 'collation version mismatch'
+```
+
+Erwartet: `server|PostgreSQL 16.16 …`, jede Datenbank `|2.41`, `postgis|3.7.0`, `postgis_topology|3.7.0`, `vector offered|0.8.7`; `Compare-Object` und `Select-String` geben **nichts** aus (gleiche Zeilenzahlen, keine Warnung). `postgis_tiger_geocoder|3.4.3` bleibt stehen (F4).
+
+Nur bei F4 = 1, danach:
+
+```powershell
+docker compose exec -T postgres sh -c 'for db in $POSTGRES_DB template_postgis; do psql -U $POSTGRES_USER -d $db -c ''DROP EXTENSION IF EXISTS postgis_tiger_geocoder''; done'
+```
+
+**6. Alles starten**
+
+```powershell
+docker compose up -d
+docker compose ps -a
+```
+
+`pgstac-migrate` und `catalog-load` müssen mit Exit 0 enden, die übrigen Dienste `healthy` sein. Danach im Browser: Data catalogue mit gelisteten Einträgen, eine Suche, eine Ebene mit Pyramide.
+
+**Wenn etwas schiefgeht:** nichts löschen, Postgres mit `docker compose stop postgres` anhalten und mir die Dateien aus `..\earthx-ausgaben\m5-43` (ohne Dump und Archiv) schicken. Der Rückweg auf das alte Image aus `postgres-data.tgz` braucht Löschen im Volume; die Befehle dafür gebe ich dir dann einzeln.
