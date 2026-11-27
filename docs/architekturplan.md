@@ -386,6 +386,8 @@ Seitenmarke bleibt dabei undurchsichtig (`adr/0005` Regel III).
 
 **Nachtrag 2026-11-10 (`adr/0026` F3, M5-22):** In M5 gibt es kein pgvector. Die Vektorähnlichkeit der Hybrid-Suche rechnet der Prozess `api` exakt über eine gewöhnliche Spalte in Postgres; harte Filter laufen vorher in SQL. pgvector kommt erst, wenn die Menge einen Index verlangt (eigene Entscheidung). Die Volltext-Suche über Collections ist eine eigene Tabelle neben pgstac in drei Textsuche-Konfigurationen (`simple`, `german`, `english`), nicht die Freitext-Suche von pgstac (fest englisch, ohne Index). Entsprechend gilt Punkt 9 in Abschnitt 0 ohne pgvector.
 
+**Nachtrag 2026-11-27 (`adr/0026` §14, M5-41, M5-43):** Der Nachtrag vom 10.11.2026 ist überholt. Bei 10⁶ gelisteten Einträgen läuft die Vektorähnlichkeit in Postgres mit pgvector ≥ 0.8.4: Spalte `halfvec`, HNSW für ungefilterte Anfragen; gefilterte Anfragen bis 5·10⁴ passende Zeilen exakt über den Filterindex, gewählt im Code. Punkt 9 in Abschnitt 0 gilt wieder mit pgvector. Das Postgres-Image von Compose und CI baut `compose/postgres/Dockerfile` (`postgis/postgis:16-3.7` plus pgvector aus PGDG); die Cloud-Sitzung baut pgvector im Setup der Umgebung (`cloud-umgebung.md` §5). Den Vektorarm baut M5-23.
+
 ---
 
 ## 6. Zugriffs-Ebene
@@ -730,6 +732,8 @@ verbundener Runner folgen später (7f).
 Regeln: Migrationen versioniert (Alembic); jede Komponente hat eine eigene DB-Rolle mit minimalen Rechten; personenbezogene Daten (Konto, AOIs in Rezepten, Suchanfragen) sind markiert und haben Aufbewahrungsfristen; Logs enthalten keine exakten AOIs.
 
 **Nachtrag 2026-11-10 (`adr/0026` F3, M5-22):** `dataset_embedding` trägt das Embedding als gewöhnliche Spalte, nicht als `vector` (kein pgvector in M5); dieselbe Tabelle hält Suchtext, `tsvector` und Prüfwert je Datensatz für den Volltext. Name und Spalten legt der Plan von M5-22 fest (`plans/m5/m5-22-suche-lexikalisch.md` §3.4).
+
+**Nachtrag 2026-11-27 (`adr/0026` §14, M5-43):** Der Nachtrag vom 10.11.2026 ist überholt: Das Embedding wird mit M5-23 eine Spalte `halfvec(D)` mit HNSW-Index (pgvector ≥ 0.8.4, `adr/0026` §14 Punkt 1). Name und Spalten legt der Plan von M5-23 fest.
 
 **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** `license_catalog` ist eine Datei in Git (`backend/catalog/licenses/`), in Postgres nur abgeleitet. Gelistete Einträge liegen in eigenen Tabellen neben pgstac mit Zustand, Herkunft (Regel, Lauf, Freigabedatei) und Grabstein; Name und Spalten legt der Plan von M5-40 fest (`plans/m5/m5-40-gelistete-in-postgres.md`). `review_item` wird zu Warteliste und Lauf-Stapel (M5-20).
 
