@@ -1,6 +1,6 @@
 # M5-64 — QGIS-Stil bei jedem Export
 
-**Stand:** 27.11.2026, Plan mit Fragen F1–F7 an Otto; Umsetzung nach den Empfehlungen in zwei Draft-PRs: PR 1 (Plan, Backend) §10, PR 2 (Frontend) §11.
+**Stand:** 27.11.2026, Plan **angenommen** (Otto, 27.11.2026: F1–F7 je Option 1, A1–A8; F5 als offener Punkt, §8.2); Umsetzung nach den Empfehlungen in zwei Draft-PRs: PR 1 (Plan, Backend) §10, PR 2 (Frontend) §11.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 20.11.2026; Auftrag 27.11.2026):**
 
@@ -195,6 +195,14 @@ Die Dateien kommen direkt von der Quelle; die Plattform sieht kein Byte und kann
 - **A5 — „Gerade eingestellt“** heißt angewandt (Grundsatz „Apply“, ENTSCHEIDUNGEN §2): getippte, nicht angewandte Felder zählen nicht.
 - **A6 — Nicht im Rezept:** Der Stil steht nicht im Rezept und nicht in `recipe.json`; Hash und Wiederholbarkeit des Rezepts bleiben. Ein und derselbe Job kann so mit verschiedenen Stilen heruntergeladen werden.
 - **A7 — Version:** Die `.qml` trägt `version="3.34.4"` (geprüft gegen QGIS 3.34 LTR). Ältere QGIS 3.x lesen dieselben Elemente; nicht gemessen.
+
+### 8.2 Antworten Otto (27.11.2026)
+
+> F1–F7 = 1, Auslegungen A1–A8 so in Ordnung. F5 (ganze Szene „per band“ direkt aus dem Browser) als offenen Punkt im Plan und im M5-Plan führen, keine eigene Aufgabe jetzt.
+
+Folgen: keine Änderung an der Umsetzung (§10, §11), sie folgte den Empfehlungen. A8 steht in §10.
+
+**Offener Punkt (F5):** Die ganze Szene „per band“, die der Browser direkt von der Quelle lädt (NM4-33, `originalsZip.ts`), bekommt noch keine `.qml`. Lösungsweg, wenn er ansteht: Der Browser holt die Stile bei der Plattform (ohne Daten), gemessene Looks mit dem Bereich der Ansicht. Geführt auch im M5-Plan (§6.2, Zeile M5-64); keine eigene Aufgabe.
 
 ---
 
