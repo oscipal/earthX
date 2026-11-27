@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
+from earthx.access.qgis_style import ExportStyle
 from earthx.adapters.errors import UnknownCollection
 from earthx.api import intake
 from earthx.api.intake import (
@@ -232,6 +233,7 @@ async def accept(
     registry: DatasetRegistry = INTAKE_REGISTRY,
     operators: OperatorRegistry = OPERATORS,
     aoi_provenance: dict[str, str] | None = None,
+    style: ExportStyle | None = None,
 ):
     raw = document if isinstance(document, (str, bytes)) else json.dumps(document)
     heads = heads or Heads()
@@ -243,6 +245,7 @@ async def accept(
             item_source=source,
             gateway=gateway,
             aoi_provenance=aoi_provenance,
+            style=style,
         )
 
 

@@ -67,10 +67,11 @@ async def zipped(
     expires: str = "7 days",
     reported: dict[str, dict[str, int]] | None = None,
     document: dict[str, Any] | None = None,
+    properties: dict[str, Any] | None = None,
 ) -> tuple[str, str, str]:
     """A finished raster job whose result lies in the bucket; returns ``(job_id, result_id, url)``."""
     job_id = await placed(rig, document)
-    result = dict(RESULT)
+    result = dict(RESULT) if properties is None else {**RESULT, "properties": properties}
     if meta:
         result["files_meta"] = (
             reported if reported is not None else {"result.tif": facts(raster), "mask.tif": facts(mask)}
@@ -83,6 +84,44 @@ async def zipped(
 
 def opened(content: bytes) -> zipfile.ZipFile:
     return zipfile.ZipFile(io.BytesIO(content))
+
+
+#: A result whose item names its band and the statistics of the area (M5-64).
+BANDS = {
+    **RESULT["properties"],
+    "bands": [{"name": "ndvi", "data_type": "float32", "statistics": {"percentile_2": -0.1, "percentile_98": 0.8}}],
+}
+STYLE = '{"band": "ndvi", "colormap": "rdylgn", "range": [-0.2, 0.9]}'
+
+
+class TestTheQgisStyle:
+    async def test_the_result_has_its_style_beside_it_grey_from_its_statistics(self, mocked: Store, rig: Rig) -> None:
+        _, _, url = await zipped(rig, properties=BANDS)
+        archive = opened((await rig.client.get(url)).content)
+        assert archive.namelist()[:3] == [f"{FOLDER}/result.tif", f"{FOLDER}/mask.tif", f"{FOLDER}/result.qml"]
+        qml = archive.read(f"{FOLDER}/result.qml").decode()
+        assert 'type="singlebandgray"' in qml and "<minValue>-0.1</minValue>" in qml and "<maxValue>0.8</maxValue>" in qml
+
+    async def test_the_style_of_the_layer_draws_it_and_makes_another_zip(self, mocked: Store, rig: Rig) -> None:
+        _, _, url = await zipped(rig, properties=BANDS)
+        plain = await rig.client.get(url)
+        styled = await rig.client.get(url, params={"style": STYLE})
+        qml = opened(styled.content).read(f"{FOLDER}/result.qml").decode()
+        assert 'type="singlebandpseudocolor"' in qml and 'classificationMin="-0.2"' in qml and 'classificationMax="0.9"' in qml
+        assert styled.headers["etag"] != plain.headers["etag"], "the ETag follows the bytes"
+        again = await rig.client.get(url, params={"style": STYLE}, headers={"Range": "bytes=0-99"})
+        assert again.status_code == 206 and again.content == styled.content[:100]
+
+    @pytest.mark.parametrize("style", ["{", "[]", '{"band": "ndvi", "colormap": "nope", "range": [0, 1]}'])
+    async def test_a_style_that_is_none_is_a_400(self, mocked: Store, rig: Rig, style: str) -> None:
+        _, _, url = await zipped(rig, properties=BANDS)
+        response = await rig.client.get(url, params={"style": style})
+        assert response.status_code == 400 and "style" in problem(response)["detail"]
+
+    async def test_a_result_whose_item_names_no_bands_has_no_style(self, mocked: Store, rig: Rig) -> None:
+        _, _, url = await zipped(rig)
+        names = opened((await rig.client.get(url, params={"style": STYLE})).content).namelist()
+        assert not any(name.endswith(".qml") for name in names)
 
 
 class TestTheWholeZip:
