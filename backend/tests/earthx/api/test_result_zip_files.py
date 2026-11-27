@@ -134,7 +134,8 @@ class TestTheFilesOfTheZip:
         job_id, _, _ = await zipped(rig)
         names = (await zip_of(rig, job_id)).namelist()
         beside = crop_files()
-        assert [name.removeprefix(f"{FOLDER}/") for name in names] == [*RASTERS, *beside]
+        styles = ["mask.qml"]  # M5-64: the style of the mask; this result names no bands, so none for it
+        assert [name.removeprefix(f"{FOLDER}/") for name in names] == [*RASTERS, *styles, *beside]
 
     async def test_the_attribution_is_the_text_of_the_registry_with_the_year_of_the_scene(
         self, mocked: Store, rig: Rig  # noqa: F811
@@ -475,7 +476,7 @@ class TestWithoutTheRegistry:
             response = await client.get(f"/processing/jobs/{job_id}/results/result.zip")
         assert response.status_code == 200
         names = [name.removeprefix(f"{FOLDER}/") for name in opened(response.content).namelist()]
-        assert names == [*RASTERS, dl.AOI_FILENAME, dl.RECIPE_FILENAME]
+        assert names == [*RASTERS, "mask.qml", dl.AOI_FILENAME, dl.RECIPE_FILENAME]
 
 
 class TestNothingNamesWhatItShouldNot:

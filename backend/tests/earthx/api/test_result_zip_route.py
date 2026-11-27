@@ -86,7 +86,7 @@ def opened(content: bytes) -> zipfile.ZipFile:
 
 
 class TestTheWholeZip:
-    async def test_it_is_a_zip_with_a_folder_and_the_six_files(self, mocked: Store, rig: Rig) -> None:
+    async def test_it_is_a_zip_with_a_folder_and_the_seven_files(self, mocked: Store, rig: Rig) -> None:
         job_id, _, url = await zipped(rig)
         response = await rig.client.get(url)
         assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
@@ -94,7 +94,8 @@ class TestTheWholeZip:
         assert archive.testzip() is None
         assert archive.namelist() == [
             f"{FOLDER}/{n}"
-            for n in ("result.tif", "mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt")
+            # The result names no bands: only the mask gets its style (M5-64).
+            for n in ("result.tif", "mask.tif", "mask.qml", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt")
         ]
         assert archive.read(f"{FOLDER}/result.tif") == RASTER and archive.read(f"{FOLDER}/mask.tif") == MASK
         assert all(info.compress_type == zipfile.ZIP_STORED for info in archive.infolist())
@@ -165,7 +166,7 @@ class TestTheNameOfTheZip:
         response = await rig.client.get(f"/processing/jobs/{job_id}/results/result.zip")
         assert response.headers["content-disposition"] == 'attachment; filename="cop-dem-glo-30_scale_run20260305.zip"'
         names = opened(response.content).namelist()
-        assert names[0] == "cop-dem-glo-30_scale_run20260305/result.tif" and len(names) == 6
+        assert names[0] == "cop-dem-glo-30_scale_run20260305/result.tif" and len(names) == 7
 
     async def test_the_zip_and_the_single_links_of_a_job_carry_the_same_day(self, mocked: Store, rig: Rig) -> None:
         job_id, _, url = await zipped(rig)
@@ -607,3 +608,52 @@ class TestUnderARealServer:
             server.should_exit = True
             thread.join(timeout=15)
         assert rig.api.bundles.busy == 0
+
+
+class TestTheStyleOfTheResult:
+    """M5-64: ``result.qml`` beside ``result.tif``, drawn with the look the result has in the app when it is downloaded."""
+
+    LOOK = {"bands": {"red": {"colormap": "magma", "low": 0.0, "high": 0.2}}}
+
+    async def finished(self, rig: Rig) -> str:
+        job_id = await placed(rig, None)
+        properties = {
+            **RESULT["properties"],
+            "bands": [{"name": "red", "data_type": "float32", "nodata": "nan", "earthx:source_values": True,
+                       "statistics": {"minimum": 0.0, "maximum": 0.5, "percentile_2": 0.01, "percentile_98": 0.4}}],
+        }  # fmt: skip
+        result = {**RESULT, "properties": properties, "files_meta": {"result.tif": facts(RASTER), "mask.tif": facts(MASK)}}
+        result_id = finish(rig.db, job_id, result=result)
+        put(rig, result_id, "result.tif", RASTER)
+        put(rig, result_id, "mask.tif", MASK)
+        return f"/processing/jobs/{job_id}/results/result.zip"
+
+    @staticmethod
+    def ends(content: bytes) -> tuple[float, float]:
+        import xml.etree.ElementTree as ET
+
+        archive = opened(content)
+        (name,) = [n for n in archive.namelist() if n.endswith("/result.qml")]
+        shader = ET.fromstring(archive.read(name)).find(".//colorrampshader")
+        assert shader is not None
+        return float(shader.get("minimumValue", "nan")), float(shader.get("maximumValue", "nan"))
+
+    async def test_the_look_of_the_download_draws_the_style_and_keeps_its_etag(self, mocked: Store, rig: Rig) -> None:
+        import json
+
+        url = await self.finished(rig)
+        looked = await rig.client.get(url, params={"look": json.dumps(self.LOOK)})
+        assert looked.status_code == 200, looked.text
+        assert self.ends(looked.content) == (0.0, 0.2)
+        again = await rig.client.get(url, params={"look": json.dumps(self.LOOK)})
+        assert again.headers["etag"] == looked.headers["etag"] and again.content == looked.content
+        plain = await rig.client.get(url)
+        assert self.ends(plain.content) != (0.0, 0.2) and plain.headers["etag"] != looked.headers["etag"]
+
+    @pytest.mark.parametrize(
+        "look",
+        ["[]", "not json", '{"bands": {"red": {"colormap": "nope", "low": 0, "high": 1}}}', "{" + " " * 9000 + "}"],
+    )
+    async def test_a_look_that_is_no_look_is_422(self, mocked: Store, rig: Rig, look: str) -> None:
+        url = await self.finished(rig)
+        assert (await rig.client.get(url, params={"look": look})).status_code == 422

@@ -65,7 +65,7 @@ import dataclasses
 import json
 import logging
 import unicodedata
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import format_datetime
@@ -93,6 +93,7 @@ from starlette.concurrency import run_in_threadpool
 
 from earthx.access.crop_rules import RECIPE_FILENAME, TEXT_FILES
 from earthx.access.download import attribution_names_year
+from earthx.access.qgis_style import style_name
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
 from earthx.api.crs_info import CrsRefused, crs_description
@@ -108,6 +109,7 @@ from earthx.api.intake import (
 )
 from earthx.api.item_source import ItemSource, fetch_item_or_refuse
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
+from earthx.api.result_styles import MASK_STYLE, result_style
 from earthx.api.result_zip import FileFacts, Layout, Member, RangeNotSatisfiable, byte_range, reported_files
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
@@ -1321,17 +1323,29 @@ def _finished_at(status: JobStatus) -> datetime:
     return (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
 
 
-def _job_members(api: JobApi, body: dict[str, Any], status: JobStatus, facts: dict[str, FileFacts], folder: str) -> list[Member]:
+def _job_members(
+    api: JobApi, body: dict[str, Any], status: JobStatus, facts: dict[str, FileFacts], folder: str, look: Any = None
+) -> list[Member]:
     """The files of a raster job's ZIP below ``folder``: the one place of its content (M4-11b-1, M4-30).
 
-    The rasters from the store, then the files of the crop's ZIP beside them in its order (`TEXT_FILES`, the one
-    definition); the registry no longer knowing the dataset leaves out the citation and the notice, as it left out
-    the citation before. ``result.zip`` of the job and every part of a bundle are laid out by this function.
+    The rasters from the store, their QGIS styles drawn with ``look`` (M5-64, ``result_styles``), then the files of the
+    crop's ZIP beside them in its order (`TEXT_FILES`, the one definition); the registry no longer knowing the dataset
+    leaves out the citation and the notice, as it left out the citation before. ``result.zip`` of the job and every
+    part of a bundle are laid out by this function.
     """
     members = [
         Member.stored(f"{folder}/{name}", name, facts[name], result_id=status.result_id) for name in BUNDLE_FILES
     ]
     config = _config_of(api, body)
+    properties = (status.result or {}).get("properties") or {}
+    try:
+        style = result_style(properties, body, config=config, operators=api.operators, look=look)
+    except ValueError as error:
+        raise Problem(422, f"look: {error}") from None
+    result_file, mask_file = BUNDLE_FILES
+    if style is not None:
+        members.append(Member.of_bytes(f"{folder}/{style_name(result_file)}", style.encode("utf-8")))
+    members.append(Member.of_bytes(f"{folder}/{style_name(mask_file)}", MASK_STYLE.encode("utf-8")))
     documents = {
         name: text.encode("utf-8")
         for name, text in job_side_files(
@@ -1385,7 +1399,7 @@ async def _bundle_response(
     facts = reported_files(status.result, BUNDLE_FILES)
     if body is None or facts is None or status.result_id is None:
         raise _no_such_job()
-    members = _job_members(api, body, status, facts, filename.removesuffix(".zip"))
+    members = _job_members(api, body, status, facts, filename.removesuffix(".zip"), _look_of_query(request, "look"))
     layout = Layout(members, modified=_finished_at(status))
     await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})
     return await _zip_response(request, api, layout, filename)
@@ -1698,8 +1712,12 @@ async def create_bundle(request: Request, api: Api) -> Response:
     return JSONResponse({"href": href, "expires": expires.isoformat()}, status_code=201, headers={"Location": href})
 
 
-async def _lay_out_parts(api: JobApi, parts: list[_Part], folder: str) -> tuple[list[Member], list[_Part], list[_Part]]:
-    """The members of every part that can be laid out, those parts, and the parts left out with their reason."""
+async def _lay_out_parts(
+    api: JobApi, parts: list[_Part], folder: str, looks: Mapping[str, Any] | None = None
+) -> tuple[list[Member], list[_Part], list[_Part]]:
+    """The members of every part that can be laid out, those parts, and the parts left out with their reason.
+
+    ``looks`` (M5-64) is the look of each job by its id, as the app draws its result; a job without one takes its own."""
     members: list[Member] = []
     included: list[_Part] = []
     left_out: list[_Part] = []
@@ -1711,7 +1729,8 @@ async def _lay_out_parts(api: JobApi, parts: list[_Part], folder: str) -> tuple[
             continue
         status = await _with_derived_years(api, body, status)
         try:
-            members += _job_members(api, body, status, facts, f"{folder}/{part.number:02d}_{stem}")
+            look = None if looks is None else looks.get(status.job_id)
+            members += _job_members(api, body, status, facts, f"{folder}/{part.number:02d}_{stem}", look)
         except Problem as problem:
             if problem.type != NO_ACQUISITION_YEARS:
                 raise
@@ -1719,6 +1738,26 @@ async def _lay_out_parts(api: JobApi, parts: list[_Part], folder: str) -> tuple[
         else:
             included.append(part)
     return members, included, left_out
+
+
+#: The longest look a download names in its query (M5-64): one per band of a result, a few hundred bytes each.
+MAX_LOOK_CHARS = 8192
+
+
+def _look_of_query(request: Request, name: str) -> dict[str, Any] | None:
+    """The JSON object in the query parameter ``name`` (a look, or looks by job), or ``None``; ``422`` if it is no object."""
+    text = request.query_params.get(name)
+    if text is None:
+        return None
+    if len(text) > MAX_LOOK_CHARS:
+        raise Problem(422, f"{name} is at most {MAX_LOOK_CHARS} characters")
+    try:
+        value = json.loads(text)
+    except ValueError:
+        raise Problem(422, f"{name} is a JSON object") from None
+    if not isinstance(value, dict):
+        raise Problem(422, f"{name} is a JSON object")
+    return value
 
 
 def _missing_text(left_out: list[_Part]) -> bytes:
@@ -1750,7 +1789,10 @@ async def read_bundle(request: Request, bundle_id: str, api: Api) -> Response:
         raise Problem(410, "no part of this bundle has a result any more", type_=GONE, title="Gone")
     filename = f"{first}_batch-{len(parts)}.zip"
     folder = filename.removesuffix(".zip")
-    members, included, left_out = await _lay_out_parts(api, parts, folder)
+    looks = _look_of_query(request, "looks")
+    if looks is not None and not all(isinstance(key, str) for key in looks):
+        raise Problem(422, "looks maps a job id to its look")
+    members, included, left_out = await _lay_out_parts(api, parts, folder, looks)
     if not included:
         raise Problem(410, "no part of this bundle has a result any more", type_=GONE, title="Gone")
     if left_out:

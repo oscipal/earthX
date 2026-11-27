@@ -476,3 +476,21 @@ class TestNothingPersonalInTheLogs:
         assert made.headers["cache-control"] == "no-store"
         assert (await rig.client.get(made.json()["href"])).headers["cache-control"] == "no-store"
         assert (await rig.client.post(PATH, json={"jobs": []})).headers["cache-control"] == "no-store"
+
+
+class TestTheLooksOfABundle:
+    """M5-64: each part's ``result.qml`` takes the look named for its job; ``looks`` that are no map are refused."""
+
+    async def test_looks_that_are_no_map_of_jobs_are_422(self, mocked: Store, rig: Rig) -> None:
+        href = await make(rig, await part(rig, 1))
+        assert (await rig.client.get(href, params={"looks": "[]"})).status_code == 422
+        assert (await rig.client.get(href, params={"looks": "{"})).status_code == 422
+
+    async def test_a_map_of_looks_by_job_is_taken(self, mocked: Store, rig: Rig) -> None:
+        import json
+
+        one, two = await part(rig, 1), await part(rig, 2)
+        href = await make(rig, one, two)
+        looks = {one: {"bands": {"x": {"colormap": "magma", "low": 0, "high": 1}}}}
+        response = await rig.client.get(href, params={"looks": json.dumps(looks)})
+        assert response.status_code == 200, response.text
