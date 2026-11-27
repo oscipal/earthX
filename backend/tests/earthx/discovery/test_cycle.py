@@ -213,6 +213,8 @@ def test_the_findings_of_a_run_put_the_guard_first() -> None:
     assert keys[0] == "SCHUTZ spa.example.org"
     assert {"MUSTER amt.example.org/daten/{x}", "WARNZEICHEN W1 govdata", "WARNZEICHEN W6 govdata",
             "STAPEL govdata 7", "LIZENZ CC BY-NC-SA 4.0", "QUELLE data-gv-at", "PR 410"} <= set(keys)
+    source = next(f for f in found if f.key == "QUELLE data-gv-at")
+    assert source.text.startswith("Harvest gescheitert: Der Harvest endete mit Fehler") and "Bericht übersprungen" in source.text
     assert "LIZENZ einmal" not in keys
 
 
@@ -291,6 +293,28 @@ def test_a_pause_is_a_note_in_the_files_of_the_run_and_no_finding_and_no_error()
     )
     assert "**govdata:** Hinweis, planmäßige Pause (kein Fehler): govdata: Lauf 4" in files["README.md"]
     assert "gescheitert" not in files["README.md"] and files["fehler.log"].startswith("keine")
+
+
+def test_a_source_whose_harvest_failed_is_named_with_its_skipped_report_and_the_error_log_is_not_empty() -> None:
+    # The run of 25.11. 15:43: govdata stopped on robots.txt; its report did not run, and fehler.log began with "keine".
+    message = "Der Harvest endete mit Fehler (Exit-Code 1). Grund: robots.txt verbietet den Abruf"
+    files = run_files(
+        day=DAY, folder="f", trial=False, linkcheck=None, reports=REPORTS, decided=[], spellings=None,
+        source_errors={"govdata": message}, run_error=None, published=(0, []), classify={},
+    )
+    assert f"- **govdata:** Harvest gescheitert: {message} Bericht übersprungen" in files["README.md"]
+    assert files["fehler.log"] == f"govdata: {message}\n"
+    both = run_files(
+        day=DAY, folder="f", trial=False, linkcheck=None, reports=REPORTS, decided=[], spellings=None,
+        source_errors={"govdata": message}, run_error="Bericht: gescheitert", published=(0, []), classify={},
+    )
+    assert both["fehler.log"] == f"Bericht: gescheitert\ngovdata: {message}\n"
+    assert files["fehler.log"].count("keine") == 0 and "keine" not in both["fehler.log"]
+    none = run_files(
+        day=DAY, folder="f", trial=False, linkcheck=None, reports=REPORTS, decided=[], spellings=None,
+        source_errors={}, run_error=None, published=(0, []), classify={},
+    )
+    assert none["fehler.log"] == "keine\n"
 
 
 def test_the_note_of_a_pause_is_the_report_line_of_the_source_and_never_a_log_line(tmp_path: Path) -> None:
