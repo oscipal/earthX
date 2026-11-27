@@ -632,3 +632,22 @@ Anlass: Zielgröße 10⁶ gelistete Einträge (Otto, 14.11.2026, `plans/m5/m5-35
 - `architekturplan.md` 5.3 und 10: Die Nachträge vom 10.11.2026 („In M5 gibt es kein pgvector“, „nicht als `vector`“) werden durch einen Nachtrag zu M5-41 ersetzt; 0 Punkt 9 gilt wieder mit pgvector. Der Nachtrag kommt mit dem ersten PR der Umsetzung (Image-Wechsel oder M5-23), nicht in diesem PR (Stufe C), wie in §12 Punkt 10.
 - Anforderung an den Anbieter in M6: pgvector ≥ 0.8.4 mit `halfvec` und `hnsw.iterative_scan`, geprüft auf einer Testinstanz (Bericht §3.3).
 - Folgeaufgaben: Wechsel des Postgres-Images (Stufe B, vor M5-23; Nummer vergibt der Planungs-Chat), M5-23 nach Punkt 1–3 und 6.
+
+---
+
+## 15. Nachtrag M5-66: Tiefe je Arm, Filter vor dem Rang, Trefferzahl, Trigramm-Arm als Ergänzung (Otto, 27.11.2026: F1, F3, F5, F6 = 1, F2 = 2, F4 = 1 als Teil von M5-23; Weg 3 angenommen)
+
+Anlass: M5-42 F5 = 1 (Otto, 23.11.2026). Bericht, Messung und Recherche: `plans/m5/m5-66-breite-suche.md`.
+
+1. **Harte Filter des Data catalogue in jedem Arm** (ergänzt §4.4): Art des Eintrags, Kategorie und Region stehen wie Raum und Zeit in den Abfragen beider Arme, vor jedem Rang; die Plätze eines Arms gelten damit unter den Treffern des Filters (Auslegung A2, Plan F6). Die Kategorie voller Einträge kommt als Liste ihrer Kennungen aus der Registry, die Region voller Einträge nach der Regel der gelisteten (Box überlappt mehr als an der Grenze).
+2. **Tiefe 1 000 je Arm:** In die RRF gehen je Arm die Plätze bis 1 000 (`rank()`, 1, 2, 2, 4). Ein Gleichstand am letzten Platz kommt ganz mit (Auslegung A1): Im Trigramm-Arm teilen sich bei breiten Wörtern Tausende Treffer einen Wert, ein Schnitt nach Titel wäre willkürlich und änderte schon Platz 1. Gerankt wird in SQL weiter jeder Treffer, weil ein genauer `ts_rank_cd` jeden `tsvector` braucht (Plan §6 Punkt 5).
+3. **Trefferzahl:** `numberMatched` mit Text ist die Zahl der Treffer beider Arme nach allen Filtern, genau bis 10 000 und darüber weggelassen (M5-40 F4); sie hängt nicht von der Tiefe ab.
+4. **Blättern** (ergänzt §4.4 „Größe der Antwort“, F2 = 2): Die Tiefe je Arm wächst mit der Seite (`max(1 000, offset + limit + 1)`); die Liste endet nie vor dem letzten Treffer (M5-56).
+5. **Reihenfolge:** Für Treffer, die in einem Arm hinter Platz 1 000 liegen, fällt dieser Beitrag weg; gemessen ändert sich die ganze Liste ab Platz 40 (drei Wörter) bzw. ab etwa 800 (ein Wort), die ersten 20 in keiner der 15 Messungen (Plan §3).
+6. **Folge für M5-23:** Der Vektorarm bekommt dieselbe Tiefe; `hnsw.ef_search` bleibt nach §14 Punkt 1 nie kleiner als sie. Die Arme werden dort gleichzeitig abgefragt (F4); Ziel unter 1 s ohne Filter bei 10⁵.
+7. **Trigramm-Arm nur als Ergänzung (fest, Otto, 27.11.2026; Weg 3, Plan §2a):**
+   - **Schwelle 20** (`TRIGRAMS_BELOW`): Der Trigramm-Arm läuft nur, wo der Volltext nach allen Filtern weniger als 20 Treffer hat, also weniger als eine Seite. Er ist für Tippfehler da; ein Tippfehler hat keinen Volltext-Treffer.
+   - **Folgen:** Bei breiten Wörtern ordnet der Volltext allein; die erste Seite weicht dadurch von der Fusion mit Trigrammen ab (gemessen 7 bis 20 von 20 gleich). Die Trefferzahl zählt nur die gelaufenen Arme und ist bei breiten Wörtern kleiner: lose Trigramm-Treffer wie „Wasser…“ für „water“ fallen weg („Wasser Pegel Messstelle“ 750 statt 7 754).
+   - **Gemessen:** breite Wörter ohne Filter 0,25–0,59 s, mit Filter 0,07–0,25 s bei 10⁵ synthetischen Einträgen; Bewertungs-Set Frage für Frage gleich.
+   - **Verworfen:** GiST-KNN (`<<->`) war schnell, liefert Gleichstände aber nicht ganz (A1); nur Titel als Trigramm-Text verlor die meisten Treffer; Region nach dem Ranking unnötig.
+   - **Mit M5-23** wird die Schwelle neu bewertet, sobald der Vektorarm da ist, und das Bewertungs-Set bekommt Fragen mit breiten Wörtern.
