@@ -114,7 +114,7 @@ function assetsOfParams(params: Record<string, unknown>): string[] {
 
 function ofStep(entry: unknown): QuickPreset | null {
   if (!isObject(entry)) return null;
-  const { name, title, op, op_version: opVersion, params, adjustable = [] } = entry;
+  const { name, title, op, op_version: opVersion, params, adjustable = [], tooltip } = entry;
   if (!isText(name) || !isText(title) || !isText(op) || typeof opVersion !== 'number' || !Number.isInteger(opVersion) || !isObject(params)) return null;
   if (params.name !== name) return null;
   // Each adjustable parameter is set in the step, and is no band and not the name; a backend before the field sends none.
@@ -125,7 +125,8 @@ function ofStep(entry: unknown): QuickPreset | null {
     kind: 'step',
     name,
     label: title,
-    tip: `${title} of ${assets.join(', ')}.`,
+    // The registry's sentence where the title and the band would hide what the values are ("VV dB": of uncalibrated DN).
+    tip: isText(tooltip) ? tooltip : `${title} of ${assets.join(', ')}.`,
     steps: [{ op, opVersion, params: { ...params } }],
     assets,
     bands: [name],

@@ -91,6 +91,11 @@ describe('the presets a scene can draw (DS-05a A7)', () => {
     expect(names(['hh', 'hv'])).toEqual([]);
   });
 
+  it('say in their tooltip what the registry says of the values, else the title and the band', () => {
+    const told = { ...RADAR, 'earthx:step_presets': [{ ...step('vv_db', 'vv'), tooltip: 'VV in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰).' }, step('vh_db', 'vh')] } as unknown as Collection;
+    expect(quickPresetsOf(told).map((preset) => preset.tip)).toEqual(['VV in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰).', 'vh_db of vh.']);
+  });
+
   it('are all of the dataset where the bands of the scene are not known, or the dataset does not list a band they read', () => {
     expect(names([])).toEqual(['vv_db', 'vh_db']);
     const unlisted = { ...RADAR, 'earthx:band_units': { hh: 'DN' } } as unknown as Collection;
