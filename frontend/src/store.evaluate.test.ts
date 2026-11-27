@@ -67,7 +67,7 @@ function reset(selected = ['optical']) {
     selectedDatasetIds: selected,
     datasetId: selected[0],
     aoi: RECT,
-    aoiPoint: null,
+   
     dateFrom: '2026-07-01',
     dateTo: '2026-07-31',
     searchFilters: {},
@@ -269,18 +269,18 @@ describe('"AOI coverage"', () => {
     expect(asked[0]).not.toHaveProperty('earthx:evaluate');
   });
 
-  it('is sent for a point too, and the search goes by the square around it, not by the point (Otto, 06.11.2026)', async () => {
-    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+  it('is sent for a point too, and the search goes by the point, which the server measures as 0 or 100 % (M5-69)', async () => {
+    useAppStore.setState({ aoi: { type: 'Point', coordinates: [10.5, 47.5] } });
     state().setSearchFilter('optical', COVERAGE, range('60', ''));
     steps = [{ scenes: [], checked: 0 }];
     await state().runSearch();
     expect(asked[0].query_by_collection).toEqual({ optical: { [COVERAGE]: { gte: 60 } } });
-    expect(asked[0]).not.toHaveProperty('intersects.type', 'Point');
-    expect(asked[0].bbox ?? asked[0].intersects).toBeDefined();
+    expect(asked[0].intersects).toEqual({ type: 'Point', coordinates: [10.5, 47.5] });
+    expect(asked[0]).not.toHaveProperty('bbox');
   });
 
   it('keeps the point for a search without a filter of the platform (Gegenprobe)', async () => {
-    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+    useAppStore.setState({ aoi: { type: 'Point', coordinates: [10.5, 47.5] } });
     state().setSearchFilter('optical', 'test:cloud', range('', '20'));
     state().setSearchEvaluate('scene');
     steps = [{ scenes: [], checked: 0 }];

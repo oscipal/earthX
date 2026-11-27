@@ -1031,6 +1031,29 @@ export async function fetchBands(datasetId: string, itemIds: readonly string[], 
   return parseBands(await jsonOrThrow<unknown>(res));
 }
 
+// The outline of the pixel a point AOI cuts out of each group of scenes (M5-69), `null` for a group none of whose scenes holds the
+// point. The point goes in the body, never in a URL.
+export async function fetchPixelOutlines(
+  datasetId: string,
+  point: GeoJSON.Point,
+  groups: readonly (readonly string[])[],
+  assets: readonly string[],
+  signal?: AbortSignal,
+): Promise<(GeoJSON.Polygon | null)[]> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/pixel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ point: { type: 'Point', coordinates: point.coordinates.slice(0, 2) }, groups, assets }),
+    signal,
+  });
+  const body = await jsonOrThrow<unknown>(res);
+  const pixels = body && typeof body === 'object' ? (body as { pixels?: unknown }).pixels : undefined;
+  if (!Array.isArray(pixels)) throw new Error('the server answered with pixels the map cannot read');
+  return pixels.map((pixel) =>
+    pixel && typeof pixel === 'object' && (pixel as { type?: unknown }).type === 'Polygon' ? (pixel as GeoJSON.Polygon) : null,
+  );
+}
+
 // `groups` (M3-17, replacing the flat `items` list): item ids per group,
 // mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per
 // group, separate groups as separate files in the same ZIP (P19). A single

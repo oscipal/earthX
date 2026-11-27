@@ -380,11 +380,11 @@ describe('buildOrder with a statistical Normalize step', () => {
     expect(build({ area: 'scene' }).needs[0].key).toBe(whole.needs[0].key);
   });
 
-  it('asks nothing for "AOI only" while no area is drawn', () => {
+  it('asks nothing for "AOI only" while no AOI is drawn', () => {
     const built = build({ area: 'aoi', aoi: null });
     expect(built.needs).toEqual([]);
     expect(built.stepProblems[1].errors).toEqual({});
-    expect(built.problems).toContain('Draw an area as AOI.');
+    expect(built.problems).toContain('Draw an AOI.');
   });
 
   it('is locked after a reprojection, with the reason at the method, and asks nothing', () => {

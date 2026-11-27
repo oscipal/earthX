@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy
 import pytest
 import rasterio
+import shapely.geometry
 from rasterio.control import GroundControlPoint
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.transform import GCPTransformer
@@ -95,6 +96,17 @@ def test_a_point_has_a_window_of_one_pixel(grid: RadarGrid) -> None:
     lon, lat = mini_gcp.position(40.5, 40.5)
     window = grid.window({"type": "Point", "coordinates": [lon, lat]})
     assert (window.width, window.height) == (1, 1)
+
+
+def test_the_outline_of_a_window_is_placed_by_the_gcps(grid: RadarGrid) -> None:
+    lon, lat = mini_gcp.position(40.5, 40.5)
+    outline = grid.outline(grid.window({"type": "Point", "coordinates": [lon, lat]}))
+    assert outline.contains(shapely.geometry.Point(lon, lat))
+    corners = [mini_gcp.position(40, 40), mini_gcp.position(41, 41)]
+    assert outline.bounds == pytest.approx(
+        (min(c[0] for c in corners), min(c[1] for c in corners), max(c[0] for c in corners), max(c[1] for c in corners)),
+        abs=1e-5,  # a twentieth of a pixel: the thin-plate spline is no plain affine
+    )
 
 
 def test_a_multipolygon_takes_the_window_around_all_its_parts(grid: RadarGrid) -> None:

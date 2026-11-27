@@ -296,3 +296,50 @@ def test_logs_name_no_address_no_aoi_and_no_hash(tmp_path: Path, caplog: pytest.
     assert recipe_hash(recipe_of_data(data, OPERATORS)) not in text
     first = data["aoi"]["coordinates"][0][0]
     assert f"{first[0]}" not in text and f"{first[1]}" not in text
+
+
+def _point_at(x: float, y: float) -> dict:
+    """A point AOI at ``(x, y)`` in the CRS of the synthetic bands, in EPSG:4326 as an order carries it."""
+    return transform_geom(sources.CRS, "EPSG:4326", {"type": "Point", "coordinates": [x, y]})
+
+
+@pytest.mark.usefixtures("served")
+class TestAPointAoi:
+    """M5-69: a point cuts out the one pixel it lies on, and every step runs on that pixel."""
+
+    def test_a_pixel_step_gives_the_one_pixel_under_the_point(self, tmp_path: Path, physical: dict) -> None:
+        aoi = _point_at(sources.ORIGIN_X + 10 * 123 + 3, sources.ORIGIN_Y - 10 * 456 - 7)
+        result = _run(_recipe([SCALE_2], aoi=aoi), tmp_path)
+        data = _read(result.path)
+        assert data.shape == (2, 1, 1)
+        assert data[0, 0, 0] == numpy.float32(physical["red"][456, 123] * numpy.float32(2.0))
+        assert _read(result.mask_path).tolist() == [[[1]]]
+        with rasterio.open(result.path) as dataset:
+            assert dataset.transform.c == sources.ORIGIN_X + 10 * 123
+            assert dataset.transform.f == sources.ORIGIN_Y - 10 * 456
+
+    def test_a_point_on_an_edge_takes_the_pixel_right_of_and_below_it(self, tmp_path: Path) -> None:
+        aoi = _point_at(sources.ORIGIN_X + 10 * 200, sources.ORIGIN_Y - 10 * 300)
+        result = _run(_recipe([SCALE_2], aoi=aoi), tmp_path)
+        with rasterio.open(result.path) as dataset:
+            assert (dataset.width, dataset.height) == (1, 1)
+            assert dataset.transform.c == sources.ORIGIN_X + 10 * 200
+            assert dataset.transform.f == sources.ORIGIN_Y - 10 * 300
+
+    def test_a_grid_step_keeps_one_pixel_with_the_value_of_the_source_pixel(
+        self, tmp_path: Path, physical: dict
+    ) -> None:
+        # The pixel of the coarser grid that holds the point is (row 227, col 61); the source pixel is (455, 123).
+        aoi = _point_at(sources.ORIGIN_X + 10 * 123 + 5, sources.ORIGIN_Y - 10 * 455 - 5)
+        result = _run(_recipe([COARSEN_2], aoi=aoi), tmp_path)
+        data = _read(result.path)
+        assert data.shape == (2, 1, 1)
+        assert data[1, 0, 0] == numpy.float32(physical["nir"][455, 123])
+        assert _read(result.mask_path).tolist() == [[[1]]]
+
+    def test_a_point_beside_the_raster_is_named(self, tmp_path: Path) -> None:
+        with pytest.raises(AoiOutsideInputs):
+            _run(_recipe([SCALE_2], aoi=_point_at(sources.ORIGIN_X - 5, sources.ORIGIN_Y - 5)), tmp_path)
+        with pytest.raises(AoiOutsideInputs):  # on the right edge of the raster: the pixel right of it is past it
+            _run(_recipe([SCALE_2], aoi=_point_at(sources.ORIGIN_X + 10 * WIDTH, sources.ORIGIN_Y - 50)), tmp_path)
+        assert list(tmp_path.iterdir()) == []

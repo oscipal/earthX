@@ -654,7 +654,7 @@ describe('"Overview" over the map', () => {
 
     it('says it for the preview of the panel in the tooltip of "Preview", and only there', () => {
       useProcessingStore.setState({
-        preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, look: null, mosaics: [], scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], needs: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false, overview: null },
+        preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, look: null, mosaics: [], scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], needs: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false, pixelOf: { datasetId: 's2', ids: [], assets: [] }, overview: null },
       });
       act(() => useAppStore.setState({ mapZoom: 3 }));
       act(() => root.render(<PreviewBadge />));
@@ -689,7 +689,7 @@ describe('"Overview" over the map', () => {
 
   it('stands beside "Preview" when both are on the map', () => {
     result();
-    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, look: null, mosaics: [], scenes: [], needs: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false, overview: null } });
+    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, look: null, mosaics: [], scenes: [], needs: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false, pixelOf: { datasetId: 's2', ids: [], assets: [] }, overview: null } });
     act(() => root.render(<PreviewBadge />));
     expect(badge()).toBe('PreviewOverview');
   });

@@ -252,32 +252,32 @@ describe('searchArea', () => {
     return ring;
   }
 
-  it('a point searches by intersects, regardless of the AOI polygon passed alongside it', () => {
-    expect(searchArea(RECTANGLE, POINT)).toEqual({ intersects: POINT });
+  it('a point searches by intersects (M5-69)', () => {
+    expect(searchArea(POINT)).toEqual({ intersects: POINT });
   });
 
-  it('no AOI and no point is an empty area', () => {
-    expect(searchArea(null, null)).toEqual({});
+  it('no AOI is an empty area', () => {
+    expect(searchArea(null)).toEqual({});
   });
 
   it('a rectangle searches by bbox', () => {
-    expect(searchArea(RECTANGLE, null)).toEqual({ bbox: [8, 47, 12, 51] });
+    expect(searchArea(RECTANGLE)).toEqual({ bbox: [8, 47, 12, 51] });
   });
 
   it('a triangle searches by intersects', () => {
-    expect(searchArea(TRIANGLE, null)).toEqual({ intersects: TRIANGLE });
+    expect(searchArea(TRIANGLE)).toEqual({ intersects: TRIANGLE });
   });
 
   it('a polygon at exactly the point budget still searches by intersects', () => {
     const polygon: GeoJSON.Geometry = { type: 'Polygon', coordinates: [convexRing(MAX_INTERSECTS_POINTS - 1)] };
-    const result = searchArea(polygon, null);
+    const result = searchArea(polygon);
     expect(result.intersects).toBe(polygon);
     expect(result.truncatedNotice).toBeUndefined();
   });
 
   it('a polygon over the point budget falls back to its bbox, with a notice', () => {
     const polygon: GeoJSON.Geometry = { type: 'Polygon', coordinates: [convexRing(MAX_INTERSECTS_POINTS)] };
-    const result = searchArea(polygon, null);
+    const result = searchArea(polygon);
     expect(result.intersects).toBeUndefined();
     expect(result.bbox).toBeDefined();
     expect(result.truncatedNotice).toMatch(new RegExp(`more than ${MAX_INTERSECTS_POINTS} points`));
@@ -291,7 +291,7 @@ describe('searchArea', () => {
         [[[11, 50], [12, 50], [12, 51], [11, 51], [11, 50]]],
       ],
     };
-    expect(searchArea(multi, null)).toEqual({ intersects: multi });
+    expect(searchArea(multi)).toEqual({ intersects: multi });
   });
 });
 

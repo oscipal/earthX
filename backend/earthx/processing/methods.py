@@ -202,6 +202,8 @@ def _output_sentence(recipe: Recipe) -> str:
 
 def _area_sentence(recipe: Recipe) -> str:
     """The size of the area, no coordinate; the target CRS where a step names one."""
+    if recipe.aoi.type == "Point":
+        return "The area of interest is the one pixel a point lies on."
     try:
         square_km = abs(_GEOD.geometry_area_perimeter(shapely_shape(recipe.aoi.model_dump(mode="json")))[0]) / 1e6
     except (ValueError, TypeError, AttributeError):

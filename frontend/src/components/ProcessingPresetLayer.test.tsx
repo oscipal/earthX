@@ -124,7 +124,7 @@ function setApp(dataset: DatasetOption, look: object) {
     activeGroupIndex: 0,
     selectedIds: [],
     aoi: AOI,
-    aoiPoint: null,
+   
     layers: [layerOf(dataset, look)],
     focusMode: false,
     downloaded: {},

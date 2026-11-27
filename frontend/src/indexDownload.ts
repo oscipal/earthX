@@ -22,11 +22,12 @@ import {
   resultUrl,
   type AoiProvenance,
   type Order,
+  type OrderAoi,
   type StatusInfo,
 } from './processing';
 import { chooseDtype } from './processingDefaults';
 import { formatBytes, formatPercent } from './numberFormat';
-import { aoiProvenanceFor, buildOrder, draftFromOrder, formatDuration, isArea, processBlockReason, processInfo } from './processingOrder';
+import { aoiProvenanceFor, buildOrder, draftFromOrder, formatDuration, isAoi, processBlockReason, processInfo } from './processingOrder';
 import type { QuickPreset } from './quickPresets';
 import { RESULT_ZIP } from './resultLayer';
 import { viewIndexOf } from './viewIndex';
@@ -61,7 +62,7 @@ export function presetDetail(preset: QuickPreset): string | null {
 export function indexDownloadBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {
   const { restore } = layer;
   const dataset = datasets.find((d) => d.id === restore.datasetId);
-  if (!restore.focusMode || !restore.cropToAoi || !isArea(restore.aoi)) {
+  if (!restore.focusMode || !restore.cropToAoi || !isAoi(restore.aoi)) {
     return `${presetOfLayer(layer, datasets)?.label ?? 'A preset'} of whole scenes is computed by a job: start one in Processing.`;
   }
   return processBlockReason(dataset, restore.itemIds.length);
@@ -73,7 +74,7 @@ export function indexDownloadBlock(layer: MapLayer, datasets: readonly DatasetOp
 export function indexOrdersOfScenes(args: {
   datasetId: string;
   groups: readonly (readonly string[])[];
-  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  aoi: OrderAoi | null;
   preset: QuickPreset;
   dataset: DatasetOption;
   info: ReturnType<typeof processInfo>;
@@ -113,7 +114,7 @@ export function indexOrdersOf(args: {
   const { layer, preset, dataset, info } = args;
   const { restore } = layer;
   const groups = restore.groupItemIds.length > 0 ? restore.groupItemIds : [restore.itemIds];
-  const aoi = restore.cropToAoi && isArea(restore.aoi) ? restore.aoi : null;
+  const aoi = restore.cropToAoi && isAoi(restore.aoi) ? restore.aoi : null;
   return indexOrdersOfScenes({ datasetId: dataset.id, groups, aoi, preset, dataset, info });
 }
 

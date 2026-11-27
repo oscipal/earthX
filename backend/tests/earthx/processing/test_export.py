@@ -136,9 +136,9 @@ def served(scenes: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     sources.serve({sources.url(item.lower()): path for item, path in scenes.items()}, monkeypatch)
 
 
-def _crop_zip(groups: list[list[str]], notice_aoi: dict[str, Any]) -> bytes:
+def _crop_zip(groups: list[list[str]], notice_aoi: dict[str, Any], crop_aoi: dict[str, Any] = AOI) -> bytes:
     """The synchronous crop's ZIP, as `api.tiler.download_crop` builds it."""
-    aoi = shapely_shape(AOI)
+    aoi = shapely_shape(crop_aoi)
     policy = Policy(allowed_hosts=frozenset({sources.HOST}))
 
     def path(item: str):
@@ -167,7 +167,7 @@ def _crop_zip(groups: list[list[str]], notice_aoi: dict[str, Any]) -> bytes:
     )
 
 
-def _recipe(groups: list[list[str]], layout: dict[str, Any] | None = None) -> Any:
+def _recipe(groups: list[list[str]], layout: dict[str, Any] | None = None, aoi: dict[str, Any] = AOI) -> Any:
     items = [item for group in groups for item in group]
     entries = []
     for item in items:
@@ -190,7 +190,7 @@ def _recipe(groups: list[list[str]], layout: dict[str, Any] | None = None) -> An
                 "resolved": entries, "footprints": {item: FOOTPRINTS[item] for item in items},
             }
         ],
-        "aoi": AOI,
+        "aoi": aoi,
         "steps": [],
         "output": {**CROP, **({"layout": layout} if layout else {})},
         "recipe_id": "R" * 22,
@@ -508,3 +508,29 @@ def test_the_work_directory_holds_the_members_and_at_most_twice_the_largest_plai
                 largest_plain = max(largest_plain, tiles * 1024 * 1024 * cog.count)
     assert members < peak <= members + 2 * largest_plain
     assert peak <= disk_needed(_recipe(groups), OPERATORS) - DISK_RESERVE_BYTES, "the supervisor's check holds"
+
+
+@pytest.mark.usefixtures("served")
+def test_a_point_exports_the_one_pixel_it_lies_on_with_and_without_a_layout(tmp_path: Path) -> None:
+    """M5-69: the job's files of a point are the crop's, bit for bit; the flat files of before are one pixel too."""
+    centre = shapely_shape(FOOTPRINTS["ITEM_A"]).intersection(shapely_shape(AOI)).centroid
+    point = {"type": "Point", "coordinates": [centre.x, centre.y]}
+    crop = zipfile.ZipFile(io.BytesIO(_crop_zip([["ITEM_A"]], point, point)))
+    (tmp_path / "laid-out").mkdir()
+    (tmp_path / "flat").mkdir()
+    attachments = _attachments(crop, bands=(band_meta({}, "visual"),), dataset=DatasetFacts(SENTINEL_2_L2A.title, None))
+    laid_out = run(
+        _recipe([["ITEM_A"]], {"form": "per_band"}, point), workdir=tmp_path / "laid-out", progress=lambda done, total: None,
+        operators=OPERATORS, attachments=attachments,
+    )  # fmt: skip
+    with zipfile.ZipFile(laid_out.path) as exported:
+        for name in (name for name in crop.namelist() if name.endswith(".tif")):
+            assert exported.read(name) == crop.read(name), name
+            with rasterio.open(io.BytesIO(exported.read(name))) as raster:
+                assert (raster.width, raster.height) == (1, 1)
+    flat = run(
+        _recipe([["ITEM_A"]], aoi=point), workdir=tmp_path / "flat", progress=lambda done, total: None,
+        operators=OPERATORS, attachments=_attachments(crop),
+    )  # fmt: skip
+    with zipfile.ZipFile(flat.path) as exported, rasterio.open(io.BytesIO(exported.read("visual.tif"))) as raster:
+        assert (raster.width, raster.height) == (1, 1) and not raster.read(masked=True).mask.all()

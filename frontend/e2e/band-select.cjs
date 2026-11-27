@@ -61,7 +61,7 @@ async function check(browser, { name, theme, viewport }) {
     useAppStore.setState({
       datasets: [{ id: 'sentinel-2-c1-l2a', title: 'Sentinel-2 L2A', viewable: true, groupBy: ['datetime'], zoom: { min: 8, max: 14 }, browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true, collection }],
       datasetId: 'sentinel-2-c1-l2a', items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }],
-      activeGroupIndex: 0, selectedIds: ['S2B_A'], aoi: polygon, aoiPoint: null, layers: [], focusMode: false, error: null,
+      activeGroupIndex: 0, selectedIds: ['S2B_A'], aoi: polygon, layers: [], focusMode: false, error: null,
     });
     useProcessingStore.getState().openProcessing();
   }, { spec });

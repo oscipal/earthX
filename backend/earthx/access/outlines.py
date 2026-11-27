@@ -71,18 +71,36 @@ def _polygonal(geometry: BaseGeometry) -> BaseGeometry | None:
     return unary_union(parts) if parts else None
 
 
+def _projected_point(geometry: Mapping[str, Any]) -> BaseGeometry | None:
+    try:
+        point = shape(dict(geometry))
+        if point.is_empty or point.has_z or not (-180 <= point.x <= 180 and -90 <= point.y <= 90):
+            return None
+        projected = shape(transform_geom("EPSG:4326", EQUAL_AREA, mapping(point)))
+    except (ShapelyError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+        return None
+    if projected.is_empty or not all(math.isfinite(v) for v in projected.bounds):
+        return None
+    return projected
+
+
 class AoiOutlines:
-    """The AOI in the equal-area projection, against which outlines are measured."""
+    """The AOI in the equal-area projection, against which outlines are measured.
+
+    A point is an AOI too (M5-69): an outline touches it where it contains it, and covers it all or not at all."""
 
     def __init__(self, aoi: Mapping[str, Any]) -> None:
-        area = _projected(aoi)
+        self.is_point = isinstance(aoi, Mapping) and aoi.get("type") == "Point"
+        area = _projected_point(aoi) if self.is_point else _projected(aoi)
         if area is None:
-            raise ValueError("the AOI is not a valid polygon on the globe")
+            raise ValueError("the AOI is not a valid point or polygon on the globe")
         self._area = area
 
     def touches(self, outline: BaseGeometry) -> bool:
-        """Whether ``outline`` (from :func:`outline_of`) shares any area with the AOI."""
+        """Whether ``outline`` (from :func:`outline_of`) shares any area with the AOI, or contains the AOI's point."""
         try:
+            if self.is_point:
+                return bool(outline.covers(self._area))
             return bool(self._area.intersection(outline).area > 0)
         except ShapelyError:
             return True  # not told apart from touching: the caller reads to be sure
@@ -90,12 +108,17 @@ class AoiOutlines:
     def coverage(self, outlines: Sequence[BaseGeometry | None]) -> float | None:
         """The share of the AOI inside the union of ``outlines`` in percent, one decimal; ``None`` if one is missing.
 
+        A point is inside or not: 100 or 0 (M5-69), a point on the edge of an outline is inside.
+
         One outline is the coverage of a scene, the outlines of an overpass its coverage as a whole. A scene without
         an outline cannot be said to cover or not to cover, so the question has no answer."""
         if not outlines or any(outline is None for outline in outlines):
             return None
         try:
-            covered = unary_union([outline for outline in outlines if outline is not None]).intersection(self._area)
+            union = unary_union([outline for outline in outlines if outline is not None])
+            if self.is_point:
+                return 100.0 if union.covers(self._area) else 0.0
+            covered = union.intersection(self._area)
         except ShapelyError:
             return None
         return round(min(100.0, 100 * covered.area / self._area.area), 1)

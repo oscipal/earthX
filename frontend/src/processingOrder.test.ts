@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import cop from './fixtures/processes/cop-dem-glo-30.json';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/synthetic-zarr.json';
-import { bboxToPolygon, bufferPointToPolygon } from './geoUtils';
+import { bboxToPolygon } from './geoUtils';
 import { placeAoi } from './placeSearch';
 import type { ProcessDescription } from './processing';
 import { assetsCarrying, bandNamesOf, ownersOf } from './processingBands';
@@ -501,9 +501,23 @@ describe('candidateItems (F8)', () => {
     expect(candidateItems([{ id: 'n', properties: {}, assets: {} }], aoi)).toHaveLength(1);
   });
 
-  it('takes the buffered square of a point as the AOI, as the crop does (K11)', () => {
-    const square = bufferPointToPolygon(10.5, 50.5, 0.05);
-    expect(candidateItems([item('a', {})], square)).toHaveLength(1);
+  it('takes no scene whose footprint holds the point only in a hole', () => {
+    const ring: StacItem = {
+      id: 'ring',
+      bbox: [10, 50, 11, 51],
+      geometry: { type: 'Polygon', coordinates: [bboxToPolygon([10, 50, 11, 51]).coordinates[0], bboxToPolygon([10.4, 50.4, 10.6, 50.6]).coordinates[0]] },
+      properties: {},
+      assets: {},
+    };
+    expect(candidateItems([ring], { type: 'Point', coordinates: [10.5, 50.5] })).toEqual([]);
+    expect(candidateItems([ring], { type: 'Point', coordinates: [10.2, 50.2] })).toHaveLength(1);
+  });
+
+  it('takes the scenes whose footprint holds a point, as the crop does (M5-69)', () => {
+    const inside: GeoJSON.Point = { type: 'Point', coordinates: [10.5, 50.5] };
+    const beside: GeoJSON.Point = { type: 'Point', coordinates: [30.5, 50.5] };
+    expect(candidateItems([item('a', {})], inside)).toHaveLength(1);
+    expect(candidateItems([item('a', {})], beside)).toHaveLength(0);
   });
 });
 
@@ -659,10 +673,16 @@ describe('buildOrder', () => {
     expect(buildOrder({ ...base, area: 'scene' }).order).toEqual(order);
   });
 
-  it('needs an area for "AOI only"', () => {
+  it('takes a point as the AOI, without its height (M5-69)', () => {
+    const built = buildOrder({ ...base, aoi: { type: 'Point', coordinates: [10.5, 50.5, 300] } });
+    expect(built.problems).toEqual([]);
+    expect(built.order?.aoi).toEqual({ type: 'Point', coordinates: [10.5, 50.5] });
+  });
+
+  it('needs an AOI for "AOI only"', () => {
     const built = buildOrder({ ...base, aoi: null });
     expect(built.order).toBeNull();
-    expect(built.problems).toContain('Draw an area as AOI.');
+    expect(built.problems).toContain('Draw an AOI.');
   });
 
   it('puts all scenes of the pass into one group, sorted, so the same scenes are the same order', () => {
@@ -696,7 +716,7 @@ describe('buildOrder', () => {
 
   it.each([
     ['no scene', { itemIds: [] }, 'Choose a pass.'],
-    ['a line as AOI', { aoi: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }, 'Draw an area as AOI.'],
+    ['a line as AOI', { aoi: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }, 'Draw an AOI.'],
     ['no step', { steps: [] }, 'Add a step.'],
     ['17 steps', { steps: Array.from({ length: 17 }, () => base.steps[0]) }, 'At most 16 steps.'],
     ['no band in the output', { bands: [] }, EMPTY_OUTPUT],

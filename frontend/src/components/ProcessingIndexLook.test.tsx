@@ -71,7 +71,7 @@ function select(presets: unknown) {
     activeGroupIndex: 0,
     selectedIds: ['S2B_A'],
     aoi: AOI,
-    aoiPoint: null,
+   
     layers: [],
     mapZoom: 1.6,
     viewportBbox: null,

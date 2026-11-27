@@ -8,7 +8,7 @@ import { DATASETS_PER_ROW, pageCount, pageOf, pageSlice, rowsThatFit, START_DATA
 import { dateBounds, todayUtc } from '../dateBounds';
 import { acquisitionNote, maturityLabel, maturityNote, type DatasetOption } from '../datasets';
 import { CATALOGUE_ID } from '../dock';
-import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
+import { polygonBbox } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
 import { focusFirstItem } from '../popover';
 import { totalItems } from '../sections';
@@ -189,7 +189,6 @@ function AoiExtras() {
   const flyTo = useAppStore((s) => s.flyTo);
   const applyLastAoi = useAppStore((s) => s.useLastAoi);
   const lastAoi = useAppStore((s) => s.lastAoi);
-  const config = useAppStore((s) => s.config);
   const setError = useAppStore((s) => s.setError);
   // M3-06b: the request to the backend (M3-06a's `POST /aoi/upload`) takes
   // longer than the old in-browser parse; this locks the control against a
@@ -207,16 +206,9 @@ function AoiExtras() {
         setError(error);
         return;
       }
-      let geom = geometry as GeoJSON.Geometry;
-      // M3-08 F5a: same split as the draw tool (MapView.tsx) — the point itself
-      // is what a search asks with, the buffer square is what stays on screen.
-      let point: GeoJSON.Point | null = null;
-      if (geom.type === 'Point') {
-        point = geom;
-        const [lon, lat] = geom.coordinates;
-        geom = bufferPointToPolygon(lon, lat, config?.point_buffer_deg ?? 0.05);
-      }
-      setAoi(geom, point);
+      // A point stays a point, as the draw tool's (M5-69).
+      const geom = geometry as GeoJSON.Geometry;
+      setAoi(geom);
       const bb = polygonBbox(geom);
       if (bb) flyTo(bb);
     } finally {

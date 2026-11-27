@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { datasetsFrom } from './datasets';
 import { syncFocusRaster, syncLayers } from './mapLayers';
 import { liveMap, pinned } from './fixtures/liveMap';
+import { keepPixelOutline } from './pixelClip';
 import { underlayOf } from './underlay';
 import type { DownloadedInfo, StacAsset, StacItem } from './types';
 
@@ -318,5 +319,18 @@ describe('syncFocusRaster: the underlay when a layer draws the scene', () => {
     expect(images.filter((l) => live.visible(l.id)).map((l) => l.id)).toEqual(['layer-lyr-mine-0']);
     // The layer's quicklook is at the layer's place in the list: under the layer above it, over the one below.
     expect(live.stack.indexOf('layer-lyr-other-0')).toBeLessThan(live.stack.indexOf('layer-lyr-mine-0'));
+  });
+});
+
+// M5-69: the quicklook under a view at a point is cut to the pixel of the point, and is not there while that is not known.
+describe('the quicklook of a view at a point', () => {
+  it('is cut to the outline of the pixel, and left out before it is known', () => {
+    const point: GeoJSON.Point = { type: 'Point', coordinates: [9.3, 47.3] };
+    expect(underlayOf(georeferencedScene(), quicklookDataset(), point)).toBeNull();
+    const pixel: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[9.2999, 47.2999], [9.3001, 47.2999], [9.3001, 47.3001], [9.2999, 47.3001], [9.2999, 47.2999]]] };
+    keepPixelOutline(point, pixel);
+    const cut = underlayOf(georeferencedScene(), quicklookDataset(), point);
+    expect(cut?.clipRings).toEqual(underlayOf(georeferencedScene(), quicklookDataset(), pixel)?.clipRings);
+    expect(cut?.clipRings?.[0]?.length).toBeGreaterThanOrEqual(4);
   });
 });

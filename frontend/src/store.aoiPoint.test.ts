@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 // UI-12 (5) and (6), Otto 18.11.2026: an AOI that comes in another way than drawing ends the tool chosen for drawing, and an AOI
-// "Point" is a point on the map, not the square around it.
+// "Point" is a point on the map, not the square around it; since M5-69 it is the AOI itself.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 
 import { liveMap } from './fixtures/liveMap';
-import { bboxToPolygon, bufferPointToPolygon } from './geoUtils';
+import { bboxToPolygon } from './geoUtils';
 import { ensureBaseLayers } from './mapLayers';
 import { useAppStore } from './store';
 
@@ -16,7 +16,7 @@ const state = () => useAppStore.getState();
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
-  useAppStore.setState({ aoi: null, aoiPoint: null, lastAoi: null, lastAoiPoint: null, toolMode: 'none', dock: 'controls' });
+  useAppStore.setState({ aoi: null, lastAoi: null, toolMode: 'none', dock: 'controls' });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -46,13 +46,12 @@ describe('a tool chosen for drawing', () => {
 });
 
 describe('an AOI "Point"', () => {
-  it('keeps the point itself beside the square, also for "Last AOI"', () => {
-    state().setAoi(bufferPointToPolygon(7.44, 46.95, 0.05), POINT);
-    expect(state().aoiPoint).toEqual(POINT);
+  it('is the AOI itself, with no square around it, also for "Last AOI" (M5-69)', () => {
+    state().setAoi(POINT);
+    expect(state().aoi).toEqual(POINT);
     state().clearAoi();
-    expect(state().aoiPoint).toBeNull();
     state().useLastAoi();
-    expect(state().aoiPoint).toEqual(POINT);
+    expect(state().aoi).toEqual(POINT);
   });
 
   it('has a layer of its own on the map that draws a point, above the outline of an area', () => {

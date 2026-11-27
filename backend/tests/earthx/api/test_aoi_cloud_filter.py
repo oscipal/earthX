@@ -112,6 +112,15 @@ class TestReadingTheRequest:
         )
         assert read.aoi["type"] == "Polygon"
 
+    def test_a_point_is_measured_at_its_pixel(self) -> None:
+        point = {"type": "Point", "coordinates": [10.02, 47.03]}
+        read = read_aoi_request("s2", CLOUD_5, datetime_value=PERIOD, bbox=None, intersects=point, earthx_aoi=None)
+        assert read.aoi == point
+        assert read.key != read_aoi_request(
+            "s2", CLOUD_5, datetime_value=PERIOD, bbox=None, intersects={"type": "Point", "coordinates": [10.02, 47.04]},
+            earthx_aoi=None,
+        ).key
+
     @pytest.mark.parametrize(
         ("changes", "message"),
         [
@@ -120,7 +129,9 @@ class TestReadingTheRequest:
             ({"datetime_value": "../2024-05-01T00:00:00Z"}, "date range with a start and an end"),
             ({"datetime_value": "2024-05-01T00:00:00Z"}, "date range with a start and an end"),
             ({"intersects": None}, "needs an area"),
-            ({"intersects": {"type": "Point", "coordinates": [10.0, 47.0]}}, "needs an area"),
+            ({"intersects": {"type": "Point", "coordinates": [190.0, 47.0]}}, "valid polygon or point"),
+            ({"intersects": {"type": "Point", "coordinates": [10.0, 47.0, 500.0]}}, "valid polygon or point"),
+            ({"intersects": {"type": "Point", "coordinates": []}}, "valid polygon or point"),
             ({"intersects": {"type": "LineString", "coordinates": [[10.0, 47.0], [10.1, 47.1]]}}, "needs an area"),
             ({"intersects": {"type": "GeometryCollection", "geometries": []}}, "needs an area"),
             ({"intersects": {"type": "Polygon", "coordinates": "x"}}, "needs an area"),
@@ -144,7 +155,8 @@ class TestReadingTheRequest:
             (None, SQUARE, "goes with the bbox"),
             ((20.0, 46.0, 21.0, 48.0), SQUARE, "lies outside the bbox"),
             ((10.05, 47.05, 10.1, 47.1), SQUARE, "lies outside the bbox"),
-            (BBOX, {"type": "Point", "coordinates": [10.0, 47.0]}, "needs an area"),
+            (BBOX, {"type": "LineString", "coordinates": [[10.0, 47.0], [10.1, 47.1]]}, "needs an area"),
+            (BBOX, {"type": "Point", "coordinates": [12.0, 47.0]}, "lies outside the bbox"),
             ((9.0, 46.0, 11.0), None, "four numbers"),
             ((9.0, 48.0, 11.0, 46.0), None, "upside down"),
             ((9.0, 46.0, 9.0, 48.0), None, "no area"),
@@ -211,7 +223,7 @@ class TestReadingTheRequest:
         for changes, message in (
             ({"datetime_value": None}, "date range with a start and an end"),
             ({"intersects": None}, "needs an area"),
-            ({"intersects": {"type": "Point", "coordinates": [10.0, 47.0]}}, "needs an area"),
+            ({"intersects": {"type": "LineString", "coordinates": [[10.0, 47.0], [10.1, 47.1]]}}, "needs an area"),
         ):
             arguments: dict[str, Any] = {"datetime_value": PERIOD, "bbox": None, "intersects": SQUARE, "earthx_aoi": None}
             with pytest.raises(InvalidFilter, match=message) as caught:

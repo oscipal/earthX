@@ -91,7 +91,7 @@ function search(layers: MapLayer[] = []) {
     activeGroupIndex: 0,
     selectedIds: ['S2B_A'],
     aoi: OTHER_AOI,
-    aoiPoint: null,
+   
     layers,
     focusMode: false,
     cropToAoi: false,

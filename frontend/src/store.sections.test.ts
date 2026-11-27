@@ -115,7 +115,7 @@ function reset(selected: string[] = ['optical', 'optical-zarr', 'dem']) {
     selectedIds: [],
     layers: [],
     aoi: AOI,
-    aoiPoint: null,
+   
     dateFrom: '',
     dateTo: '',
     focusMode: false,

@@ -104,7 +104,7 @@ beforeEach(async () => {
     activeGroupIndex: 0,
     selectedIds: [stored.id],
     aoi: AOI,
-    aoiPoint: null,
+   
     error: null,
   });
   container = document.createElement('div');

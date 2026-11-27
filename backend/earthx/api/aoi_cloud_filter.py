@@ -196,15 +196,15 @@ def _area(
             raise InvalidFilter("earthx:aoi goes with the bbox that holds it, not with intersects")
         if bbox is None:
             raise InvalidFilter("earthx:aoi goes with the bbox that holds it")
-        polygon = _polygonal(earthx_aoi, "earthx:aoi", label)
+        polygon = _aoi_shape(earthx_aoi, "earthx:aoi", label)
         if not _bbox_polygon(bbox).buffer(_BBOX_TOLERANCE).covers(polygon):
             raise InvalidFilter("earthx:aoi lies outside the bbox")
         return json.loads(shapely.to_geojson(polygon))
     if intersects is not None:
-        return json.loads(shapely.to_geojson(_polygonal(intersects, "intersects", label)))
+        return json.loads(shapely.to_geojson(_aoi_shape(intersects, "intersects", label)))
     if bbox is not None:
         return json.loads(shapely.to_geojson(_bbox_polygon(bbox)))
-    raise InvalidFilter(f"{label} needs an area")
+    raise InvalidFilter(f"{label} needs an area or a point")
 
 
 def _bbox_polygon(bbox: Sequence[float]) -> Any:
@@ -220,14 +220,16 @@ def _bbox_polygon(bbox: Sequence[float]) -> Any:
     return box(west, south, east, north)
 
 
-def _polygonal(geometry: Any, name: str, label: str) -> Any:
-    """``geometry`` as a valid shapely Polygon or MultiPolygon, within the limits of an uploaded AOI."""
+def _aoi_shape(geometry: Any, name: str, label: str) -> Any:
+    """``geometry`` as a valid shapely Point, Polygon or MultiPolygon, within the limits of an uploaded AOI.
+
+    A point is measured at its one pixel (M5-69)."""
     if (
         not isinstance(geometry, Mapping)
-        or geometry.get("type") not in ("Polygon", "MultiPolygon")
+        or geometry.get("type") not in ("Point", "Polygon", "MultiPolygon")
         or not isinstance(geometry.get("coordinates"), list)
     ):
-        raise InvalidFilter(f"{label} needs an area")
+        raise InvalidFilter(f"{label} needs an area or a point")
     if _positions(geometry["coordinates"]) > MAX_AOI_POINTS:
         raise InvalidFilter(f"{name} has more than {MAX_AOI_POINTS} positions")
     try:
@@ -238,12 +240,12 @@ def _polygonal(geometry: Any, name: str, label: str) -> Any:
             and -180 <= bounds[0] <= bounds[2] <= 180
             and -90 <= bounds[1] <= bounds[3] <= 90
             and polygon.is_valid
-            and polygon.area > 0
+            and (not polygon.has_z if polygon.geom_type == "Point" else polygon.area > 0)
         )
     except (ShapelyError, ValueError, TypeError, KeyError, AttributeError, IndexError):
         usable = False
     if not usable:
-        raise InvalidFilter(f"{name} is not a valid polygon on the globe")
+        raise InvalidFilter(f"{name} is not a valid polygon or point on the globe")
     return polygon
 
 

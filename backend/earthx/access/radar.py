@@ -165,6 +165,16 @@ class RadarGrid:
         col1, row1 = max(col1, col0 + 1), max(row1, row0 + 1)
         return Window(col0, row0, col1 - col0, row1 - row0)
 
+    def outline(self, window: Window) -> BaseGeometry:
+        """The outline of ``window`` on the ground, in EPSG:4326, its four corners placed by the GCPs (M5-69)."""
+        rows = [window.row_off, window.row_off, window.row_off + window.height, window.row_off + window.height]
+        cols = [window.col_off, window.col_off + window.width, window.col_off + window.width, window.col_off]
+        xs, ys = self._transformer().xy(rows, cols, offset="ul")
+        ring = shapely.geometry.Polygon(zip(xs, ys, strict=True))
+        if CRS.from_user_input(self.gcp_crs) != CRS.from_epsg(4326):
+            ring = shapely_shape(transform_geom(self.gcp_crs, "EPSG:4326", shapely.geometry.mapping(ring)))
+        return ring
+
     def mask(self, aoi: Mapping[str, Any] | BaseGeometry, window: Window) -> numpy.ndarray:
         """``1`` where a pixel of ``window`` touches the AOI, else ``0`` (``uint8``, the rule of ``mask.tif``)."""
         return rasterize(
