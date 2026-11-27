@@ -19,9 +19,9 @@
     ..\earthx-ausgaben\<day>_<time>\ next to the checkout, never into the repository; the repository gets only the
     cleaned files of the run.
 
-    Every run takes a branch named by its time (harvest/<day>-<time>). Draft pull requests of earlier failed
-    runs (title "Harvest run ... (failed)", branch harvest/<day>...) are closed by the next run with a short comment, and
-    their branches are deleted.
+    Every run takes a branch named by its time (harvest/<day>-<time>). Own pull requests of earlier runs that no run
+    can finish (a draft of a failed run, title "Harvest run ... (failed)", or a required check red) are closed by the
+    next run with a comment that names the reason, and their branches are deleted; it makes their files anew.
 
 .PARAMETER Install
     Check git, gh (logged in), docker and .env, make ..\earthx-ausgaben\ and the desktop shortcut "EarthX Harvest".
@@ -99,10 +99,11 @@ function Native([string]$Label, [string[]]$Command, [string]$Capture = '') {
     return $code
 }
 
-# The standard output of a native command (gh, git, compose) as an array of its non-empty lines, $null on an error.
+# The standard output of a native command (gh, git, compose) as an array of its non-empty lines, $null on an error
+# (an exit code outside $Accept; `gh pr checks` ends with 1 on a red and 8 on a pending check and still prints its list).
 # Never unrolled: PowerShell turns a returned empty array into $null and a one-element array into its element, so the
 # array goes back wrapped (return ,$out). Standard error stays out of the data and goes nowhere (2>$null).
-function Lines([string[]]$Command) {
+function Lines([string[]]$Command, [int[]]$Accept = @(0)) {
     $exe = $Command[0]
     $rest = @()
     if ($Command.Count -gt 1) { $rest = $Command[1..($Command.Count - 1)] }
@@ -115,7 +116,7 @@ function Lines([string[]]$Command) {
     } finally {
         $ErrorActionPreference = $previous
     }
-    if ($code -ne 0) { return $null }
+    if ($Accept -notcontains $code) { return $null }
     return ,$out
 }
 
@@ -188,22 +189,27 @@ function Start-Docker {
     throw 'Docker: Docker antwortet nicht. Docker Desktop oeffnen und neu starten.'
 }
 
-# pass, fail or pending for the required checks of a pull request.
+# pass, fail or pending for the required checks of a pull request; the names of the red ones stay in $script:RedChecks.
+# `gh pr checks` ends with 1 on a red and with 8 on a pending check (and with 1 where there is no check yet, printing
+# nothing): the list counts, not the exit code, so a red check is seen at once and not after the waiting time.
 function Get-CheckState([string]$Number) {
-    $json = Lines @('gh', 'pr', 'checks', $Number, '--json', 'name,bucket')
-    if ($null -eq $json) { return 'pending' }
+    $script:RedChecks = @()
+    $json = Lines @('gh', 'pr', 'checks', $Number, '--json', 'name,bucket') @(0, 1, 8)
+    if ($null -eq $json -or -not $json.Count) { return 'pending' }
     $checks = ($json -join "`n") | ConvertFrom-Json
-    $state = 'pass'
+    $pending = $false
     foreach ($name in $RequiredChecks) {
         $found = @($checks | Where-Object { $_.name -eq $name })
-        if (-not $found.Count) { $state = 'pending'; continue }
+        if (-not $found.Count) { $pending = $true; continue }
         foreach ($check in $found) {
             # Only a pass counts: a skipped required check has not shown anything (fail, cancel, skipping).
-            if ($check.bucket -eq 'pending') { $state = 'pending' }
-            elseif ($check.bucket -ne 'pass') { return 'fail' }
+            if ($check.bucket -eq 'pending') { $pending = $true }
+            elseif ($check.bucket -ne 'pass') { $script:RedChecks += $name }
         }
     }
-    return $state
+    if ($script:RedChecks.Count) { return 'fail' }
+    if ($pending) { return 'pending' }
+    return 'pass'
 }
 
 function Commit([string]$Message, [string[]]$Paths) {
@@ -214,19 +220,31 @@ function Commit([string]$Message, [string[]]$Paths) {
     }
 }
 
-# Draft pull requests of earlier failed runs (title "Harvest run ... (failed)", branch harvest/<day>[-...]) are closed with
-# a short comment and their branches deleted: the next run replaces them (Otto, 24.11.2026). Nothing else is touched, and
-# nothing here stops the run. Returns the numbers closed.
-function Close-FailedRuns {
-    $json = Lines @('gh', 'pr', 'list', '--state', 'open', '--draft', '--limit', '200', '--json', 'number,headRefName,title')
+# Open pull requests of earlier runs that this run replaces (Otto, 24.11. and 27.11.2026), own pull requests of runs of
+# this script only (title "Harvest run ...", branch harvest/<day>[-...]): a draft of a failed run (title ends in
+# "(failed)") and a pull request with a red required check, which no run will make green (its files were made with the
+# code of that day). Each gets a comment with the reason, its branch is deleted, and this run makes the files again from
+# the current main. A pull request that is only waiting for its checks, or is green and unmerged, stays; the findings list
+# it. Nothing here stops the run. Returns the numbers closed.
+function Close-EarlierRuns {
+    $json = Lines @('gh', 'pr', 'list', '--state', 'open', '--author', '@me', '--limit', '200', '--json', 'number,headRefName,title,isDraft,isCrossRepository')
     if ($null -eq $json -or -not $json.Count) { return ,@() }
     $closed = @()
     # Assigned before it is looped over: Windows PowerShell 5.1 hands an array out of ConvertFrom-Json as one object.
     $parsed = ($json -join "`n") | ConvertFrom-Json
     foreach ($pr in $parsed) {
+        if ($pr.isCrossRepository) { continue }
         if ($pr.headRefName -notmatch '^harvest/[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)*$') { continue }
-        if ($pr.title -notmatch '^Harvest run .+ \(failed\)$') { continue }
-        $comment = 'Geschlossen vom naechsten Harvest-Lauf: Dieser Lauf ist gescheitert, ein neuer ersetzt ihn. Der Branch wird geloescht.'
+        if ($pr.title -notmatch '^Harvest run ') { continue }
+        $why = $null
+        if ($pr.isDraft -and $pr.title -match '\(failed\)$') {
+            $why = 'Dieser Lauf ist gescheitert.'
+        } elseif ((Get-CheckState "$($pr.number)") -eq 'fail') {
+            $red = (@($script:RedChecks | Select-Object -Unique) | ForEach-Object { $_.Replace([string]$Dash, '-') }) -join ', '
+            $why = "Pflicht-Check rot: $red."
+        }
+        if (-not $why) { continue }
+        $comment = "Geschlossen vom naechsten Harvest-Lauf. $why Ein neuer Lauf macht die Dateien aus dem aktuellen main neu; dieser PR wird nicht mehr gebraucht. Der Branch wird geloescht."
         if ((Native "close PR $($pr.number)" @('gh', 'pr', 'close', "$($pr.number)", '--comment', $comment, '--delete-branch')) -eq 0) {
             $closed += "$($pr.number)"
             if ((Native 'local branch?' @('git', 'rev-parse', '--verify', '--quiet', $pr.headRefName)) -eq 0) {
@@ -315,8 +333,8 @@ try {
     if ((Compose 'compose up' @('up', '-d', '--build')) -ne 0) { throw "Docker: Die Plattform startet nicht (docker compose up).$(Reason)" }
 
     $Step = 'Aufraeumen'
-    $Closed = Close-FailedRuns
-    if ($Closed.Count) { Say "Gescheiterte Draft-PRs frueherer Laeufe geschlossen: $($Closed -join ', ')." }
+    $Closed = Close-EarlierRuns
+    if ($Closed.Count) { Say "PRs frueherer Laeufe geschlossen (gescheitert oder Pflicht-Check rot): $($Closed -join ', ')." }
 
     $Step = 'Branch'
     # Always harvest/<day>-<HHmm> (Otto, 25.11.2026): a run is known by its time; only a second run in the same minute
@@ -352,7 +370,10 @@ try {
             [System.IO.File]::AppendAllText((Join-Path $RunDir 'quellen-pause.txt'), "$source`n", $Utf8)
             Say "Hinweis: $source hat planmaessig pausiert, der naechste Lauf setzt fort."
         } else {
-            [System.IO.File]::AppendAllText((Join-Path $RunDir 'quellen-fehler.txt'), "${source}: Der Harvest endete mit Fehler (Exit-Code $code).$(Reason)`n", $Utf8)
+            $failure = "Der Harvest endete mit Fehler (Exit-Code $code).$(Reason)"
+            [System.IO.File]::AppendAllText((Join-Path $RunDir 'quellen-fehler.txt'), "${source}: $failure`n", $Utf8)
+            # Plan section 3 step 5: without a harvest the source has no report in this run; the window says so.
+            Say "Ernte $source gescheitert: $failure"
         }
     }
 
@@ -362,7 +383,11 @@ try {
     if ((Compose 'rebuild' (@('--profile', 'harvest', 'build') + $HarvestServices)) -ne 0) { throw "Lizenzen: Die Images lassen sich nicht neu bauen.$(Reason)" }
 
     $Step = 'Bericht'
-    foreach ($source in $Harvested) {
+    foreach ($source in $Sources) {
+        if ($Harvested -notcontains $source) {
+            Say "Bericht $source uebersprungen: Ernte gescheitert (siehe oben), der Bericht entfaellt in diesem Lauf."
+            continue
+        }
         Say "Bericht $source ..."
         $code = Compose "report $source" (@('run', '--rm') + $AsOwner + @('-v', $Run, 'harvest-report', $source, '--json', "/run/report-$source.json"))
         if ($code -ne 0) { throw "Bericht: Der Bericht von $source ist gescheitert.$(Reason)" }
