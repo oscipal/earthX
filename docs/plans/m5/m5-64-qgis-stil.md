@@ -1,6 +1,6 @@
 # M5-64 — QGIS-Stil bei jedem Export
 
-**Stand:** 27.11.2026, Plan mit Fragen F1–F7 an Otto; Umsetzung nach den Empfehlungen in zwei Draft-PRs (§9).
+**Stand:** 27.11.2026, Plan mit Fragen F1–F7 an Otto; Umsetzung nach den Empfehlungen in zwei Draft-PRs: PR 1 (Plan, Backend) §10, PR 2 (Frontend) §11.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 20.11.2026; Auftrag 27.11.2026):**
 
@@ -206,3 +206,21 @@ Je Fall: Export starten, ZIP entpacken, die `.tif` in QGIS per Ziehen öffnen (d
 2. **RGB:** Quick processing „False colour (IR)“ wählen, Bänder `nir`, `red`, `green`, „One multi-band file“ (oder „per resolution“, alle 10 m). `bands_10m.tif`: „Multiband color“, Rot/Grün/Blau = die drei Bänder, Min/Max je Kanal wie in „Scale“ der App. Mit „per band“: jede der drei Dateien grau mit der Streckung ihres Kanals (F2).
 3. **WorldCover:** Zuschnitt, „per band“. `Map_10m.tif` (Name nach Band): „Paletted/Unique values“, Klassen mit Namen und Farben wie in der Legende der App; Werte ohne Klasse durchsichtig.
 4. **Processing-Ergebnis:** z. B. NDVI als Index herunterladen (Ebene mit Index, „Download“ → „Index“) oder ein Ergebnis-Layer über ⇩. `result.tif` mit `result.qml`: Farbskala und Bereich wie die Ebene in der App. Ohne Ebene (Processing-Manager, „Download (ZIP)“): grau 2.–98. Perzentil (F6).
+
+---
+
+## 10. Umsetzung PR 1: Backend (27.11.2026)
+
+| Teil | Stelle |
+|---|---|
+| `ExportStyle` (Form §3, Prüfung), Regel §4 (`file_renderer`), Messung (`measured_range`), `.qml` (`qml_text`), Ergebnis (`result_qml`) | `backend/earthx/access/qgis_style.py` |
+| `BandMeta.look` (im JSON nur, wenn gesetzt; die Antwort von `POST …/bands` bleibt gleich) | `backend/earthx/access/band_export.py` |
+| Zuschnitt: Feld `style`, Look je Band, `.qml` je Datei | `access/download.py`, `api/tiler.py` |
+| Export-Job: Eingabe `exportStyle` (nur bei Exporten, sonst 400), `Attachments.style` und `true_color`, `.qml` je Datei | `api/processing_route.py`, `api/processing_docs.py`, `api/intake.py`, `processing/export.py` |
+| Ergebnis und Bündel: Query `style`, `result.qml` nach `mask.tif` | `api/processing_route.py` |
+
+**Auslegung A8 (neu):** Ein Ergebnis aus einem Band nimmt einen Stil aus einem Band an, gleich wie die Ebene das Band nennt; die Ebene eines einbandigen Ergebnisses kennt im Frontend dessen Namen nicht. Bei mehreren Bändern gilt der Name.
+
+**Gemessen [M]:** QGIS 3.34.4 liest jede erzeugte `.qml` und schreibt dieselben Elemente, Attribute und Zahlen zurück (Referenzdateien `backend/tests/fixtures/qgis/`, Skript `make_reference.py`). Die Farben, die QGIS mit einer erzeugten Farbskala zeichnet (`viridis`, `terrain`, `rdbu_r`, `magma`, je 97 Werte von 10 % unter Min bis 10 % über Max), weichen höchstens 4/255 je Kanal von denen des Tilers ab (`terrain` 4, sonst 2); außerhalb des Bereichs die Endfarben wie beim Tiler.
+
+**Tests:** `tests/earthx/access/test_qgis_style.py` (neu: Referenzdateien, Farbtabelle des Tilers, `_r`, Maskierung der Namen, Regel §4 Zeile für Zeile, Stil und Fehlerfälle, Messung mit Skalierung, ohne Werte, konstant, verkleinertes Lesen, Ergebnis mit und ohne Stil, Look im JSON); erweitert: `test_download_forms.py`, `test_download.py`, `test_download_route.py` (Stil, 422), `test_export_layouts.py` (Job schreibt dieselben `.qml` wie der Zuschnitt, mit und ohne Stil, keine für Masken), `test_export_layout_intake.py`, `test_processing_route.py` (`exportStyle`, 400), `test_result_zip_route.py` (`result.qml`, Stil, ETag, Range, 400), `test_processing_docs.py`; Prozess-Fixtures neu geschrieben.
