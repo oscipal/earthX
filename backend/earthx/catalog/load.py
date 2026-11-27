@@ -9,7 +9,8 @@ deletes their objects), brings the index of the dataset search in line (M5-22b),
 hand entries of ``listed/`` into the table of listed entries and applies ``blocked.yaml`` to it (M5-40), publishes
 the stacks of the approved files under ``approvals/`` and hides again what a revoked one published (M5-20), marks the
 listings a full entry names (``also_listed_as``) as its duplicates, brings the
-rows of the published listed entries in the search index in line, and commits.
+rows of the published listed entries in the search index in line, and commits. After the commit it gives every row of
+the index without a vector of the model one, a batch per transaction (M5-23), where the image has the model.
 Idempotent from end to end: a second run migrates nothing, rewrites the same
 collections and writes no row of the search index. At its end it prints the time
 of each step (``time <step>: <seconds> s``), nothing of the entries (M5-66).
@@ -30,6 +31,7 @@ import psycopg
 
 from earthx.catalog.approvals import load_approvals, publish
 from earthx.catalog.datasets import registry
+from earthx.catalog.embedding import MODEL_ENV, load_embedder
 from earthx.catalog.licences import load_licences
 from earthx.catalog.listed import load_blocked, load_catalog_tags, load_listed, load_regions
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
@@ -38,7 +40,7 @@ from earthx.catalog.municipalities import load_municipalities, write_municipalit
 from earthx.catalog.pgstac import PgstacError, load_registry, remove_prototype_overviews
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.schema import apply_migrations
-from earthx.catalog.search_index import write_listed_search_index, write_search_index
+from earthx.catalog.search_index import write_embeddings, write_listed_search_index, write_search_index
 from earthx.catalog.sources import read_sources
 
 
@@ -77,6 +79,7 @@ def main() -> int:
             licences = load_licences(read_sources())
             approvals = load_approvals()
             municipalities = load_municipalities()
+            embedder = load_embedder()
     except ConfigError as error:
         print(f"load failed: {error}", file=sys.stderr)
         return 1
@@ -120,6 +123,14 @@ def main() -> int:
                 listed_index = write_listed_search_index(conn, full_ids)
             with step("commit"):
                 conn.commit()
+            embedded = None
+            if embedder is not None:
+                # After the commit, a batch per transaction (M5-42 F6 = 1): an interrupted run keeps what it embedded,
+                # and the next one embeds the rest.
+                with step("embeddings"):
+                    started = time.perf_counter()
+                    embedded = write_embeddings(conn, embedder)
+                    embedding_seconds = time.perf_counter() - started
     except (ConfigError, PgstacError, psycopg.Error) as error:
         print(f"load failed: {error}", file=sys.stderr)
         return 1
@@ -131,6 +142,11 @@ def main() -> int:
     print(f"search index written: {', '.join(index.written) if index.written else 'none'}")
     print(f"search index removed: {', '.join(index.removed) if index.removed else 'none'}")
     print(f"search index rows of listed entries written: {listed_index.written}, removed: {listed_index.removed}")
+    if embedded is None:
+        print(f"embeddings: none, no model configured ({MODEL_ENV})")
+    else:
+        rate = embedded.written / embedding_seconds if embedded.written else 0.0
+        print(f"embeddings written: {embedded.written} of {embedded.missing} in {embedding_seconds:.1f} s ({rate:.0f}/s)")
     print(f"region rows changed: {regions_changed}")
     print(f"municipality rows changed: {municipalities_changed}")
     print(f"listed hand entries written: {', '.join(listed) if listed else 'none'}")

@@ -16,6 +16,17 @@ Bibliothek mitbringt, ihren Lizenztext aber nicht, liegt er unter `backend/licen
 - **Lizenz:** Public Domain. Eine Nennung ist nicht verlangt; sie steht hier freiwillig.
   „Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.“
 
+## IBM Granite Embedding 97M Multilingual R2 (Modell der Suche)
+
+- **Wofür:** der Vektorarm der Datensatzsuche (M5-23, `adr/0026` F2; `docs/plans/m5/m5-23-vektorsuche.md`). Nur in der
+  Image-Stufe `search` von `api` und `catalog-load`, nie im Repo und nie im Runner.
+- **Quelle:** <https://huggingface.co/ibm-granite/granite-embedding-97m-multilingual-r2>, Revision
+  `835ad14087e140460703cf0fae09f97d469d65c2`, Dateien `onnx/model.onnx` und `tokenizer.json` (SHA-256 in
+  `backend/Dockerfile`, Stufe `model-files`). Die Vektoren in `backend/tests/fixtures/search/embeddings.json` sind mit
+  diesem Modell gerechnet.
+- **Lizenz:** Apache-2.0 laut Modellkarte (IBM). Einstufung als Vorschlag; Otto bestätigt Modell und Lizenz im PR
+  (`adr/0026` F2, Plan F1).
+
 ## Natural Earth (Staaten 1:50m, Unterteilungen 1:10m)
 
 - **Wofür:** `catalog/regions.json`, die Regionen gelisteter Einträge (`earthx:regions`, `adr/0033` §5): alle Staaten mit

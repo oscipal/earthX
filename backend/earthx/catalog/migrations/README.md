@@ -107,6 +107,10 @@ Zeilen von `earthx_listed_entry`; sie haben keine Haltung der Items.
 gelisteter Eintrag ohne Footprint (Ausdehnung nur über Regionen oder gar keine). Eine eigene Migration, weil 035 schon
 angewandt sein kann.
 
+`039_search_embedding.sql` — der Vektorarm der Suche aus M5-23 (`adr/0026` §14): die Erweiterung `vector`, die Spalten
+`embedding halfvec(384)` und `embedding_model` und ein HNSW-Index. `catalog-load` schreibt die Vektoren nach dem
+Hauptlauf in Stapeln; eine Zeile mit neuem Text verliert ihren Vektor bis dahin.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.
