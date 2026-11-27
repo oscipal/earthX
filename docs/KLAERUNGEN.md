@@ -95,6 +95,8 @@ Drei Stufen, gesteuert über die Lizenz-Flags:
 
 ND-Datensätze (keine Bearbeitung) sind damit **nur als Katalogeintrag mit Link** zulässig, solange keine Rechtsberatung etwas anderes ergibt, weil schon reprojizierte Tiles eine Bearbeitung sein können. NC bleibt zulässig.
 
+**Nachtrag 2026-11-27 (Otto, B11 = 1; Entscheidung vom 25.11.2026, Log-Zeile „Lizenzstufe für volle Einträge“ vom 2026-11-25):** Für volle Einträge gilt die Stufe `processing` nur für Lizenzen der Klassen K1 und K2 (Weitergabe und Bearbeitung erlaubt, höchstens Namensnennung). K3 (gleiche Bedingungen), K4 (nicht kommerziell) und K5 (keine Bearbeitung) bleiben `catalog`; gelistete Einträge bleiben `catalog`. Die Tabelle oben nennt die Voraussetzungen von `processing` und `bei commercial_use = false` nur für das Gratis-Tier; sie bleibt als Rahmen, die Entscheidung vom 25.11. ist enger und geht ihr vor. Umsetzung: `licence_class` in `backend/catalog/licenses/terms.yaml`, `adr/0033` §6.2.
+
 ### B12. Pflichten pro Datensatz — *Festgelegt*
 
 Maßgeblich ist die Onboarding-Checkliste in `projektuebersicht.md` §5, ergänzt um Punkt 10: "Zuletzt erfolgreich geprüft" ist gesetzt und sichtbar. Die Coverage Map ist dort Pflichtpunkt (ENTSCHEIDUNGEN §5). Die Kurzliste in der Übergabe ist nur eine Zusammenfassung.

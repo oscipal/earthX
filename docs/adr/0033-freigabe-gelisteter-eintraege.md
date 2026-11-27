@@ -216,6 +216,8 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 
 **Nachtrag 2026-11-23 (M5-20, Otto 20.11.2026; `plans/m5/m5-20-lizenzliste.md`):** Jede Lizenz im Katalog trägt eine Klasse: K1 offen ohne Namensnennung, K2 Namensnennung, K3 Weitergabe unter gleichen Bedingungen, K4 nicht kommerziell (auch „auf Anfrage“), K5 keine Bearbeitung, K6 unbekannt oder geschlossen, K7 ohne Lizenz. K1–K5 sind für alle Herausgeber jeder Quelle freigegeben; die Regel bleibt je Herausgeber wörtlich (L2), der Befehl `harvest-grants` schreibt die Listen unter `grants/` aus der Datenbank. K6 und amtliches Werk sind eingestuft, aber nicht freigegeben; K7 ist nicht aufgenommen. Feeds, Seiten und Hinweistexte sind keine Lizenz; STAC `proprietary` heißt „siehe Link `rel=license`“.
 
+**Nachtrag 2026-11-27 (M5-20 PR 2, Otto 25.11.2026, F16):** Die Stufe eines vollen Eintrags aus dem Katalog ist `processing` nur für Lizenzen der Klassen K1 und K2 (Weitergabe und Bearbeitung erlaubt, höchstens Namensnennung). K3 bleibt `catalog`, weil EarthX die Lizenz nicht auf Ergebnisse vererben kann; K4 und K5 bleiben `catalog`. Die Klasse steht als `licence_class` in `terms.yaml`; der Lader prüft, dass eine Stufe über `catalog` nur bei K1/K2 vorkommt. Gelistete Einträge bleiben `catalog`. Eine Stufe über `catalog` für K3 wäre eine eigene Entscheidung von Otto. Das ergänzt „höchstens die nach den Flags“ oben.
+
 ## 7. Ohne Regel
 
 | | Option | Bewertung |
