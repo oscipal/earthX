@@ -3,7 +3,9 @@
 The registry is written into the index of this worker's database and every active question is put to
 :func:`~earthx.catalog.search.search_datasets` with its text, its box and its period, nothing else. Binding from M5-22b
 (F3): every filter question, at most one failing negative question (A9), and Recall@5 and MRR@10 per language at least
-what this arm measured (a ratchet: the floors only move up). The pass mark of adr/0026 F5 binds from M5-23.
+what this arm measured (a ratchet: the floors only move up). The pass mark of adr/0026 F5 binds from M5-23 on, for
+the search with its vector arm: the vectors come from ``fixtures/search/embeddings.json``, never from the model
+(adr/0026 §8.4; docs/plans/m5/m5-23-vektorsuche.md §4.6).
 """
 
 from __future__ import annotations
@@ -13,11 +15,14 @@ from datetime import UTC, datetime, time
 import psycopg
 import pytest
 
+from earthx.catalog.embedding import QueryVectors
 from earthx.catalog.listed import load_listed
-from earthx.catalog.search import Joining, box_area, search_datasets
+from earthx.catalog.search import JOINING, Joining, box_area, search_datasets
+from earthx.catalog.search_index import write_embeddings
 from tests.catalog.entries import REGISTRY
 from tests.integration.conftest import Catalogue as CatalogueState
 from tests.search_evaluation import (
+    ADR_0026_F5,
     LANGUAGES,
     Catalogue,
     Evaluation,
@@ -28,6 +33,7 @@ from tests.search_evaluation import (
     report,
     shortfalls,
 )
+from tests.search_vectors import FixtureEmbedder
 
 pytestmark = pytest.mark.anyio
 
@@ -50,7 +56,13 @@ def registry_index(catalogue_state: CatalogueState) -> None:
     catalogue_state.ensure()
 
 
-async def _evaluate(aconn: psycopg.AsyncConnection, joining: Joining) -> Evaluation:
+async def _evaluate(
+    aconn: psycopg.AsyncConnection,
+    joining: Joining,
+    *,
+    vectors: QueryVectors | None = None,
+    vector_conn: psycopg.AsyncConnection | None = None,
+) -> Evaluation:
     evaluation_set = load_evaluation_set()
     answers: dict[Query, tuple[str, ...]] = {}
     for question in evaluation_set.questions:
@@ -64,7 +76,10 @@ async def _evaluate(aconn: psycopg.AsyncConnection, joining: Joining) -> Evaluat
                 datetime.combine(query.period[1], time.max, UTC),
             )
         )
-        answers[query] = (await search_datasets(aconn, query.text, area=area, period=period, joining=joining)).ids
+        result = await search_datasets(
+            aconn, query.text, area=area, period=period, joining=joining, vectors=vectors, vector_conn=vector_conn
+        )
+        answers[query] = result.ids
     return evaluate(evaluation_set, Catalogue.of(REGISTRY, HAND_ENTRIES), answers.__getitem__)
 
 
@@ -88,3 +103,26 @@ async def test_each_joining_passes_the_filter_questions(registry_index, aconn, j
     # The three candidates of F2, measured in the PR; each keeps every hard filter.
     evaluation = await _evaluate(aconn, joining)
     assert all(not outcome.never_hits for outcome in evaluation.filters)
+
+
+@pytest.fixture
+def fixture_vectors(registry_index) -> QueryVectors:
+    """The index with the vectors of the fixture, as `catalog-load` writes them with the model of the image."""
+    embedder = FixtureEmbedder()
+    with psycopg.connect(autocommit=False) as conn:
+        write_embeddings(conn, embedder, report=lambda _: None)
+    return QueryVectors(embedder)
+
+
+async def test_the_hybrid_search_passes_adr_0026_f5(fixture_vectors, aconn):
+    evaluation = await _evaluate(aconn, JOINING, vectors=fixture_vectors)
+    print("\n" + report(evaluation))
+    assert shortfalls(evaluation, ADR_0026_F5) == []
+
+
+async def test_the_vector_arm_beside_the_full_text_answers_the_same(fixture_vectors, aconn):
+    # M5-66 F4: the arms at the same time, on two connections; the answers are those of one after the other.
+    after = await _evaluate(aconn, JOINING, vectors=fixture_vectors)
+    async with await psycopg.AsyncConnection.connect(autocommit=True) as beside:
+        at_once = await _evaluate(aconn, JOINING, vectors=fixture_vectors, vector_conn=beside)
+    assert [o.hits for o in at_once.outcomes] == [o.hits for o in after.outcomes]
