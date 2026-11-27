@@ -101,7 +101,10 @@ Jede Seite hat 20 Treffer und einen Link `next`. Die Zeit hängt kaum von der Se
   | B | Platz 114 | Platz 58 | 1/174 + 1/118 = 0,014222 | 0,014222 |
 
   Bisher stand A auf Platz 40 vor B, jetzt steht B vor A: Der Beitrag von 1/1 706 für einen Trigramm-Platz jenseits von 1 000 fällt weg. Das ist die übliche Folge eines Fensters bei RRF; Elasticsearch schreibt dazu, dass sich die Reihenfolge mit der Größe des Fensters ändern kann (§6 Punkt 3).
-- **Grenze [A]:** Auf die ersten 20 wirkt die Tiefe nur, wenn ein Treffer in einem Arm unter den ersten etwa 20 und im anderen hinter Platz 1 000 liegt und ein Nachbar fast denselben Wert hat. Die Seite ab Platz 40 kann sich ändern, die erste Seite hat sich in keiner Messung geändert.
+- **Grenze [A]:** Auf die ersten 20 wirkt die Tiefe nur, wenn ein Treffer in einem Arm unter den ersten etwa 20 und im anderen hinter Platz 1 000 liegt und ein Nachbar fast denselben Wert hat. Die Seite ab Platz 40 kann sich ändern, die erste Seite hat sich in keiner Messung der Sitzung geändert.
+- **Ottos Bestand (Messung 27.11.2026, rund 102 000 Einträge):** Die erste Seite hat sich bei drei von 16 Anfragen geändert, gleich geblieben ist sie bei allen ohne Filter, mit Region allein und bei „data“ mit Kategorie:
+  - „map + Kategorie water“ (26 Treffer) und „water + Kategorie water“ (58 Treffer): **A2 (F6 = 1).** Kein Arm hat hier mehr als 58 Treffer, die Tiefe von 1 000 schneidet also nichts ab; anders als auf `main` ist nur, dass die Plätze unter den Treffern der Kategorie vergeben werden statt unter allen.
+  - „map + Kategorie boundaries + Region DE“ (6 734 Treffer): Hier können beide Ursachen wirken, A2 und die Tiefe. Welche es ist, zeigt der Teil „order“ von `scripts/m5-66-explain.py` (§8): Hash der ersten Seite wie gebaut, ohne Tiefe und auf dem Weg von `main` (Rang über alle, Filter danach). Gleicher Hash „wie gebaut“ und „ohne Tiefe“ heißt A2 allein.
 
 ## 4. `catalog-load` ohne Änderung (PR 2)
 
@@ -233,6 +236,8 @@ git switch main
 ```
 
 Gleicher Hash in der Spalte `Reihenfolge` heißt: gleiche Treffer in gleicher Reihenfolge auf der ersten Seite.
+
+**Pläne der Suche** (`scripts/m5-66-explain.py`, PR 1): Es läuft im Container `api` über stdin. Es gibt aus: die Einstellungen von Postgres, die Größe der Tabellen, die Zeit von `search_datasets` allein und `EXPLAIN (ANALYZE, BUFFERS)` beider Arme für „data“, „map“, „water“, „water + Region DE“, „map + Region DE“, dazu den Hash der ersten Seite auf drei Wegen (§3). Kennungen erscheinen nicht, Listen in Plänen sind maskiert, und nichts wird geschrieben. Befehle in der Antwort der Sitzung vom 27.11.
 
 ## 9. Antworten Otto (27.11.2026)
 
