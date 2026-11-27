@@ -27,6 +27,7 @@ const RESULTS_KEY = 'earthx.results';
 const TIP_LEVEL_KEY = 'earthx.tooltips';
 const JOB_FILTER_KEY = 'earthx.jobfilter';
 const TERRAIN_KEY = 'earthx.terrain';
+const STYLE_FILE_KEY = 'earthx.stylefile';
 
 // What `earthx.theme` holds: the two themes keep the words they had before "System" came (so that a choice made then holds),
 // and `system` is the new one.
@@ -75,6 +76,20 @@ export function systemPrefersDark(): boolean {
 
 export const themeOf = (appearance: Appearance, systemDark: boolean = systemPrefersDark()): Theme =>
   appearance === 'light' || (appearance === 'system' && !systemDark) ? 'normal' : 'tech';
+
+// The style file beside each exported raster (M5-64 plan §12, Otto 27.11.2026): QGIS, OGC SLD 1.0 or none. The download dialog sets
+// it; a download without a dialog (a result's ZIP) takes the last choice (F9).
+export type StyleFormat = 'qml' | 'sld' | 'none';
+export const STYLE_FORMATS: readonly StyleFormat[] = ['qml', 'sld', 'none'];
+export const DEFAULT_STYLE_FORMAT: StyleFormat = 'qml';
+
+export function loadStyleFormat(): StyleFormat {
+  return readStored(STYLE_FILE_KEY, STYLE_FORMATS, DEFAULT_STYLE_FORMAT);
+}
+
+export function saveStyleFormat(format: StyleFormat): void {
+  writeStored(STYLE_FILE_KEY, format);
+}
 
 // The step of the tooltips (`tipLevel.ts`): `simple` unless the user chose `advanced`.
 export function loadTipLevel(): TipLevel {

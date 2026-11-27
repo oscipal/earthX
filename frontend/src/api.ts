@@ -2,6 +2,7 @@
 // by default (the Vite dev server proxies /stac to the backend). Override
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
+import type { StyleFormat } from './preferences';
 import type { ExportStyle } from './exportStyle';
 import { parseClasses } from './bandClasses';
 import type { DownloadBand } from './bandChoice';
@@ -1045,6 +1046,7 @@ export interface DownloadCropRequest {
   commonResolution?: number;
   // How the layer is drawn, for the QGIS style beside each file (M5-64).
   style?: ExportStyle;
+  styleFormat?: StyleFormat;
 }
 
 // `totalGroups`/`skippedGroups` (M3-17, review finding 1): `X-Total-Groups`/
@@ -1078,6 +1080,7 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCr
       ...(req.form ? { form: req.form } : {}),
       ...(req.form === 'multi_band' && req.commonResolution !== undefined ? { common_resolution: req.commonResolution } : {}),
       ...(req.style ? { style: req.style } : {}),
+      ...(req.styleFormat ? { style_format: req.styleFormat } : {}),
     }),
   });
   if (!res.ok) throw await httpErrorOf(res, { exportJob: res.status === 413 ? exportJobHint(res) : undefined });

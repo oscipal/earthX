@@ -418,6 +418,11 @@ describe('downloadCrop', () => {
     expect(await bodyOf({})).not.toHaveProperty('style');
   });
 
+  it('sends the form of the style file where it is not the default', async () => {
+    expect((await bodyOf({ styleFormat: 'sld' })).style_format).toBe('sld');
+    expect(await bodyOf({})).not.toHaveProperty('style_format');
+  });
+
   it('one multi-band file sends the common resolution in metres', async () => {
     const body = await bodyOf({ form: 'multi_band', commonResolution: 20 });
     expect(body).toMatchObject({ form: 'multi_band', common_resolution: 20 });

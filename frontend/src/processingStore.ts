@@ -16,6 +16,7 @@
 // order (K4): any change to the order makes it disappear, and "Start job"
 // waits for a new one.
 
+import type { StyleFormat } from './preferences';
 import type { ExportStyle } from './exportStyle';
 import { lookOfStep, type DisplayLook } from './displayLook';
 import { create } from 'zustand';
@@ -493,7 +494,7 @@ interface ProcessingState {
   startJob: () => Promise<void>;
   placeOrder: (
     order: Order,
-    options?: { aoiProvenance?: AoiProvenance; title?: string; exportStyle?: ExportStyle },
+    options?: { aoiProvenance?: AoiProvenance; title?: string; exportStyle?: ExportStyle; styleFormat?: StyleFormat },
   ) => Promise<{ jobID: string } | { message: string }>;
   // Dismisses a job that is waiting or running; any other is left alone (a finished job has "Delete").
   cancelJob: (jobID: string) => Promise<void>;
@@ -2225,7 +2226,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // as text, the job as a row in the list.
     placeOrder: async (order, options) => {
       try {
-        const status = await placeJob(order, options && { aoiProvenance: options.aoiProvenance, exportStyle: options.exportStyle });
+        const status = await placeJob(order, options && { aoiProvenance: options.aoiProvenance, exportStyle: options.exportStyle, styleFormat: options.styleFormat });
         addJob({ jobID: status.jobID, expires: status.expires, status, title: options?.title ?? null, order: orderCopy(order) });
         return { jobID: status.jobID };
       } catch (error) {

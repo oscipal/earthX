@@ -5,6 +5,7 @@
 //
 // Nothing here logs or stores an order: it carries the AOI (Q8).
 
+import type { StyleFormat } from './preferences';
 import type { ExportStyle } from './exportStyle';
 import { jsonOrThrow, type DownloadForm } from './api';
 import type { Bbox } from './types';
@@ -187,9 +188,11 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-// The envelope of an order: the order, where its area came from, and for an export how its layer is drawn (M5-64).
-function orderBody(order: Order, aoiProvenance?: AoiProvenance, exportStyle?: ExportStyle): string {
-  return JSON.stringify({ inputs: { recipe: order, ...(aoiProvenance ? { aoiProvenance } : {}), ...(exportStyle ? { exportStyle } : {}) } });
+// The envelope of an order: the order, where its area came from, and for an export how its layer is drawn and the form of its style
+// file where it is not the default (M5-64).
+function orderBody(order: Order, aoiProvenance?: AoiProvenance, exportStyle?: ExportStyle, styleFormat?: StyleFormat): string {
+  const format = styleFormat && styleFormat !== 'qml' ? { styleFormat } : {};
+  return JSON.stringify({ inputs: { recipe: order, ...(aoiProvenance ? { aoiProvenance } : {}), ...(exportStyle ? { exportStyle } : {}), ...format } });
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -300,14 +303,19 @@ export async function estimateOrder(order: Order, signal?: AbortSignal): Promise
 
 export async function placeJob(
   order: Order,
-  options: { aoiProvenance?: AoiProvenance; exportStyle?: ExportStyle } = {},
+  options: { aoiProvenance?: AoiProvenance; exportStyle?: ExportStyle; styleFormat?: StyleFormat } = {},
 ): Promise<StatusInfo> {
   const status = parseStatusInfo(
     await jsonOrThrow<unknown>(
       await fetch(`${PREFIX}/processes/recipe/execution`, {
         method: 'POST',
         headers: { ...JSON_HEADERS, Prefer: 'respond-async' },
-        body: orderBody(order, options.aoiProvenance, order.output.kind === 'crop' ? options.exportStyle : undefined),
+        body: orderBody(
+          order,
+          options.aoiProvenance,
+          order.output.kind === 'crop' ? options.exportStyle : undefined,
+          order.output.kind === 'crop' ? options.styleFormat : undefined,
+        ),
       }),
     ),
   );

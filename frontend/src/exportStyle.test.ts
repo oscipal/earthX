@@ -100,6 +100,14 @@ describe('resultLayerStyle and styleQuery', () => {
     expect(resultLayerStyle({ overlays: [] } as unknown as MapLayer)).toBeNull();
   });
 
+  it('names the form of the style file where it is not QGIS, and sends no look for none', () => {
+    const style = { band: 'b', colormap: null, range: [0, 1] as [number, number] };
+    const sld = new URLSearchParams(styleQuery(style, 'sld').slice(1));
+    expect([sld.get('style_format'), JSON.parse(sld.get('style')!)]).toEqual(['sld', style]);
+    expect(styleQuery(style, 'none')).toBe('?style_format=none');
+    expect(styleQuery(null, 'qml')).toBe('');
+  });
+
   it('puts the style into the address of the ZIP, or nothing', () => {
     const query = styleQuery({ band: 'b', colormap: null, range: [0, 1] });
     expect(JSON.parse(decodeURIComponent(query.replace('?style=', '')))).toEqual({ band: 'b', colormap: null, range: [0, 1] });

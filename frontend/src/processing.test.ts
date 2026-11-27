@@ -161,6 +161,17 @@ describe('the job API client', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({ inputs: { recipe: ORDER } });
   });
 
+  it('sends styleFormat with an export where it is not QGIS', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(status({ status: 'accepted' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const crop = { ...ORDER, steps: [], output: { kind: 'crop' } } as unknown as typeof ORDER;
+    await placeJob(crop, { styleFormat: 'sld' });
+    await placeJob(crop, { styleFormat: 'qml' });
+    await placeJob(ORDER, { styleFormat: 'none' });
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(call[1]?.body as string));
+    expect(bodies).toEqual([{ inputs: { recipe: crop, styleFormat: 'sld' } }, { inputs: { recipe: crop } }, { inputs: { recipe: ORDER } }]);
+  });
+
   it('turns a problem document into an HttpError with title, detail and Retry-After', async () => {
     vi.stubGlobal(
       'fetch',

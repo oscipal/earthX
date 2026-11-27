@@ -223,7 +223,10 @@ async function caseWhole(browser, { theme, viewport, resampling }) {
   return { label, problems };
 }
 
-(async () => {
+// The made-up app of this check, for the check of the style file (`m5-64-qgis-style.cjs`).
+module.exports = { BASE, OUT, VIEWPORTS, STYLE, openApp, openDialog, applyLook, layout, expectEq, shot };
+
+if (require.main === module) (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
   const results = [];

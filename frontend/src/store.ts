@@ -64,8 +64,8 @@ import { knownLookOf, lookOfStepPreset, statsOfTiler } from './presetLooks';
 import { lookRange, percentOfLook, type DisplayLook } from './displayLook';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
-import type { Appearance, Projection, Theme } from './preferences';
-import { loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTerrain, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTerrain, saveTipLevel, themeOf } from './preferences';
+import type { Appearance, Projection, StyleFormat, Theme } from './preferences';
+import { DEFAULT_STYLE_FORMAT, loadStyleFormat, saveStyleFormat, loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTerrain, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTerrain, saveTipLevel, themeOf } from './preferences';
 import { setTipLevel, type TipLevel } from './tipLevel';
 import { layerBox } from './layerExtent';
 import { zoomTarget } from './zoomSelection';
@@ -1759,6 +1759,8 @@ export interface AppState {
   // The asset keys ticked.
   downloadBands: string[];
   downloadForm: DownloadForm;
+  // The style file beside each raster of a download (M5-64 plan §12): kept in the browser, also for downloads without a dialog.
+  downloadStyleFormat: StyleFormat;
   // The common resolution picked, in metres; `null`: the finest of the ticked bands.
   downloadCommonResolution: number | null;
   // Whole scenes in a form that is a job: what the server expects it to cost, or why it refuses.
@@ -1984,6 +1986,7 @@ export interface AppState {
   // What the dialog of a layer that shows an index downloads (Otto, 1.11.2026): its raw bands, or the index as a job would give it.
   downloadAs: 'raw' | 'index';
   setDownloadAs: (what: 'raw' | 'index') => void;
+  setDownloadStyleFormat: (format: StyleFormat) => void;
   // `merge` (the default): with a view open, the scenes picked are added to it, as if its scenes and the new ones were ticked together (UI-03e).
   enterFocus: (cropToAoi: boolean, merge?: boolean) => Promise<void>;
   loadMosaics: () => Promise<void>;
@@ -2133,6 +2136,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadBandsLoading: false,
   downloadBands: [],
   downloadForm: DEFAULT_FORM,
+  downloadStyleFormat: loadStyleFormat(),
   downloadCommonResolution: null,
   downloadJobNote: null,
   downloadResampling: null,
@@ -2928,6 +2932,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   // The dialog of a layer that shows an index offers its raw bands and the index; the index asks what its job will cost when it is chosen.
+  setDownloadStyleFormat: (format) => {
+    saveStyleFormat(format);
+    set({ downloadStyleFormat: format });
+  },
   setDownloadAs: async (what) => {
     const s = get();
     const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
@@ -3011,6 +3019,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasets: s.datasets,
         signal: controller.signal,
         onStatus: (text) => set({ downloadStatus: text }),
+        styleFormat: s.downloadStyleFormat,
       });
       if (indexDownloadAbort === controller) indexDownloadAbort = null;
       if (controller.signal.aborted) {
@@ -3042,7 +3051,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const chosen = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
     // How the layer (or the view) is drawn, for the QGIS style beside each file (M5-64).
     const style = exportStyleOf(layer && !s.downloadSelection ? layer.restore.appliedRender : s.appliedRender, dataset?.collection);
-    const req = style ? { ...chosen, style } : chosen;
+    const styleFormat = s.downloadStyleFormat;
+    const req = { ...chosen, ...(style ? { style } : {}), ...(styleFormat !== DEFAULT_STYLE_FORMAT ? { styleFormat } : {}) };
     const send = async () => {
       set({ downloading: true, error: null, downloadExportOffer: null });
       try {
@@ -3053,6 +3063,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           aoi: req.aoi,
           ...(req.layout ? { form: req.layout.form, commonResolution: req.layout.resolution_m } : {}),
           ...(req.style ? { style: req.style } : {}),
+          ...(req.styleFormat ? { styleFormat: req.styleFormat } : {}),
         });
         const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
@@ -4083,6 +4094,7 @@ async function startWholeScenes(s: AppState): Promise<void> {
       signal: controller.signal,
       onStatus: (text) => useAppStore.setState({ downloadStatus: text }),
       style,
+      styleFormat: s.downloadStyleFormat,
     });
     if (downloadJobAbort === controller) downloadJobAbort = null;
     if (controller.signal.aborted) {

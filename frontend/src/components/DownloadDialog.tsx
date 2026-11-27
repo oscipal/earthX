@@ -16,6 +16,7 @@ import { useAppStore } from '../store';
 import BandChoice from './BandChoice';
 import CloseButton from './CloseButton';
 import ExportJobOffer from './ExportJobOffer';
+import StyleFileChoice from './StyleFileChoice';
 import OriginalFiles from './OriginalFiles';
 import ResamplingDialog from './ResamplingDialog';
 
@@ -142,6 +143,7 @@ export default function DownloadDialog() {
               )}
               {bandsLoading && <p className="hint">Loading the bands…</p>}
               {table.length > 0 && !started && <BandChoice table={table} disabled={downloading} />}
+              {!inBrowser && <StyleFileChoice disabled={downloading} />}
               {!inBrowser && (
                 <p
                   className={`hint${!downloading && (jobNote?.state === 'blocked' || jobNote?.state === 'failed') ? ' warn' : ''}`}
@@ -267,6 +269,7 @@ export default function DownloadDialog() {
 
             {req && !index && bandsLoading && <p className="hint">Loading the bands…</p>}
             {req && !index && table.length > 0 && <BandChoice table={table} disabled={downloading} />}
+            {req && exportAllowed && <StyleFileChoice disabled={downloading} />}
 
             {!exportAllowed && (
               <p className="hint">

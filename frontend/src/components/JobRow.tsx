@@ -4,8 +4,10 @@
 
 import { useEffect } from 'react';
 
+import { styleQuery } from '../exportStyle';
 import { resultUrl } from '../processing';
-import { MIN_REMAINING_MS } from '../resultLayer';
+import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
+import { useAppStore } from '../store';
 import { useProcessingStore, ZIP_LABEL, type JobEntry } from '../processingStore';
 import { DownloadIcon } from './icons';
 import { formatMoment } from '../numberFormat';
@@ -15,6 +17,8 @@ import { EXPIRED_TIP, jobState, useNowUntil } from './jobView';
 // The archive of a finished job as a link; once it expired, the link is gone and the reason is the tooltip.
 export function DownloadZip({ job, now, label, className = 'icon-btn pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
   const state = jobState(job, now);
+  // The style file the download dialog last chose (M5-64 plan §12, F9): a result's ZIP has no dialog of its own.
+  const styleFormat = useAppStore((s) => s.downloadStyleFormat);
   if (state.key === 'expired' && job.phase === 'successful') {
     return (
       <button type="button" className={`${className} has-tip`} aria-disabled="true" data-tip={EXPIRED_TIP} aria-label={`${ZIP_LABEL}: ${EXPIRED_TIP}`}>
@@ -24,7 +28,7 @@ export function DownloadZip({ job, now, label, className = 'icon-btn pm-icon' }:
   }
   if (state.key !== 'finished' || !job.archive) return <span className={className} aria-hidden="true" />;
   return (
-    <a className={className} href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer" data-tip-level="advanced" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
+    <a className={className} href={resultUrl(job.jobID, job.archive) + (job.archive === RESULT_ZIP ? styleQuery(null, styleFormat) : '')} download rel="noopener noreferrer" data-tip-level="advanced" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
       {label ? <><DownloadIcon lead />{label}</> : <DownloadIcon />}
     </a>
   );

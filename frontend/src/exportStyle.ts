@@ -3,6 +3,7 @@
 // each, in physical values as every range here is (M5-68). Only what is applied counts (plan A5). `null` where the layer shows nothing
 // the files hold: an index, the true-colour picture of an auxiliary asset, a layer of classes (their colours come with the files).
 
+import { DEFAULT_STYLE_FORMAT, type StyleFormat } from './preferences';
 import { channelsOfRescale } from './channels';
 import { defaultRenderOf, drawsClasses, showsColormap } from './datasets';
 import { presetOfLook } from './quickPresets';
@@ -84,7 +85,12 @@ export function resultLayerStyle(layer: Pick<MapLayer, 'overlays' | 'result'>): 
   return resultStyleOf(look, layer.result?.bands?.map((band) => band.name) ?? []);
 }
 
-// The query of a result's ZIP that carries the style: `?style=…`, or nothing.
-export function styleQuery(style: ExportStyle | null): string {
-  return style ? `?style=${encodeURIComponent(JSON.stringify(style))}` : '';
+// The query of a result's ZIP that carries the style and the form of its file: `?style=…&style_format=…`, or nothing for the
+// defaults (the result's own look, a QGIS style).
+export function styleQuery(style: ExportStyle | null, format: StyleFormat = DEFAULT_STYLE_FORMAT): string {
+  const params = new URLSearchParams();
+  if (style && format !== 'none') params.set('style', JSON.stringify(style));
+  if (format !== DEFAULT_STYLE_FORMAT) params.set('style_format', format);
+  const query = params.toString();
+  return query ? `?${query}` : '';
 }
