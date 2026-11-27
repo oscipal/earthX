@@ -35,11 +35,11 @@ NAME_ONLY = {"Q01", "Q03", "Q04", "Q05", "Q07", "Q40", "Q42", "Q43", "Q44", "Q46
 # --- the fixture -------------------------------------------------------------------------------------------------------
 
 
-def test_the_set_holds_the_fifty_questions_of_the_adr_and_two_of_m5_22c():
+def test_the_set_holds_the_fifty_questions_of_the_adr_two_of_m5_22c_and_four_of_m5_23():
     questions = load_evaluation_set().questions
-    assert [q.id for q in questions] == [f"Q{n:02d}" for n in range(1, 53)]
-    assert sum(q.language == "de" for q in questions) == 25
-    assert sum(q.language == "en" for q in questions) == 27
+    assert [q.id for q in questions] == [f"Q{n:02d}" for n in range(1, 57)]
+    assert sum(q.language == "de" for q in questions) == 27
+    assert sum(q.language == "en" for q in questions) == 29
     assert {q.id for q in questions if q.kind == "0"} == {"Q47", "Q48", "Q49", "Q50", "Q51"}
     assert {q.id for q in questions if q.name_only} == NAME_ONLY
     assert {q.id: q.requires for q in questions if q.requires} == {"Q34": "terrain", "Q35": "terrain"}
@@ -78,11 +78,11 @@ def test_zero_point_without_a_search():
     # The numbers of plan §3.1 and §10 for the six entries of the registry, with Q51 (§12) one more negative question
     # and Q52 one more over both languages, Q34, Q35 active since M5-10 (the capability terrain), and four German
     # questions that only BEV answers (Q06, Q23, Q26, Q41) since M5-09, and the five that MeteoSwiss answers (Q08, Q19,
-    # Q20, Q21, Q22) since M5-11; a new entry changes them on purpose.
+    # Q20, Q21, Q22) since M5-11, and the four broad words of M5-23 (Q53-Q56); a new entry changes them on purpose.
     evaluation = evaluate(load_evaluation_set(), Catalogue.of(REGISTRY), lambda query: [])
     print("\n" + report(evaluation))
-    assert (len(evaluation.active), len(evaluation.resting)) == (49, 3)
-    assert [evaluation.measures(language).questions for language in ("de", "en", "all")] == [19, 13, 42]
+    assert (len(evaluation.active), len(evaluation.resting)) == (53, 3)
+    assert [evaluation.measures(language).questions for language in ("de", "en", "all")] == [21, 15, 46]
     overall = evaluation.measures()
     assert (overall.recall_at_5, overall.mrr_at_10, overall.ndcg_at_10) == (0.0, 0.0, 0.0)
     assert sorted(o.question.id for o in evaluation.filters) == ["Q26", "Q27", "Q28", "Q29", "Q32"]

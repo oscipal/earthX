@@ -122,3 +122,10 @@ questions:
 # M5-22c (Otto, 11.11.2026, plan §12.5): a resolution is no number of a name. "10 m" asks for datasets at 10 m, and
 # WorldCover is one; the number must not empty the list as if "ESA" were a numbered name.
 - {id: Q52, language: en, text: ESA 10 m, kind: N, grade_2: [WC20, WC21], name_only: true}
+# Q53-Q56 (proposal M5-23, plan §9a; Otto releases them in the PR): broad words and a glossary word, which match a large
+# part of a catalogue of 10^5 entries (M5-66 F8). Against the datasets of the set: the land cover maps are wanted, the
+# datasets that show water or are maps of another kind may appear.
+- {id: Q53, language: de, text: Gewässer, kind: T, grade_2: [WC20, WC21], grade_1: [S2, CLC, S1]}
+- {id: Q54, language: en, text: water, kind: T, grade_2: [WC20, WC21], grade_1: [S2, CLC, S1, MCHP]}
+- {id: Q55, language: de, text: Karte, kind: T, grade_2: [WC20, WC21, CLC], grade_1: [DEM, ALTI, BEV, MCH, MCHP]}
+- {id: Q56, language: en, text: map, kind: T, grade_2: [WC20, WC21, CLC], grade_1: [DEM, ALTI, BEV, MCH, MCHP]}
