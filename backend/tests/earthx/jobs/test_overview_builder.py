@@ -114,6 +114,31 @@ def make(
         supervisor.stop(30)
 
 
+class BuildGate:
+    """A build whose step waits for the test: ``begun`` says it is running, ``open`` lets it end."""
+
+    def __init__(self, directory: Path) -> None:
+        self._building, self._release = directory / "building", directory / "release"
+
+    def begun(self) -> bool:
+        return self._building.exists()
+
+    def open(self) -> None:
+        self._release.touch()
+
+
+@pytest.fixture
+def gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[BuildGate]:
+    """The environment of the ``succeed_when_released`` child; the gate is opened at the end so no child waits on."""
+    directory = tmp_path / "gate"
+    directory.mkdir()
+    monkeypatch.setenv("OVERVIEW_BUILDING", str(directory / "building"))
+    monkeypatch.setenv("OVERVIEW_RELEASE", str(directory / "release"))
+    gate = BuildGate(directory)
+    yield gate
+    gate.open()
+
+
 def _keys(store: Store, dataset_id: str, version: str) -> list[str]:
     return sorted(store.s3.list_keys(f"overviews/{dataset_id}/{version}/"))
 
@@ -237,13 +262,12 @@ class TestABuild:
 
 class TestItDoesNotBlockTheRuns:
     def test_a_run_finishes_while_a_build_holds_its_thread(
-        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], gate: BuildGate
     ) -> None:
         """One slot only: the build must not take it (adr/0032 §8.2; Otto's answer 3 = 1)."""
-        monkeypatch.setenv("OVERVIEW_DELAY", "8")
         version = _request(db, "dem", "v1")
-        make(slots=1)
-        wait_until(lambda: _status(db, "dem", version)[0] == "building" and len(_children()) == 1)
+        make("succeed_when_released", slots=1)
+        wait_until(lambda: gate.begun() and _status(db, "dem", version)[0] == "building" and len(_children()) == 1)
         run_id, _ = add_run(db)
         wait_until(lambda: status_of(db, run_id) == "successful", 30)
         assert _status(db, "dem", version)[0] == "building", "the build was still running"
@@ -622,16 +646,16 @@ class TestTheReusedBytesAreUploadedFromTheWorkDirectory:
     """The old version may be gone by the end of a build that takes hours: nothing reads it then (review 8b-2 finding 1)."""
 
     def test_a_previous_version_deleted_while_the_build_runs_does_not_fail_the_upload(
-        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], gate: BuildGate
     ) -> None:
         _previous(db, store, {"1/1": "h1"}, ["2/1/1"])
-        monkeypatch.setenv("OVERVIEW_DELAY", "2")
         version = _request(db, "dem", "v2")
-        supervisor = make()
-        job = supervisor.config.workdir / overview_builder.WORKDIR / "job.json"
-        # The build step has begun once job.json names it; by then the old tile is in the work directory.
-        wait_until(lambda: job.exists() and json.loads(job.read_text())["mode"] == "build" and len(_children()) == 1)
+        make("succeed_when_released")
+        # The child says it is in the build step; by then the old tile is in the work directory. Nothing reads job.json
+        # here: the builder writes it in place, so a read can meet it empty.
+        wait_until(gate.begun)
         overview_builder.delete_version(store, "dem", PREVIOUS)
+        gate.open()
         _wait_for(db, "dem", version, "ready")
         assert store.s3.get_bytes(f"overviews/dem/{version}/2/1/1.tif") == b"old-tile"
 
