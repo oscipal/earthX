@@ -57,6 +57,23 @@ def succeed(workdir: str, conn: Any) -> None:
     _build(workdir, conn)
 
 
+def succeed_when_released(workdir: str, conn: Any) -> None:
+    """Both steps succeed; the build step touches ``OVERVIEW_BUILDING`` and then waits until ``OVERVIEW_RELEASE`` exists.
+
+    A test learns that the build has begun from the first file and lets it end by creating the second, so neither
+    side guesses how long the other takes.
+    """
+    if _job(workdir)["mode"] == "plan":
+        _plan(workdir, conn)
+        return
+    Path(os.environ["OVERVIEW_BUILDING"]).touch()
+    release = Path(os.environ["OVERVIEW_RELEASE"])
+    deadline = time.monotonic() + 120
+    while not release.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    _build(workdir, conn)
+
+
 def fail(workdir: str, conn: Any) -> None:
     """The build step reports ``CHILD_KIND`` as its failure."""
     if _job(workdir)["mode"] == "plan":
