@@ -1,0 +1,138 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: fsdi-stac
+source_key: ch.swisstopo.pixelkarte-farbe-pk25.noscale
+listed_id: fsdi-stac.ch.swisstopo.pixelkarte-farbe-pk25.noscale
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: ch.swisstopo.pixelkarte-farbe-pk25.noscale
+takeover:
+  via: coll
+  key: coll:data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale
+harvested:
+  title: National Map 1:25'000
+  description: The National Map 1:25,000 is a topographic map of Switzerland representing
+    the areas of traffic and settlements, the topography and the vegetation in great
+    detail. The map perimeter is divided into 247 individual sheets. The map content
+    is updated in a regular six-year cycle according to a revision plan dividing Switzerland
+    in six sectors. The National Map 1:25,000 is published in analogue format as a
+    printed map and in digital format as the Swiss Map Raster.
+  publisher: Federal Office of Topography - swisstopo
+  keywords:
+  - other
+  doi: null
+  licence_statements:
+  - https://www.swisstopo.admin.ch/ogd-conditions
+  bbox:
+  - 5.8735276
+  - 45.8026814
+  - 10.6912279
+  - 47.8644568
+  extent_basis: source
+  temporal:
+  - '1984-01-01T00:00:00Z'
+  - '2024-01-01T00:00:00Z'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale
+  landing_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-farbe-pk25.noscale
+  distributions: []
+licence:
+  license_ref:
+  - swisstopo-ogd
+  license_rule: fsdi-stac/Federal Office of Topography - swisstopo/swisstopo-ogd
+  license:
+    spdx_id: null
+    name: 'swisstopo: Nutzungsbedingungen für kostenlose Geodaten und Geodienste (OGD)'
+    url: https://www.swisstopo.admin.ch/ogd-conditions
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © swisstopo (modified)
+    attribution_unmodified: © swisstopo
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1984_1056/swiss-map-raster25_1984_1056_kgrs_1.25_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    length: 10272994
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 14000
+        height: 9600
+        bands: 1
+        data_type: uint8
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 5
+        epsg: 2056
+        nodata: null
+  - href: https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1988_1035/swiss-map-raster25_1988_1035_kgrs_1.25_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    length: 12853028
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 14000
+        height: 9600
+        bands: 1
+        data_type: uint8
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 5
+        epsg: 2056
+        nodata: null
+  - href: https://data.geo.admin.ch/ch.swisstopo.pixelkarte-farbe-pk25.noscale/swiss-map-raster25_1992_1282/swiss-map-raster25_1992_1282_kgrs_1.25_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    length: 909332
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 14000
+        height: 9600
+        bands: 1
+        data_type: uint8
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 5
+        epsg: 2056
+        nodata: null
+  items: 3
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

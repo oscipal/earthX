@@ -1,0 +1,184 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: govdata
+source_key: 95b10760-ba94-4e74-b793-e6ad9cbff32a
+listed_id: govdata.95b10760-ba94-4e74-b793-e6ad9cbff32a
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: govdata-modelldaten-langfristiges-ertragspotenzial-offshore-175
+takeover:
+  via: also_listed_as
+  key: also:govdata:12e467a8-9303-409f-96bb-5fb53d5c3ed1
+  also_listed_as:
+  - govdata:12e467a8-9303-409f-96bb-5fb53d5c3ed1
+harvested:
+  title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee -
+    Szenario 2 2006 -08
+  description: Die Daten umfassen die im deutschen Hoheitsgebiet und der ausschließlichen
+    Wirtschaftszone (AWZ) errechneten Erträge von Windparks und die dafür relevanten
+    Windbedingungen unter der Annahme eines Ausbaus der Offshore Windenergie definiert
+    in unterschiedlichen Szenarien. Die Berechnungen wurden mit dem numerischen Wettermodell
+    WRF unter Nutzung einer Parametrisierung von Windparks nach Fitch durchgeführt.
+    Die Daten liegen in 10-minütlicher zeitlicher und 2 km x 2 km räumlicher Auflösung
+    für die Nordsee für das meteorologische Jahr 2006 vor. Die Variablen des Datensatzes
+    sind Windgeschwindigkeit (WS) und Windrichtung (WD) auf 9 Höhenleveln zwischen
+    50 m und 350 m, die Leistung (POWER) der Windturbinen aus jeder Gitterzelle und
+    die Luftdichte. Eine genauere Beschreibung der Variablen findet sich in den Dateien.
+  publisher: Fraunhofer IWES
+  keywords:
+  - deutsche-awz
+  - deutsche-nordsee
+  - ertrag
+  - full-load-hours
+  - german-eez
+  - german-north-sea
+  - modellierung
+  - modelling
+  - national
+  - offhore-windenergie
+  - offshore
+  - offshore-wind-energy
+  - offshore-wind-farm
+  - offshore-windpark
+  - open-data
+  - volllaststunden
+  - wind-energy-at-sea
+  - wind-power
+  - windenergie-auf-see
+  - windkraft
+  - yield
+  doi: null
+  licence_statements:
+  - http://dcat-ap.de/def/licenses/dl-by-de/2.0
+  bbox:
+  - 3.0039
+  - 52.8775
+  - 9.3092
+  - 56.4108
+  extent_basis: source
+  temporal:
+  - '2006-01-01T00:00:00Z'
+  - '2006-12-31T23:59:59Z'
+  source_url: https://www.govdata.de/suche/daten/modelldaten-langfristiges-ertragspotenzial-offshore-windenergie-nordsee-szenario-2-2006-0881075
+  landing_url: https://www.govdata.de/suche/daten/modelldaten-langfristiges-ertragspotenzial-offshore-windenergie-nordsee-szenario-2-2006-0881075
+  distributions:
+  - href: https://gdi.bsh.de/de/feed/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08.xml
+    format: XML
+    media_type: application/xml
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-01.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-02.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-03.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-04.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-05.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-06.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-07.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-08.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-09.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee
+      - Szenario 2 2006 -08
+licence:
+  license_ref:
+  - dl-de-by-2.0
+  license_rule: govdata/Fraunhofer IWES/dl-de-by-2.0
+  license:
+    spdx_id: DL-DE-BY-2.0
+    name: Datenlizenz Deutschland – Namensnennung – Version 2.0
+    url: https://www.govdata.de/dl-de/by-2-0
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung
+      – Version 2.0 (modified)
+    attribution_unmodified: Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung
+      – Version 2.0
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-01.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 299101919
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-02.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 309990002
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  - href: https://gdi.bsh.de/de/data/Model-data-long-term-yield-potential-offshore-wind-energy-North-Sea-Scenario-2-2006-08-03.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 307942557
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  items: 0
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

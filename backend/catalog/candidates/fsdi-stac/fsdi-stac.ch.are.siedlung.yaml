@@ -1,0 +1,144 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: fsdi-stac
+source_key: ch.are.siedlung
+listed_id: fsdi-stac.ch.are.siedlung
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: ch.are.siedlung
+takeover:
+  via: coll
+  key: coll:data.geo.admin.ch/ch.are.siedlung
+harvested:
+  title: Settlement
+  description: "The ‘Settlement’ is a geodata set of the settled landscape from a\
+    \ spatial development perspective. The data set serves as a geometric reference\
+    \ for various indicators in spatial observation. What is built for residential,\
+    \ work or leisure purposes is considered to be settled. This includes, in particular,\
+    \ the buildings and their surroundings, as well as the adjacent roads and transport\
+    \ infrastructure for their direct access. Any gaps that extend over more than\
+    \ 1500 m2 remain as such. The data layer is based on data from the topographic\
+    \ landscape model of swisstopo and the FSO's Register of Buildings and Dwellings.\r\
+    \nThe data is updated and published annually. The time series from 2019 to 2024\
+    \ can currently be viewed as a time journey at map.geo.admich.ch and downloaded\
+    \ as yearly updates at https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung."
+  publisher: Federal Office for Spatial Development - ARE
+  keywords:
+  - other
+  doi: null
+  licence_statements:
+  - https://opendata.swiss/en/terms-of-use/#terms_by
+  bbox:
+  - 5.96
+  - 45.82
+  - 10.49
+  - 47.81
+  extent_basis: source
+  temporal:
+  - '1919-12-31T00:00:00Z'
+  - '2026-12-31T00:00:00Z'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung
+  landing_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung
+  distributions:
+  - href: https://data.geo.admin.ch/ch.are.siedlung/siedlung.zip
+    format: null
+    media_type: application/zip
+    title: Additional files
+licence:
+  license_ref:
+  - opendata-swiss-by
+  license_rule: fsdi-stac/Federal Office for Spatial Development - ARE/opendata-swiss-by
+  license:
+    spdx_id: null
+    name: 'opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht'
+    url: https://opendata.swiss/en/terms-of-use#terms_by
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © Federal Office for Spatial Development - ARE (modified)
+    attribution_unmodified: © Federal Office for Spatial Development - ARE
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://data.geo.admin.ch/ch.are.siedlung/siedlung_1919/siedlung_1919_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff
+    length: 2824698
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: geotiff
+      tiff:
+        width: 26334
+        height: 16734
+        bands: 1
+        data_type: uint8
+        tiled: false
+        tile_size: null
+        overviews: 0
+        epsg: null
+        nodata: '0'
+  - href: https://data.geo.admin.ch/ch.are.siedlung/siedlung_1945/siedlung_1945_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff
+    length: 3455346
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: geotiff
+      tiff:
+        width: 26334
+        height: 16734
+        bands: 1
+        data_type: uint8
+        tiled: false
+        tile_size: null
+        overviews: 0
+        epsg: null
+        nodata: '0'
+  - href: https://data.geo.admin.ch/ch.are.siedlung/siedlung_1960/siedlung_1960_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff
+    length: 3940465
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: geotiff
+      tiff:
+        width: 26334
+        height: 16734
+        bands: 1
+        data_type: uint8
+        tiled: false
+        tile_size: null
+        overviews: 0
+        epsg: null
+        nodata: '0'
+  items: 3
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

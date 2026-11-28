@@ -294,6 +294,9 @@
 - publisher: "Luzern: Dienststelle Landwirtschaft und Wald"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Luzern: Dienststelle Militär, Zivilschutz und Justizvollzug"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-27
 - publisher: "Luzern: Dienststelle Militär, Zivilschutz und Justizvollzug, Zivilschutz"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21

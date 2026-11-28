@@ -1,0 +1,79 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: fsdi-stac
+source_key: ch.meteoschweiz.ogd-climate-normals-grid
+listed_id: fsdi-stac.ch.meteoschweiz.ogd-climate-normals-grid
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: ch.meteoschweiz.ogd-climate-normals-grid
+takeover:
+  via: coll
+  key: coll:data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid
+harvested:
+  title: Climate normals - Spatial analyses
+  description: Spatial climate normals of temperature, precipitation and sunshine
+    duration for normal periods 1991-2020 and 1961-1990; radiation and clouds for
+    average period 2004-2020 - monthly and yearly.
+  publisher: Federal Office of Meteorology and Climatology MeteoSwiss
+  keywords:
+  - other
+  doi: null
+  licence_statements:
+  - CC-BY
+  bbox:
+  - 5.96
+  - 45.82
+  - 10.49
+  - 47.81
+  extent_basis: source
+  temporal:
+  - '2026-11-27T04:58:09.561210Z'
+  - '2026-11-27T04:58:09.561210Z'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-climate-normals-grid
+  landing_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-climate-normals-grid
+  distributions: []
+licence:
+  license_ref:
+  - cc-by
+  license_rule: fsdi-stac/Federal Office of Meteorology and Climatology MeteoSwiss/cc-by
+  license:
+    spdx_id: null
+    name: Creative Commons Attribution (ohne Versionsangabe)
+    url: https://creativecommons.org/licenses/
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © Federal Office of Meteorology and Climatology MeteoSwiss
+      (modified)
+    attribution_unmodified: © Federal Office of Meteorology and Climatology MeteoSwiss
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.albaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 1225032
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: hdf5
+  items: 1
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

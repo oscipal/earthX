@@ -1,0 +1,353 @@
+{
+ "collection": {
+  "description": "Die Daten umfassen die im deutschen Hoheitsgebiet und der ausschließlichen Wirtschaftszone (AWZ) errechneten Erträge von Windparks und die dafür relevanten Windbedingungen unter der Annahme eines Ausbausszenarios (S16) der Offshore Windenergie für 10 aufeinanderfolgende meteorologische Jahre. Die Berechnungen wurden mit dem numerischen Wettermodell WRF unter Nutzung einer Parametrisierung von Windparks nach Fitch durchgeführt. Die Daten liegen in 10-minütlicher zeitlicher und 2 km x 2 km räumlicher Auflösung für die Nordsee für die meteorologischen Jahre 2013-2022 vor. Die Variablen des Datensatzes sind Windgeschwindigkeit (WS) und Windrichtung (WD) auf 9 Höhenleveln zwischen 50 m und 350 m, die Leistung (POWER) der Windturbinen aus jeder Gitterzelle und die Luftdichte. Eine genauere Beschreibung der Variablen findet sich in den Dateien.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "infrastructure",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "XML",
+    "href": "https://gdi.bsh.de/de/feed/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06.xml",
+    "media_type": "application/xml",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-01.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-02.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-03.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-04.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-05.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-06.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-07.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-08.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-09.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-10.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-11.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-12.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-13.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-14.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-15.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-16.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-17.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-18.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-19.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-20.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-21.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-22.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-23.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-24.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-25.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-26.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-27.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-28.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-29.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   },
+   {
+    "format": "application/x-netcdf",
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-30.nc",
+    "media_type": "application/x-netcdf",
+    "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung – Version 2.0 (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung – Version 2.0",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "Datenlizenz Deutschland – Namensnennung – Version 2.0",
+   "share_alike": false,
+   "spdx_id": "DL-DE-BY-2.0",
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://www.govdata.de/dl-de/by-2-0"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "govdata/Fraunhofer IWES/dl-de-by-2.0",
+   "publisher": "Fraunhofer IWES",
+   "source_id": "govdata",
+   "source_key": "04a11336-b669-4cd9-b804-f0d55b24d776",
+   "source_rank": 3,
+   "source_url": "https://www.govdata.de/suche/daten/modelldaten-mehrjahriges-ertragspotenzial-offshore-windenergie-nordsee-2014-06aaf28"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      3.0039,
+      52.8775,
+      9.3092,
+      56.4108
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "2013-01-01T00:00:00Z",
+      "2022-12-31T23:59:59Z"
+     ]
+    ]
+   }
+  },
+  "id": "govdata.04a11336-b669-4cd9-b804-f0d55b24d776",
+  "keywords": [
+   "deutsche-awz",
+   "deutsche-nordsee",
+   "ertrag",
+   "full-load-hours",
+   "german-eez",
+   "german-north-sea",
+   "modellierung",
+   "modelling",
+   "national",
+   "offhore-windenergie",
+   "offshore",
+   "offshore-wind-energy",
+   "offshore-wind-farm",
+   "offshore-windpark",
+   "open-data",
+   "volllaststunden",
+   "wind-energy-at-sea",
+   "wind-power",
+   "windenergie-auf-see",
+   "windkraft",
+   "yield"
+  ],
+  "license": "DL-DE-BY-2.0",
+  "links": [
+   {
+    "href": "https://www.govdata.de/suche/daten/modelldaten-mehrjahriges-ertragspotenzial-offshore-windenergie-nordsee-2014-06aaf28",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://www.govdata.de/dl-de/by-2-0",
+    "rel": "license",
+    "title": "Datenlizenz Deutschland – Namensnennung – Version 2.0"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Fraunhofer IWES",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Modelldaten mehrjähriges Ertragspotenzial Offshore-Windenergie Nordsee -2014-06",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-27",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "gdi.bsh.de",
+    "format": {
+     "format": "hdf5"
+    },
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-01.nc",
+    "length": 296482830,
+    "media_type": "application/x-netcdf",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "gdi.bsh.de",
+    "format": {
+     "format": "hdf5"
+    },
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-02.nc",
+    "length": 317480620,
+    "media_type": "application/x-netcdf",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "gdi.bsh.de",
+    "format": {
+     "format": "hdf5"
+    },
+    "href": "https://gdi.bsh.de/de/data/Model-data-multi-year-yield-potential-offshore-wind-energy-North-Sea-2014-06-03.nc",
+    "length": 313250968,
+    "media_type": "application/x-netcdf",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

@@ -1,0 +1,466 @@
+{
+ "collection": {
+  "description": "Spatial climate normals of temperature, precipitation and sunshine duration for normal periods 1991-2020 and 1961-1990; radiation and clouds for average period 2004-2020 - monthly and yearly.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "other",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "© Federal Office of Meteorology and Climatology MeteoSwiss (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "© Federal Office of Meteorology and Climatology MeteoSwiss",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "Creative Commons Attribution (ohne Versionsangabe)",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://creativecommons.org/licenses/"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-21",
+   "license_rule": "fsdi-stac/Federal Office of Meteorology and Climatology MeteoSwiss/cc-by",
+   "publisher": "Federal Office of Meteorology and Climatology MeteoSwiss",
+   "source_id": "fsdi-stac",
+   "source_key": "ch.meteoschweiz.ogd-climate-normals-grid",
+   "source_rank": 1,
+   "source_url": "https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-climate-normals-grid"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.96,
+      45.82,
+      10.49,
+      47.81
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "2026-11-27T04:58:09.561210Z",
+      "2026-11-27T04:58:09.561210Z"
+     ]
+    ]
+   }
+  },
+  "id": "fsdi-stac.ch.meteoschweiz.ogd-climate-normals-grid",
+  "keywords": [
+   "other"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-climate-normals-grid",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://creativecommons.org/licenses/",
+    "rel": "license",
+    "title": "Creative Commons Attribution (ohne Versionsangabe)"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Federal Office of Meteorology and Climatology MeteoSwiss",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Climate normals - Spatial analyses",
+  "type": "Collection"
+ },
+ "items": [
+  {
+   "assets": {
+    "ogd-climate-normals-grid.albaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:37.145246Z",
+     "file:checksum": "1220ff4a13ac279b5d52ad83656e2d9fee35f0279ec9ec0db61e9af9e175bee2547c",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.albaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.039492Z"
+    },
+    "ogd-climate-normals-grid.albaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:37.199401Z",
+     "file:checksum": "12207798106c9284f8cd5aa0d82c8657a549f40ef0fcd5fea18729297fb32b6dd289",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.albaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:39.082908Z"
+    },
+    "ogd-climate-normals-grid.cfcaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:37.872982Z",
+     "file:checksum": "1220efe79182de004e4c75c663e6496ac3fd408d22464971f45bea10940270df97d8",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.cfcaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.963601Z"
+    },
+    "ogd-climate-normals-grid.cfcaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:37.273102Z",
+     "file:checksum": "1220285a32aef0d72e19873e8f64cc4d75f6ec14217dd0376aa0304fb50370b718cf",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.cfcaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:37.958314Z"
+    },
+    "ogd-climate-normals-grid.nlraveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:37.661721Z",
+     "file:checksum": "12202844c5dc4d3442e34dae5b5dd219959bf656f4a8ac8549a3c0c4a0365e24af80",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.nlraveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.955416Z"
+    },
+    "ogd-climate-normals-grid.nlraveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:37.600517Z",
+     "file:checksum": "1220c095ecee54a674fb5001f8a333a53e2c01f055067920b4d9c1399f88b665abc8",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.nlraveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.336472Z"
+    },
+    "ogd-climate-normals-grid.nsraveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:37.640399Z",
+     "file:checksum": "12201970e9f0a0451457c3fb4abb7f33acb4af1b011977a292031ca7788b645dbee1",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.nsraveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.951712Z"
+    },
+    "ogd-climate-normals-grid.nsraveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:37.497145Z",
+     "file:checksum": "1220c3b815af1a18071960cf921f7e3b8cf20fd0a6e68120303ff68b7376d0eedb73",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.nsraveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.213940Z"
+    },
+    "ogd-climate-normals-grid.rnormm6190_ch01r.swiss.lv95_19610101000000_19611201000000.nc": {
+     "created": "2026-03-18T05:54:37.827427Z",
+     "file:checksum": "12207b67dc63de7b59e557dfacb52bb66f944e48429e37430d9738aec37a8325d741",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.rnormm6190_ch01r.swiss.lv95_19610101000000_19611201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:39.264044Z"
+    },
+    "ogd-climate-normals-grid.rnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc": {
+     "created": "2026-03-18T05:52:36.786800Z",
+     "file:checksum": "122066a078232fdc24eec6023b430f318ce685d0469fc20dbbd0a4cfefb51f3946cc",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.rnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:52:37.819340Z"
+    },
+    "ogd-climate-normals-grid.rnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.nc": {
+     "created": "2026-03-18T05:54:38.085630Z",
+     "file:checksum": "12203837011cf3326cb6b3dadb6207426584ffd2194e73c5027dc41705e2d2b25269",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.rnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:39.485697Z"
+    },
+    "ogd-climate-normals-grid.rnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.tif": {
+     "created": "2026-06-18T07:33:59.648397Z",
+     "file:checksum": "12206d00b338e380443b7020425f5b8b92c7b763bd193f9ce1a2d0e5aab284ba50b0",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.rnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.tif",
+     "type": "image/tiff",
+     "updated": "2026-06-18T07:34:00.446114Z"
+    },
+    "ogd-climate-normals-grid.rnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc": {
+     "created": "2026-03-18T05:52:36.191634Z",
+     "file:checksum": "1220ce0cc95e998a002fb199f18ab5424897926e661661eaea20ea9af72bf691bc3f",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.rnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:52:37.383877Z"
+    },
+    "ogd-climate-normals-grid.rnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.tif": {
+     "created": "2026-06-18T07:36:00.001329Z",
+     "file:checksum": "1220b401d8db0a68b18d6bf7f472ba956cf1dc7b718793c9173b195390270157d997",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.rnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.tif",
+     "type": "image/tiff",
+     "updated": "2026-06-18T07:36:00.863623Z"
+    },
+    "ogd-climate-normals-grid.sdlaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:37.626661Z",
+     "file:checksum": "1220fe0a8810ef00a7a369a1f92dcdfe15106ea18b2559c9ca638c423af83d52486f",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.sdlaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.368749Z"
+    },
+    "ogd-climate-normals-grid.sdlaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:37.669626Z",
+     "file:checksum": "12200cf72bc00985b15cbcdd31348c91bf3bdcc7423303be8c4bbefcd4305c62d677",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.sdlaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.427180Z"
+    },
+    "ogd-climate-normals-grid.sisaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:39.098110Z",
+     "file:checksum": "1220660055a22cb9903f4ce992b4b7ffec747e195046733da8bbd059e9889b49c617",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.sisaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:40.116792Z"
+    },
+    "ogd-climate-normals-grid.sisaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:37.867138Z",
+     "file:checksum": "1220d65581cbf154d43c26727951c059d2e4c51a88ab196662b30109bccaab332446",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.sisaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:38.990847Z"
+    },
+    "ogd-climate-normals-grid.sisaveragey0420_ch02.lonlat_20040101000000_20040101000000.tif": {
+     "created": "2026-06-18T07:39:59.058262Z",
+     "file:checksum": "1220032318ccb35ed799d08ab88084e23f6fd46eb22f7900e22a2e6d4d4728a5bd2d",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.sisaveragey0420_ch02.lonlat_20040101000000_20040101000000.tif",
+     "type": "image/tiff",
+     "updated": "2026-06-18T07:39:59.701463Z"
+    },
+    "ogd-climate-normals-grid.snormm6190_ch01r.swiss.lv95_19610101000000_19611201000000.nc": {
+     "created": "2026-03-18T05:54:38.011427Z",
+     "file:checksum": "12202aa58a2f4b35f930f2e44b239eb35547b9f59cccc69fa098a47765b01de3a519",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.snormm6190_ch01r.swiss.lv95_19610101000000_19611201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:39.176369Z"
+    },
+    "ogd-climate-normals-grid.snormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc": {
+     "created": "2026-03-18T05:54:37.989319Z",
+     "file:checksum": "1220b5fb80dd96664faa17ca6f7a5f96e29a94eaccb73bd499b554a55bb46b00e844",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.snormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:39.622479Z"
+    },
+    "ogd-climate-normals-grid.snormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.nc": {
+     "created": "2026-03-18T05:54:39.322112Z",
+     "file:checksum": "122051728a3b25681253a866655732d2a016ccbec95180d9ae843eecfb45d9b03fef",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.snormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:40.338024Z"
+    },
+    "ogd-climate-normals-grid.snormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.tif": {
+     "created": "2026-06-18T07:33:59.616460Z",
+     "file:checksum": "122009d8c04b3aa745806803fb9138beb1121c20b135bdc1e1d35bf5e563e910ba08",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.snormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.tif",
+     "type": "image/tiff",
+     "updated": "2026-06-18T07:34:00.340931Z"
+    },
+    "ogd-climate-normals-grid.snormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc": {
+     "created": "2026-03-18T05:54:40.213786Z",
+     "file:checksum": "1220f32e63a0289590b5353acaeb1df359822a5ec72c18798dca5ed35d3e81374817",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.snormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:41.374819Z"
+    },
+    "ogd-climate-normals-grid.snormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.tif": {
+     "created": "2026-06-18T07:36:00.003007Z",
+     "file:checksum": "1220bfb75bb29014a6658158ff973bbf41917bd77e7cfff507aab0722e21024012d7",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.snormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.tif",
+     "type": "image/tiff",
+     "updated": "2026-06-18T07:36:00.921511Z"
+    },
+    "ogd-climate-normals-grid.solaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:40.939006Z",
+     "file:checksum": "12209050da0cfd5ae98fe16c25f8294bf4b07b2f0553b643a152f6102ddd30716908",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.solaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.056024Z"
+    },
+    "ogd-climate-normals-grid.solaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:40.785792Z",
+     "file:checksum": "122012d25307292ec5cca6eb8a4121d82ef6915123fb8750e17670f30d8a4ed7b192",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.solaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:41.693734Z"
+    },
+    "ogd-climate-normals-grid.srbaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc": {
+     "created": "2026-03-18T05:54:40.754448Z",
+     "file:checksum": "1220a91c4b8c8e67eb7b63e711d53f85142de89fe6f6ede0cd4c43b4783cc2a0e709",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.srbaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:41.776306Z"
+    },
+    "ogd-climate-normals-grid.srbaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc": {
+     "created": "2026-03-18T05:54:40.742144Z",
+     "file:checksum": "1220bdb28fc8d002ac8fdc0e200642eddf0255746bc4e048d4676cda277559bd6c36",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.srbaveragey0420_ch02.lonlat_20040101000000_20040101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:41.640662Z"
+    },
+    "ogd-climate-normals-grid.tmaxnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc": {
+     "created": "2026-03-18T05:54:41.940437Z",
+     "file:checksum": "12205ab5b4a08c459a7733f101d8b0764fc890af0e31c3163f1a42c95c785e6b675b",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tmaxnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.614870Z"
+    },
+    "ogd-climate-normals-grid.tmaxnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc": {
+     "created": "2026-03-18T05:54:42.148281Z",
+     "file:checksum": "1220c55272da6fe162b5a4ec539a1ec15d2cd144f3003e952835fe38af6411a756da",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tmaxnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.778437Z"
+    },
+    "ogd-climate-normals-grid.tminnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc": {
+     "created": "2026-03-18T05:54:42.137757Z",
+     "file:checksum": "122078c36d571c2c3048c434100a11c7a03aa1348ccfc6e3ebe1f898bf3ee5a0a0a6",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tminnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:43.789019Z"
+    },
+    "ogd-climate-normals-grid.tminnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc": {
+     "created": "2026-03-18T05:54:42.119283Z",
+     "file:checksum": "1220d5904dece3996a154ffb0f9954bc32345179b346d93cf168e424424958d046db",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tminnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.770203Z"
+    },
+    "ogd-climate-normals-grid.tnormm6190_ch01r.swiss.lv95_19610101000000_19611201000000.nc": {
+     "created": "2026-03-18T05:54:42.185057Z",
+     "file:checksum": "122018e3276bf45816430c362f3a9effe8ec190960b538ad706e19996e4c756c4f21",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tnormm6190_ch01r.swiss.lv95_19610101000000_19611201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.934810Z"
+    },
+    "ogd-climate-normals-grid.tnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc": {
+     "created": "2026-03-18T05:54:42.210890Z",
+     "file:checksum": "1220c626227816a895d1cf1b2fd58ba5d2c7430f10de9197ce672d7bfc648d1bcce1",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tnormm9120_ch01r.swiss.lv95_19910101000000_19911201000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.985599Z"
+    },
+    "ogd-climate-normals-grid.tnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.nc": {
+     "created": "2026-03-18T05:54:42.187185Z",
+     "file:checksum": "12206a5f91b4674a8f77836b86742e23f44591fbec3fee34e7fbfd19385d3c1a90b5",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.780091Z"
+    },
+    "ogd-climate-normals-grid.tnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.tif": {
+     "created": "2026-06-18T07:33:59.617418Z",
+     "file:checksum": "1220d4f58dfb50af12785aff5085c0a4c8f47384bd790a2a89291c0e05f96af1f0e0",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tnormy6190_ch01r.swiss.lv95_19610101000000_19610101000000.tif",
+     "type": "image/tiff",
+     "updated": "2026-06-18T07:34:00.333684Z"
+    },
+    "ogd-climate-normals-grid.tnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc": {
+     "created": "2026-03-18T05:54:42.194754Z",
+     "file:checksum": "1220b4e98750745a01d0d3b9277d35c4c027cb6be1fad913d6c52ba906b673b16b1b",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.nc",
+     "type": "application/x-netcdf",
+     "updated": "2026-03-18T05:54:42.853276Z"
+    },
+    "ogd-climate-normals-grid.tnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.tif": {
+     "created": "2026-06-18T07:36:00.034865Z",
+     "file:checksum": "1220dc4959ead34e6488af4ac633d7706f8c47c5bc9abaa48e2d8c1961f5827aaf38",
+     "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.tnormy9120_ch01r.swiss.lv95_19910101000000_19910101000000.tif",
+     "type": "image/tiff",
+     "updated": "2026-06-18T07:36:00.824502Z"
+    }
+   },
+   "bbox": [
+    5.96,
+    45.82,
+    10.49,
+    47.81
+   ],
+   "collection": "ch.meteoschweiz.ogd-climate-normals-grid",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       5.96,
+       47.81
+      ],
+      [
+       10.49,
+       47.81
+      ],
+      [
+       10.49,
+       45.82
+      ],
+      [
+       5.96,
+       45.82
+      ],
+      [
+       5.96,
+       47.81
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "ch",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-climate-normals-grid/items/ch",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-climate-normals-grid",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-climate-normals-grid",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-climate-normals-grid/items/ch",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    },
+    {
+     "href": "https://www.meteoswiss.admin.ch/climate/the-climate-of-switzerland/climate-normals/norm-value-charts.html",
+     "rel": "about",
+     "title": "Climate normals - Spatial analyses"
+    }
+   ],
+   "properties": {
+    "created": "2025-09-03T13:26:05.322608Z",
+    "datetime": "2026-11-27T04:58:09.561210Z",
+    "title": "CH",
+    "updated": "2026-06-30T04:00:34.026889Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  }
+ ],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-27",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "hdf5"
+    },
+    "href": "https://data.geo.admin.ch/ch.meteoschweiz.ogd-climate-normals-grid/ch/ogd-climate-normals-grid.albaveragem0420_ch02.lonlat_20040101000000_20041201000000.nc",
+    "length": 1225032,
+    "media_type": "application/x-netcdf",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 1
+ }
+}
