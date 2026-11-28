@@ -1,0 +1,447 @@
+{
+ "collection": {
+  "description": "The ‘Settlement’ is a geodata set of the settled landscape from a spatial development perspective. The data set serves as a geometric reference for various indicators in spatial observation. What is built for residential, work or leisure purposes is considered to be settled. This includes, in particular, the buildings and their surroundings, as well as the adjacent roads and transport infrastructure for their direct access. Any gaps that extend over more than 1500 m2 remain as such. The data layer is based on data from the topographic landscape model of swisstopo and the FSO's Register of Buildings and Dwellings.\r\nThe data is updated and published annually. The time series from 2019 to 2024 can currently be viewed as a time journey at map.geo.admich.ch and downloaded as yearly updates at https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "other",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": null,
+    "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung.zip",
+    "media_type": "application/zip",
+    "title": "Additional files"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "© Federal Office for Spatial Development - ARE (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "© Federal Office for Spatial Development - ARE",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_by"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-21",
+   "license_rule": "fsdi-stac/Federal Office for Spatial Development - ARE/opendata-swiss-by",
+   "publisher": "Federal Office for Spatial Development - ARE",
+   "source_id": "fsdi-stac",
+   "source_key": "ch.are.siedlung",
+   "source_rank": 1,
+   "source_url": "https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.96,
+      45.82,
+      10.49,
+      47.81
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "1919-12-31T00:00:00Z",
+      "2026-12-31T00:00:00Z"
+     ]
+    ]
+   }
+  },
+  "id": "fsdi-stac.ch.are.siedlung",
+  "keywords": [
+   "other"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_by",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Federal Office for Spatial Development - ARE",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Settlement",
+  "type": "Collection"
+ },
+ "items": [
+  {
+   "assets": {
+    "siedlung_1919_2056.gpkg": {
+     "created": "2025-09-16T14:58:22.836953Z",
+     "file:checksum": "12205ab52f542baebf9b5e3fa00040dcd88163b366aab9ccd0d3da5ab0b972cf9d8e",
+     "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1919/siedlung_1919_2056.gpkg",
+     "type": "application/geopackage+sqlite3",
+     "updated": "2025-09-17T08:11:29.674275Z"
+    },
+    "siedlung_1919_2056.tif": {
+     "created": "2025-10-08T10:48:48.520983Z",
+     "file:checksum": "1220cbbe1b8950e82672ce81ab6c211733b077a723fe0f4f0eb00fdade8e7fd0cd38",
+     "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1919/siedlung_1919_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff",
+     "updated": "2025-10-08T10:49:09.290040Z"
+    }
+   },
+   "bbox": [
+    5.96,
+    45.82,
+    10.49,
+    47.81
+   ],
+   "collection": "ch.are.siedlung",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       5.96,
+       45.82
+      ],
+      [
+       5.96,
+       47.81
+      ],
+      [
+       10.49,
+       47.81
+      ],
+      [
+       10.49,
+       45.82
+      ],
+      [
+       5.96,
+       45.82
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "siedlung_1919",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung/items/siedlung_1919",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung/items/siedlung_1919",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2025-09-16T14:56:58.673031Z",
+    "datetime": "1919-12-31T00:00:00Z",
+    "title": "1919",
+    "updated": "2025-10-08T10:49:09.290040Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "siedlung_1945_2056.gpkg": {
+     "created": "2025-09-17T08:37:02.161770Z",
+     "file:checksum": "12207b1ccd7f75b6cb8c5691ec66e12a66eb01ab709a817331c552258f00f3159d67",
+     "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1945/siedlung_1945_2056.gpkg",
+     "proj:epsg": 2056,
+     "type": "application/geopackage+sqlite3",
+     "updated": "2025-09-17T08:37:53.405562Z"
+    },
+    "siedlung_1945_2056.tif": {
+     "created": "2025-10-08T10:49:41.679805Z",
+     "file:checksum": "122081b1f160fcaedaf8ee8dd983b35b24e7e94c5755693405f187e8a6fa2a822185",
+     "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1945/siedlung_1945_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff",
+     "updated": "2025-10-08T10:50:03.077152Z"
+    }
+   },
+   "bbox": [
+    5.96,
+    45.82,
+    10.49,
+    47.81
+   ],
+   "collection": "ch.are.siedlung",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       5.96,
+       45.82
+      ],
+      [
+       5.96,
+       47.81
+      ],
+      [
+       10.49,
+       47.81
+      ],
+      [
+       10.49,
+       45.82
+      ],
+      [
+       5.96,
+       45.82
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "siedlung_1945",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung/items/siedlung_1945",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung/items/siedlung_1945",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2025-09-17T08:35:57.322894Z",
+    "datetime": "1945-12-31T00:00:00Z",
+    "title": "1945",
+    "updated": "2025-10-08T10:50:03.077152Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "siedlung_1960_2056.gpkg": {
+     "created": "2025-09-17T12:16:24.151269Z",
+     "file:checksum": "12209351fb28a93d3d093537fe828c9cd5bd3c62ae668045daa2d86ba03c1cf4bcc5",
+     "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1960/siedlung_1960_2056.gpkg",
+     "proj:epsg": 2056,
+     "type": "application/geopackage+sqlite3",
+     "updated": "2025-09-17T12:43:52.667009Z"
+    },
+    "siedlung_1960_2056.tif": {
+     "created": "2025-10-08T10:50:27.772866Z",
+     "file:checksum": "1220c31145719fd1422aa1cf649ade4529d259af13da141315d1f44f05638e8bacfb",
+     "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1960/siedlung_1960_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff",
+     "updated": "2025-10-08T10:50:48.511000Z"
+    }
+   },
+   "bbox": [
+    5.96,
+    45.82,
+    10.49,
+    47.81
+   ],
+   "collection": "ch.are.siedlung",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       5.96,
+       45.82
+      ],
+      [
+       5.96,
+       47.81
+      ],
+      [
+       10.49,
+       47.81
+      ],
+      [
+       10.49,
+       45.82
+      ],
+      [
+       5.96,
+       45.82
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "siedlung_1960",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung/items/siedlung_1960",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.are.siedlung",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.are.siedlung/items/siedlung_1960",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2025-09-17T12:16:04.840451Z",
+    "datetime": "1960-12-31T00:00:00Z",
+    "title": "1960",
+    "updated": "2025-10-08T10:50:48.511000Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  }
+ ],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-27",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "geotiff",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": null,
+      "height": 16734,
+      "nodata": "0",
+      "overviews": 0,
+      "tile_size": null,
+      "tiled": false,
+      "width": 26334
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1919/siedlung_1919_2056.tif",
+    "length": 2824698,
+    "media_type": "image/tiff; application=geotiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "geotiff",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": null,
+      "height": 16734,
+      "nodata": "0",
+      "overviews": 0,
+      "tile_size": null,
+      "tiled": false,
+      "width": 26334
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1945/siedlung_1945_2056.tif",
+    "length": 3455346,
+    "media_type": "image/tiff; application=geotiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "geotiff",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": null,
+      "height": 16734,
+      "nodata": "0",
+      "overviews": 0,
+      "tile_size": null,
+      "tiled": false,
+      "width": 26334
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.are.siedlung/siedlung_1960/siedlung_1960_2056.tif",
+    "length": 3940465,
+    "media_type": "image/tiff; application=geotiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 3
+ }
+}

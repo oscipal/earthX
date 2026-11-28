@@ -1,0 +1,216 @@
+{
+ "collection": {
+  "description": "The published data were produced in the framework of Klein et al. 2025, parts of the project and co-authors were funded by Agroscope, the Swiss Federal Office for the Environment (FOEN) // Swiss Government under the project “ValPar.CH: Values of the ecological infrastructure in Swiss parks” (grant no. A1.2) and BiodivERsA-Belmont Forum Call on “Scenarios of Biodiversity and Ecosystem services” (grant no. BiodivScen-157). The objective of the project was to combine field-level impact of agricultural activities with the potential distribution of Swiss priority birds. The impact was assessed for 2021, using the Swiss Agricultural Life Cycle Assessment for Biodiversity (SALCA-BD, Jeanneret et al. 2014). The potential was assessed by aggregating predictions from species distribution models of 27 bird priority species, modelled as part of the ValParCH project (Adde et al. 2023), using the SWECO25 database for environmental predictors (Külling et al. 2024). First, an optimized hot spot analysis using ArcGIS pro was conducted separately on estimated impact and distribution potential. Second, they were combined using a multivariate clustering with K-means statistics to identify clusters with comparable combinations between high and low impact and high and low potential. The resulting map shows 7 clusters with distinct combinations of high/low impact and potential. The spatial resolution of the raster dataset is 25 m. <br><br> References: <br> Adde, A., Rey, P. L., Brun, P., Külling, N., Fopp, F., Altermatt, F., Broennimann, O., Lehmann, A., Petitpierre, B., Zimmermann, N. E., Pellissier, L., & Guisan, A. (2023). N-SDM: A high-performance computing pipeline for nested species distribution modelling. Ecography, 2023, e06540. https://doi.org/10.1111/ecog.06540 Jeanneret, P., Baumgartner, D. U., Freiermuth Knuchel, R., Koch, B., & Gaillard, G. (2014). An expert system for integrating biodiversity into agricultural life-cycle assessment. Ecological Indicators, 46, 224–231. https://doi.org/10.1016/j.ecolind.2014.06.030 Klein N., Adde A., Grêt-Regamey A., Guisan A., Herzog F., Jeanneret P., Kay. S. Identifying focus zones for the conservation and promotion of priority birds in Swiss farmland. Conservation Science and Practice. 2025. https://doi.org/10.1111/csp2.13286 Külling, N., Adde, A., Fopp, F., Schweiger, A. K., Broennimann, O., Rey, P.-L., Giuliani, G., Goicolea, T., Petitpierre, B., Zimmermann, N. E., Pellissier, L., Altermatt, F., Lehmann, A., & Guisan, A. (2024). SWECO25: A cross-thematic raster database for ecological research in Switzerland. Scientific Data, 11, 21. https://doi.org/10.1038/s41597-023-02899-1",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "other",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": null,
+    "href": "https://data.geo.admin.ch/ch.agroscope.fokuskarte-voegel/fokuskarte-voegel.zip",
+    "media_type": "application/zip",
+    "title": "Additional files"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "© Agroscope (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "© Agroscope",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_by"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-21",
+   "license_rule": "fsdi-stac/Agroscope/opendata-swiss-by",
+   "publisher": "Agroscope",
+   "source_id": "fsdi-stac",
+   "source_key": "ch.agroscope.fokuskarte-voegel",
+   "source_rank": 1,
+   "source_url": "https://data.geo.admin.ch/browser/index.html#/collections/ch.agroscope.fokuskarte-voegel"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.96,
+      45.82,
+      10.49,
+      47.81
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "2024-11-20T00:00:00Z",
+      "2024-11-20T00:00:00Z"
+     ]
+    ]
+   }
+  },
+  "id": "fsdi-stac.ch.agroscope.fokuskarte-voegel",
+  "keywords": [
+   "other"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.agroscope.fokuskarte-voegel",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_by",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Agroscope",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Focus map agri-environmental objective birds",
+  "type": "Collection"
+ },
+ "items": [
+  {
+   "assets": {
+    "fokuskarte-voegel_2056.tif": {
+     "created": "2025-05-22T15:43:42.182238Z",
+     "file:checksum": "12201632bac099b90158177430887fcdb44d1c1c6bd4e5e9596836aae6036e0c9e34",
+     "href": "https://data.geo.admin.ch/ch.agroscope.fokuskarte-voegel/fokuskarte-voegel/fokuskarte-voegel_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-05-22T15:44:15.263953Z"
+    }
+   },
+   "bbox": [
+    5.96,
+    45.82,
+    10.49,
+    47.81
+   ],
+   "collection": "ch.agroscope.fokuskarte-voegel",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       5.96,
+       45.82
+      ],
+      [
+       5.96,
+       47.81
+      ],
+      [
+       10.49,
+       47.81
+      ],
+      [
+       10.49,
+       45.82
+      ],
+      [
+       5.96,
+       45.82
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "fokuskarte-voegel",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.agroscope.fokuskarte-voegel/items/fokuskarte-voegel",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.agroscope.fokuskarte-voegel",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.agroscope.fokuskarte-voegel",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.agroscope.fokuskarte-voegel/items/fokuskarte-voegel",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2025-05-22T15:43:05.167288Z",
+    "datetime": "2024-11-20T00:00:00Z",
+    "updated": "2025-05-22T15:44:15.263953Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  }
+ ],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-27",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": null,
+      "height": 8937,
+      "nodata": "255",
+      "overviews": 6,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 13963
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.agroscope.fokuskarte-voegel/fokuskarte-voegel/fokuskarte-voegel_2056.tif",
+    "length": 6314119,
+    "media_type": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 1
+ }
+}

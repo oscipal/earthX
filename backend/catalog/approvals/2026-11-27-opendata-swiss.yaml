@@ -1,0 +1,242 @@
+# Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
+# the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
+# `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
+# `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
+# `excluded_entries` are entries with a warning sign (M5-67 plan §5, in the report); they stay out and wait.
+# Only entries whose own link passed the automatic check become visible (M5-67 plan §4). Never a name, an address or the words of a request here: the repository is public.
+source_id: opendata-swiss
+batch_id: 14
+fingerprint: 326f07b6208e83c1420e2b2a2f89dc9b969deb7bde260cea7f767351dd85c3da
+created_on: 2026-11-27
+entries: 104
+decision: approved
+decided_on: 2026-11-27
+excluded_rules: []
+revoked_on: null
+sample:
+- dataset_id: opendata-swiss.2a11f7d1-5beb-450b-a8d1-eff4155f4585
+  why: new_rule
+  title: Legacy mercury contamination and soil bacterial communities across a floodplain
+    gradient in Switzerland
+  source_url: https://doi.org/10.16904/ENVIDAT.824
+  license_rule: 'opendata-swiss/EnviDat: das Umwelt-Datenportal/cc-by+opendata-swiss-by'
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: opendata-swiss.ba497aa5-956f-4e13-b847-7799b871e426
+  why: new_rule
+  title: Schutzbauten Zivilschutz
+  source_url: https://opendata.swiss/de/dataset/schutzbauten-zivilschutz
+  license_rule: 'opendata-swiss/Luzern: Dienststelle Militär, Zivilschutz und Justizvollzug/opendata-swiss-open'
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.00dcde39-9986-4e5e-a330-2000b43d8382
+  why: new_host
+  title: Radarprodukte Reflektivität - MAX-ECHO (maximales R.) und ECHO-TOP (max.
+    Höhe Radarecho)
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-radar-reflectivity
+  license_rule: opendata-swiss/Bundesamt für Meteorologie und Klimatologie MeteoSchweiz/opendata-swiss-by
+  ok: false
+  check:
+    outcome: failed
+    reason: no_title
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: opendata-swiss.2d8d8642-9e4c-4df0-92d4-a05b09336b27
+  why: new_host
+  title: Überwachung von Wildvögeln auf Aviäre Influenza (AI)
+  source_url: https://www.dashboard.blv.admin.ch/animals/epizootics/epidemic-situation-switzerland
+  license_rule: opendata-swiss/Bundesamt für Lebensmittelsicherheit und Veterinärwesen
+    BLV/opendata-swiss-by
+  ok: false
+  check:
+    outcome: failed
+    reason: no_title
+    status: 200
+    final_host: www.dashboard.blv.admin.ch
+- dataset_id: opendata-swiss.b602e9a5-6803-43b2-abe0-1943120257b5
+  why: new_host
+  title: Antibiotikaresistenzen und Antibiotikaeinsatz
+  source_url: https://www.idd.bag.admin.ch/topics/anresis/overview
+  license_rule: opendata-swiss/Abteilung Übertragbare Krankheiten/cc-by+opendata-swiss-by
+  ok: false
+  check:
+    outcome: failed
+    reason: no_title
+    status: 200
+    final_host: www.idd.bag.admin.ch
+- dataset_id: opendata-swiss.d490a683-4f33-4feb-83a4-d7639001a061
+  why: random
+  title: ISI (Initial Spread Index)
+  source_url: https://opendata.swiss/de/dataset/isi-initial-spread-index
+  license_rule: opendata-swiss/Bundesamt für Umwelt BAFU/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.3862fc11-15d1-48b9-b033-08284390fac2
+  why: random
+  title: GK Synoptische Gefahrenkarte
+  source_url: https://opendata.swiss/de/dataset/gk-synoptische-gefahrenkarte
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.e1f25c6a-9b6c-4c97-a9cc-e8241cc30216
+  why: random
+  title: Geschiebemessnetz (SOLID) - Standorte der Messstellen (UR)
+  source_url: https://opendata.swiss/de/dataset/geschiebemessnetz-solid-standorte-der-messstellen-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.e57b00d5-42fe-4358-b360-2749053548f1
+  why: random
+  title: Freizeitvelowegnetz (Der Weg als Ziel)
+  source_url: https://opendata.swiss/de/dataset/freizeitvelowegnetz-der-weg-als-ziel
+  license_rule: opendata-swiss/Amt für Geoinformation Kanton Schwyz/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.cc798c8d-ff6f-4d08-870c-22c31eec9163
+  why: random
+  title: Radarprodukte Konvektion - VIL (Vertical Integrated Liquid) und TRT (Thunderstorm
+    Radar Tracking)
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-radar-convection
+  license_rule: opendata-swiss/Bundesamt für Meteorologie und Klimatologie MeteoSchweiz/opendata-swiss-by
+  ok: false
+  check:
+    outcome: failed
+    reason: no_title
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: opendata-swiss.1d96b849-96f5-4a18-944e-6fab0c6fba1c
+  why: random
+  title: Agglomerationsprogramm Massnahmen
+  source_url: https://opendata.swiss/de/dataset/agglomerationsprogramm-massnahmen
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.78f95427-835c-406b-ae4c-2fc5f2f6318b
+  why: random
+  title: Schutzmassnahmen Kultur- und Denkmalschutzobjekte national / regional Differenz
+  source_url: https://opendata.swiss/de/dataset/schutzmassnahmen-kultur-und-denkmalschutzobjekte-national-regional-differenz
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.033d3f95-fa7b-412c-9cb8-31422ec770f1
+  why: random
+  title: Quartierpläne (UR)
+  source_url: https://opendata.swiss/de/dataset/quartierplane-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.debe4a7a-3f67-418b-bdc1-79afcffc7115
+  why: random
+  title: '2. Pflegeplan Naturschutz-Teilflächen: vergangenes Jahr (WMS ODG)'
+  source_url: https://opendata.swiss/de/dataset/2-pflegeplan-naturschutz-teilflachen-vergangenes-jahr-wms-odg
+  license_rule: opendata-swiss/Geoinformation Kanton Zürich/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.935bdd71-e553-4d73-84d5-1138426f5599
+  why: random
+  title: Ökoinventardatenbank BAFU:20XY
+  source_url: https://opendata.swiss/de/dataset/okoinventardatenbank-bafu-20xy
+  license_rule: opendata-swiss/Bundesamt für Umwelt BAFU/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.d06e11f0-18db-4be6-a689-0379e3f25816
+  why: random
+  title: Lärmbelastungskataster Strassen (Nacht) (UR)
+  source_url: https://opendata.swiss/de/dataset/larmbelastungskataster-strassen-nacht-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.4a78e3fc-621e-4866-9f0b-17bc710631d8
+  why: random
+  title: Grundwasserschutzzonen Differenz (UR)
+  source_url: https://opendata.swiss/de/dataset/grundwasserschutzzonen-differenz-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.7b6ba296-db15-4560-97b8-c9ed6e955253
+  why: random
+  title: Geschwindigkeit Gemeindestrassennetz
+  source_url: https://opendata.swiss/de/dataset/geschwindigkeit-gemeindestrassennetz
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.bbb8a799-6048-4752-86db-adff54797860
+  why: random
+  title: BFF Qualitätsstufe II (UR)
+  source_url: https://opendata.swiss/de/dataset/bff-qualitatsstufe-ii-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.40223ad9-608c-4709-84b7-c9eb9a39e79f
+  why: random
+  title: Hinweisflächen für anthropogene Böden
+  source_url: https://opendata.swiss/de/dataset/hinweisflachen-fur-anthropogene-boden1
+  license_rule: opendata-swiss/Geoinformation Kanton Zürich/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+excluded_entries:
+- opendata-swiss.d328ad15-1493-49ca-9ae6-325be01fdf7f
+- opendata-swiss.eeb8b09f-9cae-45b7-9b32-6f78a58cbd43
+decided_by: rules

@@ -1,0 +1,184 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: govdata
+source_key: db40f16e-e1c5-4f58-a5c2-cd5081062cc8
+listed_id: govdata.db40f16e-e1c5-4f58-a5c2-cd5081062cc8
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: govdata-modelldaten-ertragspotenzial-in-verschiedenen-ausbaujahren-119
+takeover:
+  via: also_listed_as
+  key: also:govdata:003f0bb0-5af7-4084-899a-521169a9149a
+  also_listed_as:
+  - govdata:003f0bb0-5af7-4084-899a-521169a9149a
+harvested:
+  title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+    Nordsee -2038-2006-07
+  description: Die Daten umfassen die im deutschen Hoheitsgebiet und der ausschließlichen
+    Wirtschaftszone (AWZ) errechneten Erträge von Windparks und die dafür relevanten
+    Windbedingungen unter der Annahme eines Ausbaus der Offshore Windenergie in kontinuierlichen
+    Ausbaujahren. Die Berechnungen wurden mit dem numerischen Wettermodell WRF unter
+    Nutzung einer Parametrisierung von Windparks nach Fitch durchgeführt. Die Daten
+    liegen in 10-minütlicher zeitlicher und 2 km x 2 km räumlicher Auflösung für die
+    Nordsee für das meteorologische Jahr 2006 vor. Die Jahreszahlen der Dateien beziehen
+    sich auf das jeweilige Ausbaujahr. Die Variablen des Datensatzes sind Windgeschwindigkeit
+    (WS) und Windrichtung (WD) auf 9 Höhenleveln zwischen 50 m und 350 m, die Leistung
+    (POWER) der Windturbinen aus jeder Gitterzelle und die Luftdichte. Eine genauere
+    Beschreibung der Variablen findet sich in den Dateien.
+  publisher: Fraunhofer IWES
+  keywords:
+  - deutsche-awz
+  - deutsche-nordsee
+  - ertrag
+  - full-load-hours
+  - german-eez
+  - german-north-sea
+  - modellierung
+  - modelling
+  - national
+  - offhore-windenergie
+  - offshore
+  - offshore-wind-energy
+  - offshore-wind-farm
+  - offshore-windpark
+  - open-data
+  - volllaststunden
+  - wind-energy-at-sea
+  - wind-power
+  - windenergie-auf-see
+  - windkraft
+  - yield
+  doi: null
+  licence_statements:
+  - http://dcat-ap.de/def/licenses/dl-by-de/2.0
+  bbox:
+  - 3.0039
+  - 52.8775
+  - 9.3092
+  - 56.4108
+  extent_basis: source
+  temporal:
+  - '2006-01-01T00:00:00Z'
+  - '2006-12-31T23:59:59Z'
+  source_url: https://www.govdata.de/suche/daten/modelldaten-ertragspotenzial-in-verschiedenen-ausbaujahren-offshore-windenergie-nordsee-2006-07
+  landing_url: https://www.govdata.de/suche/daten/modelldaten-ertragspotenzial-in-verschiedenen-ausbaujahren-offshore-windenergie-nordsee-2006-07
+  distributions:
+  - href: https://gdi.bsh.de/de/feed/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07.xml
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/xml
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-01.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-02.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-03.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-04.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-05.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-06.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-07.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-08.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-09.nc
+    format: http://publications.europa.eu/resource/authority/file-type/NETCDF
+    media_type: application/x-netcdf
+    title: Modelldaten Ertragspotenzial in verschiedenen Ausbaujahren Offshore-Windenergie
+      Nordsee -2038-2006-07
+licence:
+  license_ref:
+  - dl-de-by-2.0
+  license_rule: govdata/Fraunhofer IWES/dl-de-by-2.0
+  license:
+    spdx_id: DL-DE-BY-2.0
+    name: Datenlizenz Deutschland – Namensnennung – Version 2.0
+    url: https://www.govdata.de/dl-de/by-2-0
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung
+      – Version 2.0 (modified)
+    attribution_unmodified: Fraunhofer IWES, Datenlizenz Deutschland – Namensnennung
+      – Version 2.0
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://gdi.bsh.de/de/feed/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07.xml
+    outcome: failed
+    reason: format_unknown
+    status: 200
+    media_type: text/xml
+    length: 20
+    partial: false
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: unknown
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-01.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 298601210
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  - href: https://gdi.bsh.de/de/data/Model-data-yield-potential-in-different-expansion-years-offshore-wind-energy-North-Sea-2038-2006-07-02.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 290919917
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  items: 0
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

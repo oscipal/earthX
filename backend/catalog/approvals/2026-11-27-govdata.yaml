@@ -1,0 +1,352 @@
+# Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
+# the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
+# `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
+# `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
+# `excluded_entries` are entries with a warning sign (M5-67 plan §5, in the report); they stay out and wait.
+# Only entries whose own link passed the automatic check become visible (M5-67 plan §4). Never a name, an address or the words of a request here: the repository is public.
+source_id: govdata
+batch_id: 15
+fingerprint: 1f69b34afdbc6c84b68d67d4266cf1e6971e73c84b159505a4fe8b49d150cd3d
+created_on: 2026-11-27
+entries: 982
+decision: approved
+decided_on: 2026-11-27
+excluded_rules: []
+revoked_on: null
+sample:
+- dataset_id: govdata.0241c5b4-4573-4e6e-bc3e-9b446badd407
+  why: new_rule
+  title: FZ 10 - Jahr 2012 - Neuzulassungen von Personenkraftwagen nach Marken und
+    Modellreihen
+  source_url: https://mobilithek.info//offers/573358599638495232
+  license_rule: govdata/Kraftfahrt-Bundesamt (KBA)/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: no_safe_check
+- dataset_id: govdata.1522805f-79fb-44bd-a0d3-b9cc77e7997a
+  why: new_rule
+  title: Beleuchtete Strecken im Radverkehrsnetz Wuppertal
+  source_url: https://www.offenedaten-wuppertal.de/dataset/beleuchtete-strecken-im-radverkehrsnetz-wuppertal
+  license_rule: govdata/Stadt Wuppertal, Ressort 102 Vermessung, Katasteramt und Geodaten/cc-by-4.0+cc0-1.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.036ef5f3-b85b-403d-a608-a1f0f09b7fec
+  why: new_rule
+  title: Kindertageseinrichtungen
+  source_url: https://opendataportal-kreis-borken.hub.arcgis.com/maps/kreis-borken::kindertageseinrichtungen
+  license_rule: govdata/Kreis Borken/dl-de-zero-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: host_resting
+- dataset_id: govdata.122db60f-f3af-4ba6-ba63-4afcf745fb29
+  why: new_rule
+  title: Waldzustandserhebung
+  source_url: https://www.govdata.de/suche/daten/waldzustandserhebung
+  license_rule: govdata/ThüringenForst AöR, Forstliches Forschungs- und Kompetenzzentrum/cc-by-4.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: ckan.govdata.de
+- dataset_id: govdata.01d48b60-3385-45e3-b4ac-7dfe67655ebd
+  why: new_rule
+  title: Schiffsliegeplätze
+  source_url: https://www.opendata-hro.de/dataset/93b41a30-833b-4f65-aecd-89f02ddaea4e
+  license_rule: govdata/Hanse- und Universitätsstadt Rostock/cc0-1.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: robots
+- dataset_id: govdata.04f55934-09e5-48bf-8022-3e2b8763a2d3
+  why: new_rule
+  title: Gebäudereferenzen NW
+  source_url: https://www.govdata.de/suche/daten/gebaudereferenzen-nw098bc
+  license_rule: govdata/Geobasis NRW/dl-de-zero-2.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: ckan.govdata.de
+- dataset_id: govdata.0d1401e9-7c2f-456a-8243-23e4321f424c
+  why: new_rule
+  title: Benthos, Dichte - WMS
+  source_url: https://mobilithek.info//offers/-2718454588362285194
+  license_rule: govdata/Alfred-Wegener-Institut (AWI)/geonutzv
+  ok: false
+  check:
+    outcome: unchecked
+    reason: no_safe_check
+- dataset_id: govdata.24a9bc0c-e395-48c6-a5cc-4f25730a7c1e
+  why: new_rule
+  title: Urban Digital Twin Charta Wuppertal
+  source_url: https://smart.wuppertal.de/beteiligung/charta-urbaner-digitaler-zwilling.php
+  license_rule: govdata/Stadt Wuppertal, Ressort 102 Vermessung, Katasteramt und Geodaten/cc-by-4.0
+  ok: false
+  check:
+    outcome: failed
+    reason: http_403
+    status: 403
+- dataset_id: govdata.75041573-f11f-42fd-bf34-d4d5f03415b9
+  why: new_rule
+  title: Nicht rechtsverbindliche Denkmalbereichssatzungen Wuppertal
+  source_url: https://www.offenedaten-wuppertal.de/dataset/nicht-rechtsverbindliche-denkmalbereichssatzungen-wuppertal
+  license_rule: govdata/Stadt Wuppertal, Ressort 105 Bauen und Wohnen/cc-by-nd-4.0+cc0-1.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.86b24c1c-6738-4177-82d1-a8d9263ad360
+  why: new_rule
+  title: XPlanung FNP Wuppertal fortlaufend aktualisiert
+  source_url: https://www.offenedaten-wuppertal.de/dataset/xplanung-fnp-wuppertal-fortlaufend-aktualisiert
+  license_rule: govdata/Stadt Wuppertal, Ressort 102 Vermessung, Katasteramt und Geodaten/cc-by-nd-4.0+cc0-1.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.0235ec69-803c-48c3-aa92-2902fa9ac179
+  why: new_rule
+  title: Tempo-30-Zonen Wuppertal (Flächen)
+  source_url: https://www.offenedaten-wuppertal.de/dataset/tempo-30-zonen-wuppertal-fl%C3%A4chen
+  license_rule: govdata/Stadt Wuppertal, Ressort 104 Straßen und Verkehr/cc-by-4.0+cc0-1.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.024b7516-d8d7-4aab-8484-d1299d57db6c
+  why: new_rule
+  title: Dichtekarte Seevögel TOPAS/MARLIN (2000–2013)
+  source_url: https://mobilithek.info//offers/-9018340152536081162
+  license_rule: govdata/Forschungs- und Technologiezentrum Westküste (FTZ)/geonutzv
+  ok: false
+  check:
+    outcome: unchecked
+    reason: no_safe_check
+- dataset_id: govdata.04995c32-b858-4ac6-9acc-1f46a8521110
+  why: new_rule
+  title: Schulbezirke des Landkreises Greiz
+  source_url: https://www.govdata.de/suche/daten/schulbezirke-des-landkreises-greiz
+  license_rule: govdata/Landratsamt Greiz/cc-by-4.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: ckan.govdata.de
+- dataset_id: govdata.0a6d5325-1573-4d38-a976-bd4684c766fc
+  why: new_rule
+  title: Strecken
+  source_url: https://opendata.schleswig-holstein.de/dataset/04a96b44-0f75-447a-9f91-9f501fb2cfa7
+  license_rule: govdata/nah.sh/cc-by-4.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.schleswig-holstein.de
+- dataset_id: govdata.28eda05c-6c7e-4ccf-8f25-1050397cd0b2
+  why: new_rule
+  title: Gebiete mit positiven Aujeszky-Befunden beim Wildschwein in Thüringen
+  source_url: https://www.govdata.de/suche/daten/gebiete-mit-positiven-aujeszky-befunden-beim-wildschwein-in-thuringen
+  license_rule: govdata/Thüringer Landesamt für Verbraucherschutz/cc-by-4.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: ckan.govdata.de
+- dataset_id: govdata.9e5347d5-d361-4f20-922d-ff6e12a7e916
+  why: random
+  title: Einpersonenhaushalte Bottrop
+  source_url: https://www.govdata.de/suche/daten/einpersonenhaushalte-bottrop4732d
+  license_rule: govdata/Stadt Bottrop - Amt für Informationsverarbeitung (12)/dl-de-zero-2.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: ckan.govdata.de
+- dataset_id: govdata.0aa35586-9885-4e6a-9b4f-5b4b74d816c0
+  why: random
+  title: Flächen für Landwirtschaft usw. 2013
+  source_url: https://geoportal.sachsen.de/md/fd79016d-f3ce-417b-b1db-66dad437903a
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.77030ccf-5815-4218-9192-9d0a05fece2f
+  why: random
+  title: Status Bahnquerungen Rheinhafen Krefeld
+  source_url: https://registry.gdi-de.org/id/de.nw/05c08c77-d65e-465d-a042-12cd13dfd77a
+  license_rule: govdata/Stadt Krefeld/dl-de-zero-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.b50d13a2-5432-412f-b315-b0314818c19d
+  why: random
+  title: FZ 27 - 2021 - Bestand an Kraftfahrzeugen und Kraftfahrzeuganhängern nach
+    ausgewählten Merkmalen (Bundesländer und Fahrzeugklassen)
+  source_url: https://mobilithek.info//offers/712619633330061312
+  license_rule: govdata/Kraftfahrt-Bundesamt (KBA)/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: no_safe_check
+- dataset_id: govdata.69031b71-0407-41e4-bd26-06e0a7364603
+  why: random
+  title: WFS ST ALKIS-DVG
+  source_url: https://www.govdata.de/suche/daten/wfs-st-alkis-dvg
+  license_rule: govdata/Landesamt für Vermessung und Geoinformation (LVermGeo) Sachsen-Anhalt/dl-de-by-2.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: ckan.govdata.de
+- dataset_id: govdata.e1561219-042e-4e4e-9fc1-f2f778ae7887
+  why: random
+  title: Verkehrswege, weitere
+  source_url: https://geoportal.sachsen.de/md/e7e826f7-da36-461a-811a-addffbc9a555
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.3f8d3ef0-dcf8-41c1-ab1c-2bf8b4d25791
+  why: random
+  title: Werkstätten
+  source_url: https://geoportal.sachsen.de/md/dcaab031-39cf-4cd1-a993-e2affd7fed0d
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.ad04fb09-bbe5-4ea9-b7a9-f228db63dfde
+  why: random
+  title: Hydrografische Daten für nautische Produkte - WMS
+  source_url: https://mobilithek.info//offers/-2964139981931179224
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: false
+  check:
+    outcome: unchecked
+    reason: no_safe_check
+- dataset_id: govdata.f9906835-41fb-406e-af9e-aebb7181eca1
+  why: random
+  title: Bevölkerung 60 bis 74 Jahre
+  source_url: https://geoportal.sachsen.de/md/8d8c755a-41bd-402f-b175-f31e996870a5
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.9dd3a660-96b5-4a53-832b-6ca10c06f5cb
+  why: random
+  title: Bathymetrie Deutsche Bucht Modellgitterpunkte (Projekt Aufmod) 2012
+  source_url: https://mobilithek.info//offers/-9039026282510345630
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: false
+  check:
+    outcome: unchecked
+    reason: no_safe_check
+- dataset_id: govdata.e1ee8d05-5307-437a-9552-0479896e22ef
+  why: random
+  title: Bevölkerung mit Migrationshintergrund - 18 bis unter 65 Jahre Bottrop
+  source_url: https://www.govdata.de/suche/daten/bevolkerung-mit-migrationshintergrund-18-bis-unter-65-jahre-bottrop4ec2b
+  license_rule: govdata/Stadt Bottrop - Amt für Informationsverarbeitung (12)/dl-de-zero-2.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: ckan.govdata.de
+- dataset_id: govdata.e51568e3-a887-40ff-800e-35687c85e2f5
+  why: random
+  title: Gefährdungspotenzial Überschwemmung durch Starkregen
+  source_url: https://geoportal.sachsen.de/md/bd646941-5aef-4a2a-a812-2f5b70f68afc
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.1842f31b-7cd0-4adb-98ea-dc37306a9e3d
+  why: random
+  title: Stationen K-Straßen
+  source_url: https://www.geoportal.rlp.de/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=36544
+  license_rule: govdata/Landesbetrieb Mobilität Rheinland-Pfalz/cc0-1.0+dl-de-by-2.0
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: www.geoportal.rlp.de
+- dataset_id: govdata.f52eec7f-b476-4705-9198-53dbab8d999a
+  why: random
+  title: Land- und Wasserflächen für nautische Produkte - WMS
+  source_url: https://mobilithek.info//offers/-8038058052973753512
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: false
+  check:
+    outcome: unchecked
+    reason: no_safe_check
+- dataset_id: govdata.51935657-c032-4fbd-9eb0-692d10b66375
+  why: random
+  title: Katasterübersichtskarte (KUEK5) - Gebäude (generalisiert), ausgewählte Beschriftungen
+  source_url: https://geoportal.sachsen.de/md/875ff936-075a-46f6-84ab-a5b7454717e4
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: false
+  check:
+    outcome: unchecked
+    reason: redirect_host
+excluded_entries:
+- govdata.0635b12a-281c-405d-91b7-d36c7f24d660
+- govdata.0b67e5ab-dd50-40c0-a0aa-8d0e6d917ee4
+- govdata.11a29574-214f-4b83-a569-8844eb75fd86
+- govdata.13a84b38-746f-4ec3-a279-062080740fa4
+- govdata.1783b4b8-9dfa-4b48-b03e-7fe5d49fb5e8
+- govdata.1d779077-63f6-4443-8733-5875d1979d55
+- govdata.1eba4913-b332-441d-82e4-432774c4c39a
+- govdata.2710cd72-a370-47d2-8941-ac6b3ff61f4d
+- govdata.3b54e819-c1d4-4544-8a17-496e6b525f3e
+- govdata.3f06a322-7f94-4af1-8cce-e9de6c4adcf3
+- govdata.413dc1d4-e9bf-4b0d-b1cc-98a2c14ac6b7
+- govdata.4781e170-a58a-4965-93ac-72a041ac067f
+- govdata.5917c15e-a940-4105-8f03-336ccacd0610
+- govdata.5d220f4d-c65c-4f28-ad61-f2ae6ac3ba9b
+- govdata.5d7e9200-a986-4c74-9533-833980b53c8a
+- govdata.5f6eb467-64a1-4312-8b4c-de85555eb998
+- govdata.67a3860c-9592-4f46-a1f2-7c8537193a15
+- govdata.712f929b-4763-4350-b009-5ed12cd8f33a
+- govdata.89277f82-8d2d-45d8-b6c8-f5e5a2e0008b
+- govdata.8f62a5ee-3895-4660-ba93-0f0d89db7bd1
+- govdata.917a3e46-9f35-44b5-b530-c5be6dec8fca
+- govdata.91c3a2b4-688a-4067-bbd5-0749b6494add
+- govdata.92d3b291-fa6a-4173-9472-25e5f9449a83
+- govdata.945813ce-c22d-4cb4-a4a3-ef11c3d21548
+- govdata.98fe38ba-ba6e-4c46-bbd3-1832766b4702
+- govdata.a22b3370-6927-49bd-890f-4ff6acfc669e
+- govdata.b03aee2d-71ab-4a88-a44f-2d55f4326603
+- govdata.b934fd1b-a721-4a60-877a-fc45dcf65b27
+- govdata.be0153b4-ec2a-49ec-990c-4e8cf3f5eb27
+- govdata.c1490805-778c-4633-a468-401477c0d549
+- govdata.d10e4e13-f99c-4601-96e1-499a8c505aa6
+- govdata.d259c514-17e3-47ed-a4b5-6983755c9dfc
+- govdata.d9a664b7-4192-4bce-9982-01eded5c76f1
+- govdata.dac13214-da54-43bd-beaf-1a0eea939698
+- govdata.db60b8c8-ee7a-47a7-b272-4d5d280fee81
+- govdata.e26d4e99-f7cd-47eb-850a-d09ccaf133d5
+- govdata.e4a57537-5b6e-47b7-9266-06d61a1f0d21
+- govdata.e904dd43-d48f-474f-aace-3e82c2b26b46
+- govdata.ed2ac728-131a-475f-98c5-321099d2a206
+- govdata.ed369f55-7e74-4a11-976e-7ed774c44d6a
+- govdata.f0d933ef-02d5-458b-9829-8ef2127260cf
+- govdata.f47a9bc3-e810-4d8f-9156-37443c1e086a
+- govdata.fc024bae-25f8-4b81-9bb2-944050e29bce
+decided_by: rules

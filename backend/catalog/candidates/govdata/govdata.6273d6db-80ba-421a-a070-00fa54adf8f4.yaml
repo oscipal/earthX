@@ -1,0 +1,180 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: govdata
+source_key: 6273d6db-80ba-421a-a070-00fa54adf8f4
+listed_id: govdata.6273d6db-80ba-421a-a070-00fa54adf8f4
+listed_state: published
+first_proposed: 2026-11-27
+proposed_id: govdata-modellierte-temperatur-und-salzgehalt-des-operationellen-96
+takeover:
+  via: also_listed_as
+  key: also:govdata:a5befa04-82e7-45e3-b111-cee6fd24a9ef
+  also_listed_as:
+  - govdata:a5befa04-82e7-45e3-b111-cee6fd24a9ef
+harvested:
+  title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+    des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+    ca. 900 m) 2026 05
+  description: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+    des Bundesamtes für Seeschifffahrt und Hydrographie (BSH) in der deutschen Bucht
+    und der westlichen Ostsee (horizontale Auflösung ca. 900 m). Das Modell (HBM,
+    HIROMB-BOOS-Modell) läuft viermal am Tag in einer Konfiguration mit einem feineren
+    Gitter in der Deutschen Bucht und westlichen Ostsee (900 m Auflösung, dieser Datensatz)
+    und einem gröberen Gitter, das die gesamte Nord- und Ostsee abdeckt (5 km Auflösung,
+    separater Datensatz). Das Modell wird von aktuellen Wettervorhersagen des Deutschen
+    Wetterdienstes (DWD) angetrieben. Genauere Informationen über die Modellkonfiguration
+    sind in Brüning et al. (2021); https://doi.org/10.23784/HN118-01; zu finden.
+  publisher: Bundesamt für Seeschifffahrt und Hydrographie (BSH)
+  keywords:
+  - bsh
+  - bundesamt-für-seeschifffahrt-und-hydrographie
+  - deutsche-bucht
+  - federal-maritime-and-hydrographic-agency
+  - german-bight
+  - national
+  - open-data
+  - operational-model-forecast
+  - operationelle-modellvorhersage
+  doi: null
+  licence_statements:
+  - http://dcat-ap.de/def/licenses/cc-by
+  bbox:
+  - 6.1736
+  - 53.2292
+  - 14.9097
+  - 56.4458
+  extent_basis: source
+  temporal:
+  - null
+  - null
+  source_url: https://www.govdata.de/suche/daten/modellierte-temperatur-und-salzgehalt-des-operationellen-zirkulationsmodells-des-bsh-in-2026-05483a0
+  landing_url: https://www.govdata.de/suche/daten/modellierte-temperatur-und-salzgehalt-des-operationellen-zirkulationsmodells-des-bsh-in-2026-05483a0
+  distributions:
+  - href: https://gdi.bsh.de/de/feed/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05.xml
+    format: XML
+    media_type: application/xml
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0100_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0106_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0112_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0118_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0200_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0206_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0212_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0218_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0300_000_006.nc
+    format: application/x-netcdf
+    media_type: application/x-netcdf
+    title: Modellierte Temperatur und Salzgehalt des operationellen Zirkulationsmodells
+      des BSH in der deutschen Bucht und der westlichen Ostsee (horizontale Auflösung
+      ca. 900 m) 2026 05
+licence:
+  license_ref:
+  - cc-by
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/cc-by
+  license:
+    spdx_id: null
+    name: Creative Commons Attribution (ohne Versionsangabe)
+    url: https://creativecommons.org/licenses/
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © Bundesamt für Seeschifffahrt und Hydrographie (BSH) (modified)
+    attribution_unmodified: © Bundesamt für Seeschifffahrt und Hydrographie (BSH)
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-27
+verify:
+  checked_on: 2026-11-27
+  files:
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0100_000_006.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 13087172
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0106_000_006.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 13051823
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  - href: https://gdi.bsh.de/de/data/Modelled-temperature-and-salinity-of-the-operational-circulation-model-of-BSH-in-the-German-Bight-and-the-western-Baltic-Sea-horizontal-resolution-ca-900-m-2026-05_0112_000_006.nc
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: application/x-netcdf
+    length: 13157868
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: gdi.bsh.de
+    format:
+      format: hdf5
+  items: 0
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

@@ -1,0 +1,146 @@
+{
+ "collection": {
+  "description": "Cet ombrage est généré a partir du MNT_AGGLO, résultat de l'agrégation d'une acquisition de 2013 sur la partie suisse et de 2014 sur la partie française du Grand Genève.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "boundaries",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "API",
+    "href": "https://raster.sitg.ge.ch/arcgis/rest/services",
+    "media_type": null,
+    "title": "0"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/MNA_RELIEF_OMBRE_SURFACE_AGGLO_2014.tif",
+    "media_type": "image/tiff",
+    "title": "TIFF_COG"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "place",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Kanton Genf/opendata-swiss-open",
+   "publisher": "Kanton Genf",
+   "source_id": "opendata-swiss",
+   "source_key": "8c5ea10c-0698-43ab-bc6b-a1946ef1fa18",
+   "source_rank": 3,
+   "source_url": "https://opendata.swiss/de/dataset/mna-relief-ombre-surface-agglo-2014-pixel-50-cm"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.9548,
+      46.1305,
+      6.2812,
+      46.3318
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.8c5ea10c-0698-43ab-bc6b-a1946ef1fa18",
+  "keywords": [
+   "boundaries",
+   "addresses",
+   "cadastre"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://opendata.swiss/de/dataset/mna-relief-ombre-surface-agglo-2014-pixel-50-cm",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Kanton Genf",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "MNA Relief Ombre Surface Agglo 2014 (Pixel 50 Cm)",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-27",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "ge.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "uint8",
+      "epsg": 2056,
+      "height": 139778,
+      "nodata": null,
+      "overviews": 9,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 138015
+     }
+    },
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/MNA_RELIEF_OMBRE_SURFACE_AGGLO_2014.tif",
+    "length": 9332332274,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}
