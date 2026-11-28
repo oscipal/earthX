@@ -1,0 +1,53 @@
+# The background of the vector arm's minimum similarity (adr/0026 §4.3; docs/plans/m5/m5-23-vektorsuche.md §3.3).
+#
+# A hit of the vector arm counts where its cosine with the query lies at least `MIN_RELATIVE_SIMILARITY` standard
+# deviations above the mean cosine of the same query with these texts. They are invented, short and general, half German,
+# half English, and about nothing the catalogue offers: no title of a real entry (plan A5). The threshold was chosen on
+# the evaluation set with exactly this list; changing it means measuring the set again and new vectors in the fixture.
+texts:
+- Haushaltsplan der Stadt mit Einnahmen und Ausgaben
+- municipal budget revenue and expenditure
+- Standorte der Schulen und Kindergärten
+- locations of schools and kindergartens
+- Wahlergebnisse der Gemeinderatswahl
+- election results by polling station
+- Öffnungszeiten der Bibliotheken
+- opening hours of public libraries
+- Verkehrszählung an Hauptstraßen
+- traffic counts on main roads
+- Fahrplan des öffentlichen Nahverkehrs
+- public transport timetable
+- Bebauungsplan Gewerbegebiet Nord
+- zoning plan of an industrial area
+- Liste der Baudenkmäler
+- register of listed buildings
+- Abfallkalender und Wertstoffhöfe
+- waste collection calendar
+- Einwohner nach Alter und Geschlecht
+- residents by age and sex
+- Parkplätze und Ladesäulen
+- parking spaces and charging stations
+- Unfallstatistik der Polizei
+- road accident statistics
+- Förderprogramme für Unternehmen
+- business funding programmes
+- Straßenbäume im Stadtgebiet
+- street trees of the city
+- Radwegenetz
+- cycle path network
+- Gesundheitseinrichtungen und Apotheken
+- hospitals and pharmacies
+- Tourismus Übernachtungen
+- tourist overnight stays
+- Grundstückswerte Bodenrichtwerte
+- standard land values
+- Spielplätze
+- playgrounds
+- Lärmkarte Straßenverkehr
+- road noise map
+- Hochwassergefahrenkarte
+- flood hazard map
+- Gewerbeanmeldungen
+- business registrations
+- Sportstätten
+- sports facilities

@@ -56,6 +56,7 @@ Every text goes to SQL as a parameter, never into the statement.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Collection, Mapping, Sequence
@@ -66,6 +67,7 @@ from typing import Any
 
 from psycopg import sql
 
+from earthx.catalog.embedding import QueryVector, QueryVectors
 from earthx.catalog.glossary import Glossary, Unit, normalize, parse_query
 from earthx.catalog.search_index import CONFIGS
 
@@ -83,6 +85,14 @@ DEPTH = 1_000
 TRIGRAMS_BELOW = 20
 #: Up to here the search counts its hits exactly (M5-40 F4); above it the number is left out.
 COUNT_UP_TO = 10_000
+#: Up to this many rows of one kind (listed or full) that pass the filters, the vector arm compares each of them; above
+#: it, it reads the HNSW index (adr/0026 §14 point 2, G2: a filter that follows the content left the index scan with a
+#: recall of 0.51-0.89).
+EXACT_UP_TO = 50_000
+#: ``hnsw.ef_search`` (adr/0026 §14 point 1), never below the depth and never above the 1 000 pgvector allows; beyond
+#: it the iterative scan goes on.
+EF_SEARCH = 200
+_EF_SEARCH_MAX = 1_000
 #: The share of the units a dataset has to match under :attr:`Joining.SHARE`.
 MIN_SHARE = 0.5
 TIME_FILTER = "datetime"
@@ -479,6 +489,55 @@ def _cut(hits: sql.Composable) -> sql.Composed:
     ).format(hits=hits)
 
 
+#: The hits of the vector arm in one kind of row: by cosine, at least the least one of the query, with a vector of the
+#: query's model. ``{order}`` is empty for the exact way and orders by distance with a ``LIMIT`` for the index.
+_VECTOR_ROWS = """
+    SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, f.embedding <=> %(vector)s::halfvec AS distance
+    FROM {source}
+    WHERE {where}{order}"""
+
+
+def _vector_where(condition: str, named_numbers: bool) -> str:
+    """The filters of one kind of row, a vector of the model, and with a number of a name in the query only the rows
+    with that name and number (plan A6): "Sentinel 3" is near Sentinel-2 for any model, and "Nr. 3" is no Sentinel.
+    The name comes through the trigram index (``LIKE``), so these rows are few and compared exactly."""
+    named = f" AND f.trigram_text LIKE ANY(%(name_patterns)s) AND {_carries('named_numbers')}" if named_numbers else ""
+    return f"{condition} AND f.embedding_model = %(model)s{named}"
+
+
+def _vector_count_sql(source: str, condition: str, *, named_numbers: bool) -> sql.Composed:
+    """How many rows of one kind pass the filters and have a vector of the model, up to ``limit``."""
+    return sql.SQL("SELECT count(*) FROM (SELECT 1 FROM {source} WHERE {where} LIMIT %(limit)s) c").format(
+        source=sql.SQL(source), where=sql.SQL(_vector_where(condition, named_numbers))
+    )
+
+
+def _vector_sql(source: str, condition: str, *, exact: bool, named_numbers: bool) -> sql.Composed:
+    """The hits of one kind of row, as :func:`_cut` gives them.
+
+    Exact: every row that passes the filters is compared, and the cut ranks and counts them like the other arms. Index:
+    the HNSW index gives the nearest ``depth`` in a ``MATERIALIZED`` CTE, and the least cosine is applied outside it
+    (pgvector README, "Iterative Index Scans"); the number of all hits is then unknown where all ``depth`` pass.
+    """
+    order = "" if exact else " ORDER BY distance LIMIT %(depth)s"
+    rows = sql.SQL(_VECTOR_ROWS).format(
+        source=sql.SQL(source), where=sql.SQL(_vector_where(condition, named_numbers)), order=sql.SQL(order)
+    )
+    hits = sql.SQL(
+        "SELECT v.dataset_id, v.title, v.has_time_axis, v.entry, 1 - v.distance AS score FROM ({rows}) v"
+        " WHERE v.distance <= %(max_distance)s"
+    )
+    if exact:
+        return _cut(hits.format(rows=rows))
+    return sql.SQL(
+        """
+        WITH nearest AS MATERIALIZED ({rows})
+        SELECT h.*, rank() OVER (ORDER BY h.score DESC) AS place,
+               CASE WHEN count(*) OVER () >= %(depth)s THEN %(unknown)s ELSE count(*) OVER () END AS total
+        FROM ({hits}) h ORDER BY h.score DESC, h.title, h.dataset_id"""
+    ).format(rows=rows, hits=hits.format(rows=sql.SQL("SELECT * FROM nearest")))
+
+
 def _unranked_sql(*, start: Start) -> sql.Composed:
     source, condition = _sources(start)[1]
     return sql.SQL(
@@ -545,6 +604,72 @@ async def _start(
     return Start.TEXT if hits <= text_first_max else Start.AREA
 
 
+class _VectorArm:
+    """The vector arm of one query: per kind of row the exact or the index way, merged by cosine.
+
+    ``query`` is the vector, computed in a thread from the start of the search. Full rows are few and always compared
+    exactly. Listed rows under a hard filter are counted first, up to ``exact_up_to`` + 1: up to there every row is
+    compared, above it, and without any filter, the HNSW index is read with an iterative scan (adr/0026 §14 point 2). The hits of both kinds are ranked together; the number of all
+    is unknown (above ``count_up_to``) where the index way gave its whole depth.
+    """
+
+    def __init__(
+        self,
+        query: asyncio.Future[QueryVector] | None,
+        start: Start,
+        kept: Kept,
+        args: Mapping[str, Any],
+        *,
+        exact_up_to: int,
+        rows: dict[str, tuple[str, bool, str]],
+    ) -> None:
+        self._query = query
+        self._start, self._kept, self._args = start, kept, args
+        self._exact_up_to, self._rows = exact_up_to, rows
+
+    async def run(self, conn: Any) -> list[tuple[str, float, int, int]]:
+        query: QueryVector = await self._query
+        args = {
+            **self._args,
+            "vector": query.literal,
+            "model": query.model,
+            "max_distance": 1 - query.min_cosine,
+            "limit": self._exact_up_to + 1,
+            "unknown": self._args["count_up_to"] + 1,
+        }
+        named = bool(args["named_numbers"])
+        # Without a hard filter the listed rows go to the index at once: counting them first cost 0.1 s at 10^5.
+        filtered = args["area"] is not None or args["timed"] or self._kept != ALL_KEPT or named
+        kinds = [kind for kind in ("listed", "full") if self._kept.entry in (None, kind)]
+        found: list[tuple[str, float]] = []
+        total = 0
+        async with conn.transaction(), conn.cursor() as cur:
+            await cur.execute("SET LOCAL client_min_messages = warning")
+            for kind, (source, condition) in zip(kinds, _sources(self._start, self._kept), strict=True):
+                # Full entries are few: always compared exactly.
+                exact = kind == "full"
+                if not exact and filtered:
+                    await cur.execute(_vector_count_sql(source, condition, named_numbers=named), args, prepare=False)
+                    exact = (await cur.fetchone())[0] <= self._exact_up_to
+                if not exact:
+                    ef_search = min(_EF_SEARCH_MAX, max(EF_SEARCH, args["depth"]))
+                    await cur.execute(
+                        "SELECT set_config('hnsw.iterative_scan', 'relaxed_order', true),"
+                        " set_config('hnsw.ef_search', %s, true)",
+                        (str(ef_search),),
+                    )
+                statement = _vector_sql(source, condition, exact=exact, named_numbers=named)
+                await cur.execute(statement, args, prepare=False)
+                hits = await cur.fetchall()
+                # Every row of one kind carries the number of all its hits.
+                total += hits[0][6] if hits else 0
+                for dataset_id, title, timed, entry, score, *_ in hits:
+                    self._rows[dataset_id] = (title, timed, entry)
+                    found.append((dataset_id, float(score)))
+        places = ranks(found)
+        return sorted(((i, score, places[i], total) for i, score in found), key=lambda row: row[2])
+
+
 async def search_datasets(
     conn: Any,
     text: str | None,
@@ -560,6 +685,9 @@ async def search_datasets(
     depth: int = DEPTH,
     count_up_to: int = COUNT_UP_TO,
     trigrams_below: int = TRIGRAMS_BELOW,
+    vectors: QueryVectors | None = None,
+    vector_conn: Any = None,
+    exact_up_to: int = EXACT_UP_TO,
 ) -> SearchResult:
     """The datasets for ``text`` within ``area`` (a GeoJSON polygon in WGS 84) and ``period`` (either end open), ranked.
 
@@ -569,6 +697,10 @@ async def search_datasets(
     With text, the filters of ``kept`` stand in both arms; each arm hands its first ``depth`` hits to the fusion, so
     ``ids`` holds at most twice as many. ``matched`` is the number of all hits up to ``count_up_to``, ``None`` above it.
     Without text, ``kept`` is not applied and ``matched`` is the number of ``ids``.
+
+    With ``vectors`` the vector arm joins the fusion (M5-23): the query is embedded while the full text runs, and the
+    arm runs on ``vector_conn`` at the same time as the full text, or after it on ``conn`` where there is none. It
+    keeps to the same filters and to the numbers of names. The arms then see two snapshots, not one.
     """
     if text is not None and len(text) > MAX_QUERY_CHARS:
         raise QueryTooLong(f"the query is longer than {MAX_QUERY_CHARS} characters")
@@ -594,22 +726,41 @@ async def search_datasets(
         else:
             units = parse_query(text, glossary)
             terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
+            # Embedded in a thread from here on, while the statements before the arms run.
+            query = asyncio.ensure_future(vectors.vector_async(text)) if vectors is not None else None
             start = await _start(conn, params, units, terms, area_first_max, text_first_max)
             extra = {**_kept_params(kept), "depth": depth, "count_up_to": count_up_to}
             normal = normalize(text)
             numbers, codes = numbers_of(text)
-            full_text = []
-            if units:
-                named_numbers: tuple[str, ...] = ()
-                if numbers:
-                    async with conn.cursor() as cur:
-                        await cur.execute(_NAMES_SQL, (names_before_numbers(text),))
-                        names = numbered_names([row[0] for row in await cur.fetchall()])
-                    named_numbers = numbers_after_names(text, names)
-                full_text = await run(
-                    _full_text_sql(units, joining, start=start, named_numbers=bool(named_numbers), kept=kept),
-                    {**extra, **terms, "share": MIN_SHARE, "named_numbers": list(named_numbers)},
-                )
+            named_numbers: tuple[str, ...] = ()
+            if numbers:
+                async with conn.cursor() as cur:
+                    await cur.execute(_NAMES_SQL, (names_before_numbers(text),))
+                    names = numbered_names([row[0] for row in await cur.fetchall()])
+                named_numbers = numbers_after_names(text, names)
+            vector_args = {
+                **params,
+                **extra,
+                "named_numbers": list(named_numbers),
+                "name_patterns": names_before_numbers(text),
+            }
+            arm = _VectorArm(query, start, kept, vector_args, exact_up_to=exact_up_to, rows=rows)
+            beside = asyncio.create_task(arm.run(vector_conn)) if query and vector_conn is not None else None
+            try:
+                full_text = []
+                if units:
+                    full_text = await run(
+                        _full_text_sql(units, joining, start=start, named_numbers=bool(named_numbers), kept=kept),
+                        {**extra, **terms, "share": MIN_SHARE, "named_numbers": list(named_numbers)},
+                    )
+                vector = await beside if beside is not None else await arm.run(conn) if query else []
+            finally:
+                # On an error of the full text the arm beside runs to its end, and its answer is dropped: cancelled
+                # between its BEGIN and the rest, it would hand its connection back inside a transaction.
+                if beside is not None and not beside.done():
+                    await asyncio.gather(beside, return_exceptions=True)
+                if query is not None and not query.done():
+                    query.cancel()
             # A similarity is at most 1: above it, the arm finds nothing and pg_trgm would refuse the threshold.
             trigrams = []
             known_widely = bool(full_text) and full_text[0][3] >= trigrams_below
@@ -622,10 +773,13 @@ async def search_datasets(
                     {**extra, "normal": normal, "numbers": list(numbers), "codes": list(codes)},
                 )
             ids = fuse(
-                *(ranks([(row[0], row[1]) for row in arm if row[2] <= depth]) for arm in (full_text, trigrams)),
+                *(
+                    ranks([(row[0], row[1]) for row in arm if row[2] <= depth])
+                    for arm in (full_text, trigrams, vector)
+                ),
                 titles={i: row[0] for i, row in rows.items()},
             )
-            matched = _count(full_text, trigrams, up_to=count_up_to)
+            matched = _count(full_text, trigrams, vector, up_to=count_up_to)
     listed = frozenset(i for i in ids if rows[i][2] == "listed")
     if period is None:
         return SearchResult(ids, listed=listed, matched=matched)

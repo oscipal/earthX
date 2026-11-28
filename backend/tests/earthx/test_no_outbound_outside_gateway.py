@@ -29,9 +29,12 @@ CONTRACT = "importlinter:contract:http-only-in-gateway"
 # open a connection of their own. `httpx2` and `obstore` joined in M2-04 (adr/0006
 # §3.2, Otto's answer 6): `rio-tiler` fetches STAC items over `httpx2`, and
 # `titiler.xarray` would bring `obstore` with M2-09. `botocore` and `urllib3` joined
-# in M4-06 (adr/0015 §3.6, §4.3).
+# in M4-06 (adr/0015 §3.6, §4.3), `huggingface_hub` in M5-23: `tokenizers` brings it and fetches models with it.
 CORE = frozenset(
-    {"httpx", "httpx2", "requests", "urllib", "aiohttp", "pystac_client", "boto3", "obstore", "botocore", "urllib3"}
+    {
+        "httpx", "httpx2", "requests", "urllib", "aiohttp", "pystac_client", "boto3", "obstore", "botocore", "urllib3",
+        "huggingface_hub",
+    }
 )
 
 # The one exception (adr/0015 F2): the object store's client may import `botocore`,
@@ -99,6 +102,13 @@ def test_no_module_imports_the_stac_reader_of_rio_tiler(path: Path) -> None:
     """
     source = path.read_text(encoding="utf-8")
     assert not [name for name in STAC_READER if name in source]
+
+
+@pytest.mark.parametrize("path", modules_outside_gateway(), ids=lambda path: str(path.relative_to(PACKAGE)))
+def test_no_module_loads_a_model_or_tokenizer_from_a_hub(path: Path) -> None:
+    """The embedding model of the search comes from files of the image (M5-23 plan §4.2): `Tokenizer.from_pretrained`
+    would fetch from Hugging Face itself, past `gateway`, without importing any client."""
+    assert "from_pretrained" not in path.read_text(encoding="utf-8")
 
 
 def test_the_stac_reader_check_would_notice_the_import_it_forbids() -> None:

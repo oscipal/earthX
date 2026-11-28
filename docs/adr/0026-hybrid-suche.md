@@ -3,6 +3,7 @@
 - **Status:** Angenommen (fest, Otto, 06.11.2026; Antworten in §11). F1 und F4–F9 jeweils Option 1, F2 Option 1 mit zwei Bedingungen, F3 Option 2 (kein pgvector in M5). Die Nummer 0026 ist im M5-Plan fest vergeben (`plans/m5/m5-discovery-und-suche.md` §5a).
 - **Datum:** 2026-11-06 (Entwurf, Draft-PR #301); angenommen 2026-11-06.
 - **Nachtrag M5-41 (angenommen, Otto, 15.11.2026):** §14 ersetzt F3 = 2 für 10⁶ Einträge: pgvector ≥ 0.8.4, HNSW auf `halfvec`, gefilterte Anfragen exakt bis 5·10⁴ Zeilen.
+- **Nachtrag M5-23 (angenommen, Otto, 27.11.2026, F1–F8 = 1):** §16: Modell granite-embedding-97m-multilingual-r2 (fp32), Mindestähnlichkeit relativ zu festen Hintergrundtexten, eingebettet werden die Teile A und B; das Set besteht F5.
 - **Aufgabe:** M5-04 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage C, §4).
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert werden nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -651,3 +652,23 @@ Anlass: M5-42 F5 = 1 (Otto, 23.11.2026). Bericht, Messung und Recherche: `plans/
    - **Gemessen:** breite Wörter ohne Filter 0,25–0,59 s, mit Filter 0,07–0,25 s bei 10⁵ synthetischen Einträgen; Bewertungs-Set Frage für Frage gleich.
    - **Verworfen:** GiST-KNN (`<<->`) war schnell, liefert Gleichstände aber nicht ganz (A1); nur Titel als Trigramm-Text verlor die meisten Treffer; Region nach dem Ranking unnötig.
    - **Mit M5-23** wird die Schwelle neu bewertet, sobald der Vektorarm da ist, und das Bewertungs-Set bekommt Fragen mit breiten Wörtern.
+
+## 16. Nachtrag M5-23: Vektorarm, Modell und Mindestähnlichkeit (angenommen, Otto, 27.11.2026: F1–F8 = 1)
+
+Bericht, Messung und Fragen F1–F8: `plans/m5/m5-23-vektorsuche.md`; Antworten §10a des Plans.
+
+1. **Modell (F2, Plan F1):** `ibm-granite/granite-embedding-97m-multilingual-r2`, Revision `835ad14`, Apache-2.0, 97 Mio. Parameter, 384 Dimensionen, ONNX in **fp32** (390 MB). Von sieben Kandidaten bis zur Größe von e5-base das einzige, mit dem das Set F5 besteht (Deutsch Recall@5 0,947, MRR@10 0,868; Englisch 1,0 / 0,929; Filterfragen 5/5; Negativfragen 4/5). Die int8-Fassungen desselben Modells verlieren (Deutsch 0,895); „bevorzugt int8“ aus F2 b weicht deshalb fp32. e5-small und e5-base bringen am Set nichts, weil ihre Kosinuswerte für Negativfragen und gesuchte Treffer im selben Bereich liegen. Speicher je Prozess `api`: rund 0,7 GB mehr.
+2. **Mindestähnlichkeit (§4.3, Plan F2):** relativ zur Anfrage. Ein Treffer zählt, wenn sein Kosinus mindestens 2,7 Standardabweichungen über dem mittleren Kosinus der Anfrage zu 46 festen, erfundenen Hintergrundtexten liegt (`catalog/search_background.yaml`). Eine feste Kosinusschwelle besteht mit keinem Modell.
+3. **Was eingebettet wird (§4.1, Plan F3):** die Teile A und B des Suchtexts (Kennung, Titel, Titel der Dubletten, Schlagworte, Ortsnamen, Kategorie), ohne Beschreibung und ohne Teil D.
+4. **Regel für Zahlen in Namen** gilt auch im Vektorarm (Q51 „Sentinel-3“).
+5. **Index und Wege** wie §14: Spalte `halfvec(384)` mit HNSW (Migration 039), je Art der Zeile bis 5·10⁴ gefilterte Zeilen exakt, darüber HNSW mit `relaxed_order`; `hnsw.ef_search` = min(1 000, max(200, Tiefe)); Tiefe wie §15.
+6. **Gleichzeitig (§15 Punkt 6):** Das Einbetten der Anfrage läuft in einem Faden, während der Volltext läuft; der Vektorarm auf einer zweiten Verbindung aus einer eigenen Verbindungsmenge; der Trigramm-Arm danach nur unter 20 Volltext-Treffern. Die Arme sehen damit nicht mehr einen Schnappschuss.
+7. **Trefferzahl (§15 Punkt 3, Plan F4):** Vektortreffer zählen mit; ist der Vektorarm im Index-Weg an der Tiefe voll, fehlt `numberMatched`.
+8. **Einbetten (§4.6):** in `catalog-load` nach dem Hauptlauf, je Stapel von 256 Zeilen eine Transaktion, nur Zeilen ohne Vektor des Modells (M5-42 §4, F6). Ohne Modell (Entwicklung, Tests) läuft die Suche lexikalisch.
+9. **Image (F2 a):** eigene Stufen `model-files` (feste Revision, SHA-256 je Datei) und `search` für `api` und `catalog-load`; der Runner bleibt ohne Modell.
+10. **Bewertungs-Set in der CI (§8.4):** Vektoren aus `backend/tests/fixtures/search/embeddings.json`, neu gerechnet mit `scripts/m5-23-embeddings.py`; F5 bindet ab hier für die Suche mit Vektorarm.
+11. **Schwelle 20 des Trigramm-Arms (§15 Punkt 7) bleibt** (Plan §6a, F5): Am Set ändert sie mit Vektorarm nichts, bei breiten Wörtern läuft der Trigramm-Arm ohnehin nicht, und für Tippfehler ohne Volltext-Treffer braucht es ihn („watr“).
+12. **Glossargruppen im Volltext (PR 2, Plan §5a):** Eine Einheit trägt jedes Glied nur einmal und nur, wenn eine Zeile es hat; eine Zeile ohne Phrase der Einheit wird mit den Einzelwörtern gerankt. Treffer und Ränge bleiben gleich; „Gewässer“ bei 10⁵ 2,96 s → 0,83 s.
+13. **Neue Fragen Q53–Q56 (breite Wörter, PR 2, Plan §9a, F6):** dazu die Klassen eines Bands (M5-62) in Teil D des Suchtexts und die Glossargruppe [Karte, map]; damit besteht das Set F5 (Deutsch 0,952 / 0,849, Englisch 1,0 / 0,906).
+14. **Bekanntes Risiko:** Das Fenster der Schwelle ist schmal (z 2,5–2,8 am Set). Es wird neu geprüft, sobald das Set wächst oder Modell, Hintergrundtexte oder eingebetteter Text sich ändern (Plan §3.3).
+15. **M6:** Jede Instanz `api` lädt das Modell (rund 0,7 GB); bei mehreren Instanzen ist zu entscheiden, ob ein eigener Dienst fürs Einbetten der Anfrage kommt (Plan §4.2).

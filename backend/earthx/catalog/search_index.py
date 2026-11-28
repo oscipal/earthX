@@ -8,17 +8,22 @@ listed entries: Postgres compares a hash of what each text is built from, so onl
 into Python, built and written.
 :func:`check_search_index` stops a start where the index is not the one this code would write (plan A3): a new
 search text cannot quietly run on an old index.
+
+The vector arm (M5-23): a row written with a new text loses its vector; :func:`write_embeddings` gives every row without
+one a vector after the main transaction of `catalog-load`, a batch per transaction, and :func:`check_embeddings` stops
+a start of `api` where a full entry has none.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import psycopg
 from psycopg import sql
 
+from earthx.catalog.embedding import Embedder, embedding_text, vector_literal
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry
 from earthx.catalog.search_text import (
     ListedFields,
@@ -61,7 +66,9 @@ _UPSERT = sql.SQL(
         trigram_text = EXCLUDED.trigram_text, west = EXCLUDED.west, south = EXCLUDED.south, east = EXCLUDED.east,
         north = EXCLUDED.north, time_start = EXCLUDED.time_start,
         time_end = EXCLUDED.time_end, has_time_axis = EXCLUDED.has_time_axis, item_holding = EXCLUDED.item_holding,
-        entry = EXCLUDED.entry
+        entry = EXCLUDED.entry,
+        embedding = CASE WHEN stored.text_hash = EXCLUDED.text_hash THEN stored.embedding END,
+        embedding_model = CASE WHEN stored.text_hash = EXCLUDED.text_hash THEN stored.embedding_model END
     WHERE stored.entry <> EXCLUDED.entry OR (stored.title, stored.text_hash, stored.trigram_text, stored.west, stored.south, stored.east, stored.north,
            stored.time_start, stored.time_end, stored.has_time_axis, stored.item_holding)
        IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.text_hash, EXCLUDED.trigram_text, EXCLUDED.west, EXCLUDED.south,
@@ -282,4 +289,86 @@ async def check_search_index(registry: DatasetRegistry, conn: Any) -> None:
     if problems:
         raise SearchIndexMismatch(
             f"the search index does not match the registry ({'; '.join(problems)}); run `python -m earthx.catalog.load`"
+        )
+
+
+#: The rows without a vector of the model, after the last id of the previous batch (M5-23 plan §4.3).
+_UNEMBEDDED = """
+    SELECT dataset_id, text_hash, text_a, text_b FROM public.earthx_dataset_search
+    WHERE embedding_model IS DISTINCT FROM %(model)s AND dataset_id > %(after)s ORDER BY dataset_id LIMIT %(batch)s
+"""
+_COUNT_UNEMBEDDED = "SELECT count(*) FROM public.earthx_dataset_search WHERE embedding_model IS DISTINCT FROM %s"
+#: Only a row whose text is still the one embedded: a load that rewrote it since leaves it to the next run.
+_SET_EMBEDDING = """
+    UPDATE public.earthx_dataset_search SET embedding = %s::halfvec, embedding_model = %s
+    WHERE dataset_id = %s AND text_hash = %s
+"""
+#: Rows per transaction (M5-42 F6 = 1): an interrupted run keeps every batch before.
+EMBEDDING_BATCH = 256
+#: How often the run says how far it is.
+_PROGRESS_EVERY = 10_000
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingOutcome:
+    """How many rows one run of :func:`write_embeddings` gave a vector, of how many that lacked one."""
+
+    written: int
+    missing: int
+
+
+def write_embeddings(
+    conn: psycopg.Connection,
+    embedder: Embedder,
+    *,
+    batch: int = EMBEDDING_BATCH,
+    report: Callable[[str], None] = print,
+) -> EmbeddingOutcome:
+    """Give every row without a vector of ``embedder`` one, a batch per transaction (M5-42 §4, F6 = 1).
+
+    Runs after the main transaction of `catalog-load`, on a connection that is not in autocommit; each batch commits.
+    A row whose text changed between reading and writing is left to the next run. Says every
+    :data:`_PROGRESS_EVERY` rows how far it is, nothing of the entries.
+    """
+    with conn.cursor() as cur:
+        cur.execute(_COUNT_UNEMBEDDED, (embedder.name,))
+        missing = cur.fetchone()[0]
+        conn.commit()
+        written, after, said = 0, "", 0
+        while True:
+            cur.execute(_UNEMBEDDED, {"model": embedder.name, "after": after, "batch": batch})
+            rows = cur.fetchall()
+            if not rows:
+                conn.commit()
+                break
+            vectors = embedder.embed([embedding_text(a, b) for _, _, a, b in rows])
+            cur.executemany(
+                _SET_EMBEDDING,
+                [
+                    (vector_literal(vector), embedder.name, dataset_id, text_hash)
+                    for (dataset_id, text_hash, _, _), vector in zip(rows, vectors, strict=True)
+                ],
+            )
+            conn.commit()
+            written += len(rows)
+            after = rows[-1][0]
+            if written // _PROGRESS_EVERY > said:
+                said = written // _PROGRESS_EVERY
+                report(f"embeddings written: {written} of {missing}")
+    return EmbeddingOutcome(written, missing)
+
+
+async def check_embeddings(conn: Any, model: str) -> None:
+    """Refuse to start where a full entry has no vector of ``model`` (plan §4.4, A4); listed rows may still lack one
+    (M5-42 F6): the next `catalog-load` gives it, the vector arm skips them until then."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT dataset_id FROM public.earthx_dataset_search"
+            " WHERE entry = 'full' AND embedding_model IS DISTINCT FROM %s ORDER BY dataset_id",
+            (model,),
+        )
+        lacking = [row[0] for row in await cur.fetchall()]
+    if lacking:
+        raise SearchIndexMismatch(
+            f"no vector of the model {model} for {', '.join(lacking)}; run `python -m earthx.catalog.load`"
         )

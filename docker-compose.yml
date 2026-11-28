@@ -60,7 +60,8 @@ services:
   catalog-load:
     build:
       context: ./backend
-      target: app
+      # M5-23: the app with the embedding model of the dataset search (backend/Dockerfile, stage `search`).
+      target: search
     command: ["python", "-m", "earthx.catalog.load"]
     environment:
       # M5-13: the profile of this instance (local, ci, cloud; empty = none); only `local` lets prototype entries load
@@ -424,7 +425,8 @@ services:
   api:
     build:
       context: ./backend
-      target: app
+      # M5-23: the app with the embedding model of the dataset search (backend/Dockerfile, stage `search`).
+      target: search
     # M3-16: `--no-access-log` — uvicorn's own access log would write the raw
     # query string (an AOI as `bbox`/`intersects`); `RequestIdMiddleware`
     # (earthx.logging) is this process's access log instead.

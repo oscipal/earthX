@@ -735,6 +735,8 @@ Regeln: Migrationen versioniert (Alembic); jede Komponente hat eine eigene DB-Ro
 
 **Nachtrag 2026-11-27 (`adr/0026` §14, M5-43):** Der Nachtrag vom 10.11.2026 ist überholt: Das Embedding wird mit M5-23 eine Spalte `halfvec(D)` mit HNSW-Index (pgvector ≥ 0.8.4, `adr/0026` §14 Punkt 1). Name und Spalten legt der Plan von M5-23 fest.
 
+**Nachtrag 2026-11-27 (`adr/0026` §16, M5-23, Vorschlag):** Es gibt keine eigene Tabelle `dataset_embedding`. Das Embedding steht als `embedding halfvec(384)` mit `embedding_model` in der Suchtabelle `earthx_dataset_search` neben Suchtext und `tsvector` (Migration 039), für volle und gelistete Einträge. Eingebettet werden nur Kennung, Titel, Schlagworte, Ortsnamen und Kategorie (Teile A und B des Suchtexts), nicht die Beschreibung (`plans/m5/m5-23-vektorsuche.md` §3, F3).
+
 **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** `license_catalog` ist eine Datei in Git (`backend/catalog/licenses/`), in Postgres nur abgeleitet. Gelistete Einträge liegen in eigenen Tabellen neben pgstac mit Zustand, Herkunft (Regel, Lauf, Freigabedatei) und Grabstein; Name und Spalten legt der Plan von M5-40 fest (`plans/m5/m5-40-gelistete-in-postgres.md`). `review_item` wird zu Warteliste und Lauf-Stapel (M5-20).
 
 ---

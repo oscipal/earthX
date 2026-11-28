@@ -48,6 +48,7 @@ PINNED = {
     "032_listing_approval": "c9e826e275b370dd573935b5f7334ab0947a4cc43c75e75723049d83df5f5f07",
     "033_municipality": "64b59924e020c0a9d77cf43f1fbb2b1302c0a0eabf867f5c548effe30a68849e",
     "034_delivery_page": "8def48d73d2c42cd97fba6d40b8257b77c8d689d505318cbdf50a255d11a488b",
+    "039_search_embedding": "0cc39c71d53ff47c69efadf1f3397bc5e0f6f5b5bab348c28f30c58b644a69aa",
 }
 
 

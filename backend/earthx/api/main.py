@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from psycopg_pool import ConnectionPool
@@ -46,6 +46,7 @@ from earthx.api.dependencies import (
     cache_pool,
     policy_from_registry,
     resolve_tiler_base,
+    vector_pool,
     warn_retired_settings,
 )
 from earthx.api.federating_client import ESTIMATED_FROM, FederatingCoreCrudClient
@@ -55,8 +56,9 @@ from earthx.api.job_events import JobEvents
 from earthx.api.processing_route import JobApi
 from earthx.api.processing_route import router as processing_router
 from earthx.catalog.datasets import registry as dataset_registry
+from earthx.catalog.embedding import load_query_vectors
 from earthx.catalog.registry import DatasetRegistry
-from earthx.catalog.search_index import check_search_index
+from earthx.catalog.search_index import check_embeddings, check_search_index
 from earthx.gateway import CachingResolver, ReadSlots, source_instances_from_env, user_agent_from_env
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging
@@ -134,13 +136,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     store = Store.from_environ()
     await connect_to_db(app, postgres_settings=postgres_settings(), add_write_connection_pool=False)
     try:
-        async with cache_pool() as pool:
+        async with AsyncExitStack() as vectors_stack, cache_pool() as pool:
             # adr/0011 §7 D2: routing reads the registry, so pgstac must not say
             # otherwise; a disagreement stops the start (Otto, M4-01a F2).
             async with pool.connection() as conn:
                 await check_item_holdings(app.state.earthx_registry, conn)
                 # M5-22 plan §3.4, A3: a new search text never runs on an old index.
                 await check_search_index(app.state.earthx_registry, conn)
+                # M5-23: the vector arm, where the image has the model (plan A1); its full entries need its vectors.
+                query_vectors = await asyncio.to_thread(load_query_vectors)
+                if query_vectors is not None:
+                    await check_embeddings(conn, query_vectors.embedder.name)
+            if query_vectors is None:
+                LOGGER.info("the dataset search runs without its vector arm: no embedding model configured")
+            else:
+                app.state.earthx_vector_pool = await vectors_stack.enter_async_context(vector_pool())
+            app.state.earthx_query_vectors = query_vectors
             app.state.earthx_cache_pool = pool
             app.state.earthx_gateway = build_gateway(app.state.earthx_policy, app.state.earthx_read_slots)
             # `timeout`: a request that waits for one of the four connections waits 5 s, not 30,
